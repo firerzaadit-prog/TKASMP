@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hasil Ujian TKA Matematika - EduLearn</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script type="importmap">
+    {
+      "imports": {
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+    </script>
+    <link rel="stylesheet" href="habisujian.css">
+    <!-- KaTeX for LaTeX rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+</head>
+<body>
+    <div class="exam-wrapper">
+        <div class="exam-container">
+            <!-- Main Content -->
+            <div class="exam-main">
+                <!-- Header -->
+                <div class="result-header">
+                    <div class="header-content">
+                        <div class="result-icon">
+                            <i class="fas fa-trophy"></i>
+                        </div>
+                        <h1>Hasil Ujian TKA Matematika</h1>
+                        <p>SMP - Tes Kemampuan Akademik</p>
+                    </div>
+                </div>
+
+                <!-- Score Section -->
+                <div class="score-section">
+                    <div class="score-card">
+                        <div class="score-display">
+                            <div id="finalScore" class="score-value">0</div>
+                            <div class="score-label">Poin</div>
+                        </div>
+                        <div id="passStatus" class="pass-status">
+                            Menghitung hasil...
+                        </div>
+                    </div>
+
+                    <div class="exam-stats">
+                        <div class="stat-item">
+                            <div class="stat-icon">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="examDuration">0 menit</div>
+                                <div class="stat-label">Durasi Ujian</div>
+                            </div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-icon">
+                                <i class="fas fa-question-circle"></i>
+                            </div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="totalQuestions">0</div>
+                                <div class="stat-label">Total Soal</div>
+                            </div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-icon">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="correctAnswers">0</div>
+                                <div class="stat-label">Jawaban Benar</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Answer Review Section -->
+                <div class="answer-review-section">
+                    <div class="section-header">
+                        <h2><i class="fas fa-book-open"></i> Pembahasan Jawaban</h2>
+                        <p>Klik pada setiap soal untuk melihat detail pembahasannya</p>
+                    </div>
+
+                    <div id="answerReview" class="answer-review-container">
+                        <!-- Answer reviews will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Navigation -->
+                <div class="navigation-section">
+                    <button onclick="window.location.href='halamanpertama.html'" class="nav-btn primary">
+                        <i class="fas fa-home"></i> Kembali ke Dashboard
+                    </button>
+                    <button onclick="retakeExam()" class="nav-btn secondary">
+                        <i class="fas fa-redo"></i> Kerjakan Lagi
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="habisujian.js"></script>
+
+    <script>
+        // Initialize KaTeX auto-render for LaTeX support
+        document.addEventListener('DOMContentLoaded', function() {
+            // Function to render LaTeX in a specific element
+            function renderLatexInElement(element) {
+                if (window.renderMathInElement && element) {
+                    try {
+                        renderMathInElement(element, {
+                            delimiters: [
+                                {left: "$$", right: "$$", display: true},
+                                {left: "\\[", right: "\\]", display: true},
+                                {left: "$", right: "$", display: false},
+                                {left: "\\(", right: "\\)", display: false}
+                            ],
+                            throwOnError: false
+                        });
+                    } catch (error) {
+                        console.warn('KaTeX rendering error:', error);
+                    }
+                }
+            }
+
+            // Initial render for existing content
+            renderLatexInElement(document.body);
+
+            // Re-render when content changes
+            const answerReview = document.getElementById('answerReview');
+            if (answerReview) {
+                const observer = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(mutation) {
+                        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                            renderLatexInElement(answerReview);
+                        }
+                    });
+                });
+
+                observer.observe(answerReview, {
+                    childList: true,
+                    subtree: true
+                });
+            }
+        });
+
+        // Answer Review Functionality
+        window.showAnswerReview = function(questions, userAnswers) {
+            const reviewContainer = document.getElementById('answerReview');
+            if (!reviewContainer) return;
+
+            reviewContainer.innerHTML = '';
+
+            questions.forEach((question, index) => {
+                const userAnswer = userAnswers[index];
+                const correctAnswer = question.correct_answer;
+                const explanation = question.explanation;
+
+                // Determine if answer is correct based on question type
+                let isCorrect = false;
+                if (question.question_type === 'PGK MCMA') {
+                    const selectedAnswers = (userAnswer || '').split(',').sort();
+                    const correctAnswers = Array.isArray(question.correct_answers)
+                        ? question.correct_answers.sort()
+                        : (question.correct_answers || '').split(',').sort();
+                    isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
+                } else if (question.question_type === 'PGK Kategori') {
+                    const selectedAnswers = typeof userAnswer === 'string' ? JSON.parse(userAnswer) : userAnswer;
+                    const correctMapping = typeof question.category_mapping === 'string'
+                        ? JSON.parse(question.category_mapping)
+                        : question.category_mapping;
+
+                    let allCorrect = true;
+                    for (const [stmtIndex, isTrue] of Object.entries(selectedAnswers || {})) {
+                        if (correctMapping[stmtIndex] !== isTrue) {
+                            allCorrect = false;
+                            break;
+                        }
+                    }
+                    for (const [stmtIndex, shouldBeTrue] of Object.entries(correctMapping || {})) {
+                        if (shouldBeTrue && selectedAnswers[stmtIndex] !== true) {
+                            allCorrect = false;
+                            break;
+                        }
+                    }
+                    isCorrect = allCorrect;
+                } else {
+                    isCorrect = userAnswer === correctAnswer;
+                }
+
+                const reviewItem = document.createElement('div');
+                reviewItem.className = `answer-review-item ${isCorrect ? 'correct' : 'incorrect'}`;
+
+                // Get question text (handle composite questions)
+                let questionText = '';
+                if (question.question_sections && Array.isArray(question.question_sections)) {
+                    questionText = question.question_sections
+                        .sort((a, b) => (a.order || 0) - (b.order || 0))
+                        .map(section => section.type === 'text' ? section.content : '')
+                        .join(' ');
+                } else {
+                    questionText = question.question_text || '';
+                }
+
+                reviewItem.innerHTML = `
+                    <div class="answer-review-header">
+                        <div class="question-info">
+                            <span class="question-number">Soal ${index + 1}</span>
+                            <span class="question-type">${question.question_type}</span>
+                        </div>
+                        <span class="answer-status ${isCorrect ? 'correct' : 'incorrect'}">
+                            <i class="fas ${isCorrect ? 'fa-check-circle' : 'fa-times-circle'}"></i>
+                            ${isCorrect ? 'Benar' : 'Salah'}
+                        </span>
+                    </div>
+
+                    <div class="question-content">
+                        <div class="question-text">${questionText}</div>
+                        ${question.image_url ? `<div class="question-image"><img src="${question.image_url}" alt="Soal ${index + 1}" onerror="this.style.display='none'"></div>` : ''}
+                    </div>
+
+                    <div class="answer-comparison">
+                        <div class="user-answer ${!isCorrect ? 'incorrect' : ''}">
+                            <div class="answer-label">Jawaban Anda:</div>
+                            <div class="answer-value">${getAnswerText(userAnswer, question)}</div>
+                        </div>
+
+                        ${!isCorrect ? `
+                        <div class="correct-answer">
+                            <div class="answer-label">Jawaban Benar:</div>
+                            <div class="answer-value">${getCorrectAnswerText(question)}</div>
+                        </div>
+                        ` : ''}
+                    </div>
+
+                    ${explanation ? `
+                    <div class="explanation">
+                        <div class="explanation-header">
+                            <i class="fas fa-lightbulb"></i>
+                            <span>Pembahasan</span>
+                        </div>
+                        <div class="explanation-content">${explanation}</div>
+                    </div>
+                    ` : ''}
+                `;
+
+                reviewContainer.appendChild(reviewItem);
+            });
+        };
+
+        // Helper function to get answer text
+        function getAnswerText(answer, question) {
+            if (!answer || answer === null || answer === '') return 'Tidak dijawab';
+
+            if (question.question_type === 'PGK MCMA') {
+                const selectedOptions = answer.split(',');
+                const optionTexts = selectedOptions.map(opt => {
+                    const letter = opt.trim();
+                    const optionKey = `option_${letter.toLowerCase()}`;
+                    return `${letter}. ${question[optionKey] || 'N/A'}`;
+                });
+                return optionTexts.join('<br>');
+            } else if (question.question_type === 'PGK Kategori') {
+                try {
+                    const selectedAnswers = typeof answer === 'string' ? JSON.parse(answer) : answer;
+                    const selectedStatements = Object.keys(selectedAnswers).filter(key => selectedAnswers[key] === true);
+                    if (question.category_options) {
+                        let statements = question.category_options;
+                        if (typeof statements === 'string') {
+                            statements = JSON.parse(statements);
+                        }
+                        const selectedTexts = selectedStatements.map(index => statements[parseInt(index)]).filter(Boolean);
+                        return selectedTexts.join('<br>') || 'Tidak ada yang dipilih';
+                    }
+                    return selectedStatements.join('<br>');
+                } catch (e) {
+                    return 'Format jawaban tidak valid';
+                }
+            } else {
+                const optionKey = `option_${answer.toLowerCase()}`;
+                const optionText = question[optionKey];
+                return optionText ? `${answer}. ${optionText}` : answer;
+            }
+        }
+
+        // Helper function to get correct answer text
+        function getCorrectAnswerText(question) {
+            if (question.question_type === 'PGK MCMA') {
+                const correctAnswers = Array.isArray(question.correct_answers)
+                    ? question.correct_answers
+                    : (question.correct_answers || '').split(',');
+                const optionTexts = correctAnswers.map(ans => {
+                    const letter = ans.trim();
+                    const optionKey = `option_${letter.toLowerCase()}`;
+                    return `${letter}. ${question[optionKey] || 'N/A'}`;
+                });
+                return optionTexts.join('<br>');
+            } else if (question.question_type === 'PGK Kategori') {
+                try {
+                    const correctMapping = typeof question.category_mapping === 'string'
+                        ? JSON.parse(question.category_mapping)
+                        : question.category_mapping;
+                    const correctStatements = Object.keys(correctMapping).filter(key => correctMapping[key] === true);
+                    if (question.category_options) {
+                        let statements = question.category_options;
+                        if (typeof statements === 'string') {
+                            statements = JSON.parse(statements);
+                        }
+                        const correctTexts = correctStatements.map(index => statements[parseInt(index)]).filter(Boolean);
+                        return correctTexts.join('<br>') || 'Tidak ada yang benar';
+                    }
+                    return correctStatements.join('<br>');
+                } catch (e) {
+                    return 'Format jawaban tidak valid';
+                }
+            } else {
+                const optionKey = `option_${question.correct_answer.toLowerCase()}`;
+                const optionText = question[optionKey];
+                return optionText ? `${question.correct_answer}. ${optionText}` : question.correct_answer;
+            }
+        }
+
+        // Make functions globally available
+        window.getAnswerText = getAnswerText;
+        window.getCorrectAnswerText = getCorrectAnswerText;
+    </script>
+</body>
+</html>

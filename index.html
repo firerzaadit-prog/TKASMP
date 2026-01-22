@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Masuk - EduLearn TKA SMP Platform</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script type="importmap">
+    {
+      "imports": {
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+    </script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+</head>
+<body>
+
+    <div class="login-section">
+        <div class="login-header">
+            <h1>Selamat Datang 👋</h1>
+            <p>Buat akun EduLearn untuk mulai belajar Tes Kemampuan Akademik (TKA).</p>
+        </div>
+
+        <form id="learningLoginForm">
+            <div class="form-group">
+                <label for="email">Email Mahasiswa/Siswa</label>
+                <div class="input-wrapper">
+                    <input type="email" id="email" placeholder="nama@institusi.ac.id" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Kata Sandi</label>
+                <div class="input-wrapper">
+                    <input type="password" id="password" placeholder="••••••••" required>
+                    <i class="fas fa-eye toggle-password" id="togglePassword"></i>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <label class="remember-me">
+                    <input type="checkbox"> Ingat Saya
+                </label>
+                <a href="lupakatasandi.html" class="forgot-password">Lupa Kata Sandi?</a>
+            </div>
+
+            <button type="submit" class="btn-submit">Masuk ke Dashboard</button>
+        </form>
+
+        <div class="divider">
+            <span>Atau masuk dengan</span>
+        </div>
+
+        <div class="social-login">
+            <button class="btn-social" id="google-signin-btn">
+                <img src="https://developers.google.com/identity/images/g-logo.png" alt="Google" width="20">
+                Google
+            </button>
+        </div>
+
+        <div class="register-link">
+            Belum memiliki akun? <a href="daftarsekarang.html">Daftar Sekarang</a>
+            <br><br>
+            <a href="indexadmin.html" style="color: #6b7280; font-size: 0.9rem;">Admin Panel</a>
+        </div>
+    </div>
+
+    <div class="banner-section">
+        <div class="banner-bg"></div>
+        <div class="banner-content">
+            <h2>Tes Kemampuan Akademik</h2>
+            <p>"TKA SMP adalah Tes Kemampuan Akademik untuk jenjang SMP, yaitu asesmen opsional dan tidak wajib yang bertujuan untuk mengukur pencapaian akademik siswa dalam mata pelajaran Bahasa Indonesia dan Matematika. Tes ini tidak menentukan kelulusan, melainkan berfungsi sebagai alat ukur yang memberikan data objektif untuk pemetaan pendidikan nasional dan dapat menjadi salah satu komponen dalam seleksi masuk jenjang selanjutnya. "</p>
+        </div>
+    </div>
+
+    <script>
+        // Toggle Password Visibility for Login
+        document.addEventListener('DOMContentLoaded', () => {
+            const toggleBtn = document.getElementById('togglePassword');
+            const passInput = document.getElementById('password');
+
+            if (toggleBtn && passInput) {
+                toggleBtn.addEventListener('click', () => {
+                    const type = passInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                    passInput.setAttribute('type', type);
+                    toggleBtn.classList.toggle('fa-eye-slash');
+                });
+            }
+        });
+    </script>
+
+    <script type="module" src="script.js"></script>
+
+</body>
+</html>

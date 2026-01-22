@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - EduLearn TKA SMP Platform</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="halamanpertama.css">
+    <script type="importmap">
+    {
+      "imports": {
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+    </script>
+    <!-- Chart.js for progress visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="dashboard-header">
+        <div class="header-left">
+            <h1 class="logo">EduLearn</h1>
+            <nav class="main-nav">
+                <a href="#" class="nav-link active">Dashboard</a>
+                <a href="materi.html" class="nav-link">Materi</a>
+                <a href="#" onclick="startExam(); return false;" class="nav-link">Simulasi</a>
+                <a href="#" class="nav-link">Progress</a>
+            </nav>
+        </div>
+        <div class="header-right">
+            <div class="user-profile">
+                <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBmaWxsPSIjNEY0NkU1Ii8+PHRleHQgeD0iMjAiIHk9IjI1IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTYiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5VPC90ZXh0Pjwvc3ZnPg==" alt="Profile" class="profile-avatar">
+                <span class="profile-name">Nama Siswa</span>
+                <i class="fas fa-chevron-down profile-dropdown-icon"></i>
+                <div class="profile-dropdown">
+                    <a href="#" class="dropdown-item" onclick="showRecentActivities()">
+                        <i class="fas fa-clock dropdown-icon"></i>
+                        Aktivitas terakhir
+                    </a>
+                    <a href="#" class="dropdown-item" onclick="showProfileModal()">
+                        <i class="fas fa-user-cog dropdown-icon"></i>
+                        Atur profil
+                    </a>
+                    <a href="#" class="dropdown-item" onclick="logout()">
+                        <i class="fas fa-sign-out-alt dropdown-icon"></i>
+                        logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="dashboard-main">
+        <!-- Hero Section -->
+        <section class="hero-section">
+            <div class="hero-content">
+                <div class="hero-text">
+                    <h1><i class="fas fa-graduation-cap"></i> Selamat Datang di EduLearn TKA SMP!</h1>
+                    <p>Platform pembelajaran interaktif untuk siswa SMP yang siap menghadapi Tes Kemampuan Akademik</p>
+                    <div class="hero-stats">
+                        <div class="hero-stat">
+                            <span class="hero-number">1000+</span>
+                            <span class="hero-label">Siswa Aktif</span>
+                        </div>
+                        <div class="hero-stat">
+                            <span class="hero-number">500+</span>
+                            <span class="hero-label">Materi</span>
+                        </div>
+                        <div class="hero-stat">
+                            <span class="hero-number">95%</span>
+                            <span class="hero-label">Kelulusan</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="hero-image">
+                    <div class="floating-elements">
+                        <div class="floating-book"><i class="fas fa-book"></i></div>
+                        <div class="floating-calculator"><i class="fas fa-calculator"></i></div>
+                        <div class="floating-trophy"><i class="fas fa-trophy"></i></div>
+                    </div>
+                    <img src="gambar siswa smp.jpg" alt="Siswa Belajar" class="hero-illustration">
+                </div>
+            </div>
+        </section>
+
+        <!-- Quick Actions -->
+        <section class="quick-actions">
+            <div class="action-card" onclick="window.location.href='materi.html'">
+                <div class="action-icon">
+                    <i class="fas fa-book-open"></i>
+                </div>
+                <h3>Pelajari Materi</h3>
+                <p>Akses materi pembelajaran interaktif</p>
+            </div>
+            <div class="action-card" onclick="startExam()">
+                <div class="action-icon">
+                    <i class="fas fa-brain"></i>
+                </div>
+                <h3>Kerjakan Simulasi</h3>
+                <p>Latihan soal TKA Matematika</p>
+            </div>
+            <div class="action-card" onclick="showProgressModal()">
+                <div class="action-icon">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <h3>Lihat Progress</h3>
+                <p>Pantau perkembangan belajar Anda</p>
+            </div>
+            <div class="action-card" onclick="showProfileModal()">
+                <div class="action-icon">
+                    <i class="fas fa-user-cog"></i>
+                </div>
+                <h3>Atur Profil</h3>
+                <p>Kelola informasi akun Anda</p>
+            </div>
+        </section>
+
+
+
+
+
+
+        <!-- Recent Activities -->
+        <section class="activities-section">
+            <h2><i class="fas fa-history"></i> Aktivitas Terbaru</h2>
+            <div class="activities-list">
+                <div class="activity-item">
+                    <div class="activity-icon">
+                        <i class="fas fa-book-open"></i>
+                    </div>
+                    <div class="activity-content">
+                        <h4>Menyelesaikan materi "Persamaan Linier"</h4>
+                        <p>2 jam yang lalu • Skor: 90/100</p>
+                    </div>
+                </div>
+                <div class="activity-item">
+                    <div class="activity-icon">
+                        <i class="fas fa-brain"></i>
+                    </div>
+                    <div class="activity-content">
+                        <h4>Mengerjakan simulasi TKA Bab Aljabar</h4>
+                        <p>5 jam yang lalu • Waktu: 45 menit</p>
+                    </div>
+                </div>
+                <div class="activity-item">
+                    <div class="activity-icon">
+                        <i class="fas fa-trophy"></i>
+                    </div>
+                    <div class="activity-content">
+                        <h4>Mencapai milestone "Aljabar Expert"</h4>
+                        <p>1 hari yang lalu • Poin: +500</p>
+                    </div>
+                </div>
+                <div class="activity-item" onclick="showProfileModal()">
+                    <div class="activity-icon">
+                        <i class="fas fa-user-cog"></i>
+                    </div>
+                    <div class="activity-content">
+                        <h4>Atur Profil</h4>
+                        <p>Kelola informasi akun Anda</p>
+                    </div>
+                </div>
+                <div class="activity-item" onclick="logout()">
+                    <div class="activity-icon">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </div>
+                    <div class="activity-content">
+                        <h4>Logout</h4>
+                        <p>Keluar dari akun Anda</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="dashboard-footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h4>EduLearn TKA SMP</h4>
+                <p>Platform pembelajaran digital terdepan untuk persiapan Tes Kemampuan Akademik siswa SMP.</p>
+                <div class="social-links">
+                    <a href="#" class="social-link"><i class="fab fa-facebook"></i></a>
+                    <a href="#" class="social-link"><i class="fab fa-twitter"></i></a>
+                    <a href="#" class="social-link"><i class="fab fa-instagram"></i></a>
+                    <a href="#" class="social-link"><i class="fab fa-youtube"></i></a>
+                </div>
+            </div>
+            <div class="footer-section">
+                <h4>Program Belajar</h4>
+                <ul>
+                    <li><a href="#">Matematika SMP</a></li>
+                    <li><a href="#">Simulasi TKA</a></li>
+                    <li><a href="#">Latihan Soal</a></li>
+                    <li><a href="#">Progress Tracking</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>Dukungan</h4>
+                <ul>
+                    <li><a href="#">Bantuan</a></li>
+                    <li><a href="#">FAQ</a></li>
+                    <li><a href="#">Kontak Kami</a></li>
+                    <li><a href="#">Privacy Policy</a></li>
+                </ul>
+            </div>
+            <div class="footer-section">
+                <h4>Statistik Platform</h4>
+                <div class="footer-stats">
+                    <div class="footer-stat">
+                        <span class="stat-number">50K+</span>
+                        <span class="stat-label">Siswa Terdaftar</span>
+                    </div>
+                    <div class="footer-stat">
+                        <span class="stat-number">1000+</span>
+                        <span class="stat-label">Materi Pembelajaran</span>
+                    </div>
+                    <div class="footer-stat">
+                        <span class="stat-number">95%</span>
+                        <span class="stat-label">Tingkat Kelulusan</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2024 EduLearn TKA SMP. All rights reserved. Made with <i class="fas fa-heart"></i> for education.</p>
+        </div>
+    </footer>
+
+    <!-- Progress Modal -->
+    <div id="progressModal" class="modal">
+        <div class="modal-content progress-modal">
+            <div class="modal-header">
+                <h2><i class="fas fa-chart-line"></i> Progress Pembelajaran</h2>
+                <span class="modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- Progress Overview -->
+                <div class="progress-overview">
+                    <div class="overview-stats">
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-book"></i>
+                            </div>
+                            <div class="stat-info">
+                                <div class="stat-number" id="totalMaterialsCompleted">0</div>
+                                <div class="stat-label">Materi Selesai</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-brain"></i>
+                            </div>
+                            <div class="stat-info">
+                                <div class="stat-number" id="totalQuestionsAnswered">0</div>
+                                <div class="stat-label">Soal Dijawab</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-trophy"></i>
+                            </div>
+                            <div class="stat-info">
+                                <div class="stat-number" id="averageScore">0%</div>
+                                <div class="stat-label">Nilai Rata-rata</div>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-clock"></i>
+                            </div>
+                            <div class="stat-info">
+                                <div class="stat-number" id="totalStudyTime">0j</div>
+                                <div class="stat-label">Waktu Belajar</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Subject Progress Chart -->
+                <div class="progress-section">
+                    <h3><i class="fas fa-chart-pie"></i> Progress per Mata Pelajaran</h3>
+                    <div class="chart-container">
+                        <canvas id="subjectProgressChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Detailed Subject Breakdown -->
+                <div class="progress-section">
+                    <h3><i class="fas fa-list"></i> Detail Progress</h3>
+                    <div class="subject-breakdown" id="subjectBreakdown">
+                        <!-- Subject details will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Performance Trends -->
+                <div class="progress-section">
+                    <h3><i class="fas fa-chart-line"></i> Tren Performa</h3>
+                    <div class="chart-container">
+                        <canvas id="performanceTrendChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Recommendations -->
+                <div class="progress-section">
+                    <h3><i class="fas fa-lightbulb"></i> Rekomendasi untuk Anda</h3>
+                    <div class="recommendations" id="recommendations">
+                        <!-- Recommendations will be populated here -->
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Profile Settings Modal -->
+    <div id="profileModal" class="modal">
+        <div class="modal-content profile-modal">
+            <div class="modal-header">
+                <h2><i class="fas fa-user-cog"></i> Pengaturan Profil</h2>
+                <span class="modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- Profile Picture Section -->
+                <div class="profile-section">
+                    <h3><i class="fas fa-camera"></i> Foto Profil</h3>
+                    <div class="profile-picture-section">
+                        <div class="current-avatar">
+                            <img id="currentProfileImage" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgZmlsbD0iIzRGNDZFNSIvPjx0ZXh0IHg9IjYwIiB5PSI3NSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjQ4IiBmaWxsPSJ3aGl0ZSIgdGV4dC1hbmNob3I9Im1pZGRsZSI+VTwvdGV4dD48L3N2Zz4=" alt="Current Avatar">
+                        </div>
+                        <div class="avatar-upload">
+                            <input type="file" id="avatarUpload" accept="image/*" style="display: none;">
+                            <button class="btn-secondary" onclick="document.getElementById('avatarUpload').click()">
+                                <i class="fas fa-upload"></i> Upload Foto Baru
+                            </button>
+                            <p class="upload-info">Format: JPG, PNG, GIF. Max: 5MB</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Personal Information -->
+                <div class="profile-section">
+                    <h3><i class="fas fa-user"></i> Informasi Pribadi</h3>
+                    <form id="profileForm" class="profile-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="profileFullName">Nama Lengkap</label>
+                                <input type="text" id="profileFullName" placeholder="Masukkan nama lengkap">
+                            </div>
+                            <div class="form-group">
+                                <label for="profileEmail">Email</label>
+                                <input type="email" id="profileEmail" placeholder="Masukkan email" readonly>
+                                <small class="form-help">Email tidak dapat diubah</small>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="profilePhone">Nomor Telepon (Opsional)</label>
+                                <input type="tel" id="profilePhone" placeholder="Masukkan nomor telepon">
+                            </div>
+                            <div class="form-group">
+                                <label for="profileSchool">Asal Sekolah</label>
+                                <input type="text" id="profileSchool" placeholder="Masukkan nama sekolah">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="profileBio">Bio Singkat (Opsional)</label>
+                            <textarea id="profileBio" rows="3" placeholder="Ceritakan sedikit tentang diri Anda..."></textarea>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn-primary">
+                                <i class="fas fa-save"></i> Simpan Perubahan
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Account Settings -->
+                <div class="profile-section">
+                    <h3><i class="fas fa-shield-alt"></i> Pengaturan Akun</h3>
+                    <div class="account-settings">
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <h4>Ubah Kata Sandi</h4>
+                                <p>Perbarui kata sandi akun Anda untuk keamanan</p>
+                            </div>
+                            <button class="btn-secondary" onclick="showPasswordChangeModal()">
+                                <i class="fas fa-key"></i> Ubah
+                            </button>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <h4>Notifikasi Email</h4>
+                                <p>Terima pembaruan tentang materi baru dan hasil ujian</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="emailNotifications" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <h4>Mode Gelap</h4>
+                                <p>Aktifkan tampilan gelap untuk kenyamanan mata</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="darkMode">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Account Statistics -->
+                <div class="profile-section">
+                    <h3><i class="fas fa-chart-bar"></i> Statistik Akun</h3>
+                    <div class="account-stats">
+                        <div class="stat-row">
+                            <span class="stat-label">Bergabung Sejak:</span>
+                            <span class="stat-value" id="joinDate">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Total Waktu Belajar:</span>
+                            <span class="stat-value" id="totalStudyTimeStat">0 jam</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Materi Diselesaikan:</span>
+                            <span class="stat-value" id="materialsCompletedStat">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Ujian Dikerjakan:</span>
+                            <span class="stat-value" id="examsTakenStat">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Rata-rata Nilai:</span>
+                            <span class="stat-value" id="averageScoreStat">0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Danger Zone -->
+                <div class="profile-section danger-zone">
+                    <h3><i class="fas fa-exclamation-triangle"></i> Zona Bahaya</h3>
+                    <div class="danger-actions">
+                        <div class="danger-item">
+                            <div class="danger-info">
+                                <h4>Hapus Akun</h4>
+                                <p>Tindakan ini tidak dapat dibatalkan. Semua data Anda akan hilang permanen.</p>
+                            </div>
+                            <button class="btn-danger" onclick="showDeleteAccountModal()">
+                                <i class="fas fa-trash"></i> Hapus Akun
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Change Modal -->
+    <div id="passwordModal" class="modal">
+        <div class="modal-content small-modal">
+            <div class="modal-header">
+                <h2><i class="fas fa-key"></i> Ubah Kata Sandi</h2>
+                <span class="modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="passwordForm" class="profile-form">
+                    <div class="form-group">
+                        <label for="currentPassword">Kata Sandi Lama</label>
+                        <input type="password" id="currentPassword" required placeholder="Masukkan kata sandi lama">
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">Kata Sandi Baru</label>
+                        <input type="password" id="newPassword" required placeholder="Minimal 8 karakter">
+                        <small class="form-help">Kata sandi harus minimal 8 karakter dengan kombinasi huruf dan angka</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">Konfirmasi Kata Sandi Baru</label>
+                        <input type="password" id="confirmPassword" required placeholder="Ulangi kata sandi baru">
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" onclick="hidePasswordModal()">Batal</button>
+                        <button type="submit" class="btn-primary">
+                            <i class="fas fa-save"></i> Ubah Kata Sandi
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Account Modal -->
+    <div id="deleteAccountModal" class="modal">
+        <div class="modal-content small-modal">
+            <div class="modal-header danger-header">
+                <h2><i class="fas fa-exclamation-triangle"></i> Hapus Akun</h2>
+                <span class="modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="danger-warning">
+                    <div class="warning-icon">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <h3>Apakah Anda yakin ingin menghapus akun?</h3>
+                    <p>Tindakan ini <strong>tidak dapat dibatalkan</strong>. Semua data berikut akan dihapus permanen:</p>
+                    <ul class="danger-list">
+                        <li>Profil dan informasi pribadi</li>
+                        <li>Riwayat ujian dan nilai</li>
+                        <li>Progress pembelajaran</li>
+                        <li>Materi yang telah disimpan</li>
+                        <li>Semua statistik dan pencapaian</li>
+                    </ul>
+                    <div class="confirmation-input">
+                        <label for="deleteConfirmation">Ketik "HAPUS AKUN" untuk konfirmasi:</label>
+                        <input type="text" id="deleteConfirmation" placeholder="HAPUS AKUN">
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="hideDeleteAccountModal()">Batal</button>
+                    <button type="button" class="btn-danger" id="confirmDeleteBtn" disabled onclick="deleteAccount()">
+                        <i class="fas fa-trash"></i> Ya, Hapus Akun Saya
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="halamanpertama.js"></script>
+</body>
+</html>

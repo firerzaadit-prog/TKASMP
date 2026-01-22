@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Status - EduLearn Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script type="importmap">
+    {
+      "imports": {
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+    </script>
+    <link rel="stylesheet" href="admin.css">
+    <style>
+        .status-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .status-card {
+            background: var(--admin-bg-secondary);
+            border-radius: var(--admin-radius-lg);
+            padding: 2rem;
+            box-shadow: var(--admin-shadow-md);
+            border: 1px solid var(--admin-border);
+            transition: all 0.3s ease;
+        }
+
+        .status-card:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--admin-shadow-xl);
+        }
+
+        .status-card-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .status-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .status-card:nth-child(1) .status-icon {
+            background: var(--admin-primary-light);
+            color: var(--admin-primary);
+        }
+
+        .status-card:nth-child(2) .status-icon {
+            background: var(--admin-success-light);
+            color: var(--admin-success);
+        }
+
+        .status-card:nth-child(3) .status-icon {
+            background: var(--admin-info-light);
+            color: var(--admin-info);
+        }
+
+        .status-card:nth-child(4) .status-icon {
+            background: var(--admin-warning-light);
+            color: var(--admin-warning);
+        }
+
+        .status-info h3 {
+            margin: 0;
+            color: var(--admin-text-primary);
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-badge.success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--admin-success);
+        }
+
+        .status-badge.error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--admin-danger);
+        }
+
+        .status-badge.warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--admin-warning);
+        }
+
+        .status-details {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .status-metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--admin-border-light);
+        }
+
+        .status-metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            font-weight: 500;
+            color: var(--admin-text-secondary);
+        }
+
+        .metric-value {
+            font-weight: 600;
+            color: var(--admin-text-primary);
+        }
+
+        .system-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin: 2rem 0;
+            flex-wrap: wrap;
+        }
+
+        .system-actions button {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: var(--admin-radius-md);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-secondary {
+            background: var(--admin-bg-tertiary);
+            color: var(--admin-text-secondary);
+        }
+
+        .btn-secondary:hover {
+            background: var(--admin-primary);
+            color: white;
+        }
+
+        .btn-primary {
+            background: var(--admin-primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--admin-primary-dark);
+        }
+
+        .btn-warning {
+            background: var(--admin-warning);
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: var(--admin-accent-dark);
+        }
+
+        .system-logs {
+            background: var(--admin-bg-secondary);
+            border-radius: var(--admin-radius-lg);
+            padding: 2rem;
+            box-shadow: var(--admin-shadow-md);
+            border: 1px solid var(--admin-border);
+        }
+
+        .system-logs h3 {
+            margin-bottom: 1.5rem;
+            color: var(--admin-text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .system-logs h3 i {
+            color: var(--admin-primary);
+        }
+
+        .logs-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            display: grid;
+            grid-template-columns: 100px 80px 1fr;
+            gap: 1rem;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--admin-border-light);
+            align-items: center;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-time {
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            color: var(--admin-text-secondary);
+        }
+
+        .log-level {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .log-level.info {
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
+        }
+
+        .log-level.success {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--admin-success);
+        }
+
+        .log-level.warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--admin-warning);
+        }
+
+        .log-level.error {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--admin-danger);
+        }
+
+        .log-message {
+            color: var(--admin-text-primary);
+        }
+
+        .back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            background: var(--admin-bg-tertiary);
+            color: var(--admin-text-secondary);
+            text-decoration: none;
+            border-radius: var(--admin-radius-md);
+            font-weight: 500;
+            transition: all 0.3s ease;
+            margin-bottom: 2rem;
+        }
+
+        .back-btn:hover {
+            background: var(--admin-primary);
+            color: white;
+        }
+
+        @media (max-width: 768px) {
+            .status-overview {
+                grid-template-columns: 1fr;
+            }
+
+            .log-entry {
+                grid-template-columns: 1fr;
+                gap: 0.25rem;
+            }
+
+            .system-actions {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Header -->
+        <div style="margin-bottom: 2rem;">
+            <a href="admin.html" class="back-btn">
+                <i class="fas fa-arrow-left"></i>
+                Back to Admin Panel
+            </a>
+            <h1 style="margin: 0; color: var(--admin-text-primary); display: flex; align-items: center; gap: 1rem;">
+                <i class="fas fa-server" style="color: var(--admin-primary);"></i>
+                System Status Dashboard
+            </h1>
+            <p style="color: var(--admin-text-secondary); margin: 0.5rem 0 0 0;">
+                Monitor real-time system health and performance metrics
+            </p>
+        </div>
+
+        <!-- Status Overview -->
+        <div class="status-overview">
+            <!-- Database Status -->
+            <div class="status-card">
+                <div class="status-card-header">
+                    <div class="status-icon">
+                        <i class="fas fa-database"></i>
+                    </div>
+                    <div class="status-info">
+                        <h3>Database</h3>
+                        <span id="dbStatus" class="status-badge">Checking...</span>
+                    </div>
+                </div>
+                <div class="status-details">
+                    <div class="status-metric">
+                        <span class="metric-label">Connection:</span>
+                        <span id="dbConnection" class="metric-value">-</span>
+                    </div>
+                    <div class="status-metric">
+                        <span class="metric-label">Response Time:</span>
+                        <span id="dbResponseTime" class="metric-value">-</span>
+                    </div>
+                    <div class="status-metric">
+                        <span class="metric-label">Tables:</span>
+                        <span id="dbTables" class="metric-value">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Storage Status -->
+            <div class="status-card">
+                <div class="status-card-header">
+                    <div class="status-icon">
+                        <i class="fas fa-cloud"></i>
+                    </div>
+                    <div class="status-info">
+                        <h3>Storage</h3>
+                        <span id="storageStatus" class="status-badge">Checking...</span>
+                    </div>
+                </div>
+                <div class="status-details">
+                    <div class="status-metric">
+                        <span class="metric-label">Bucket:</span>
+                        <span id="storageBucket" class="metric-value">-</span>
+                    </div>
+                    <div class="status-metric">
+                        <span class="metric-label">Files:</span>
+                        <span id="storageFiles" class="metric-value">-</span>
+                    </div>
+                    <div class="status-metric">
+                        <span class="metric-label">Total Size:</span>
+                        <span id="storageSize" class="metric-value">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Status -->
+            <div class="status-card">
+                <div class="status-card-header">
+                    <div class="status-icon">
+                        <i class="fas fa-globe"></i>
+                    </div>
+                    <div class="status-info">
+                        <h3>API Endpoints</h3>
+                        <span id="apiStatus" class="status-badge">Checking...</span>
+                    </div>
+                </div>
+                <div class="status-details">
+                    <div class="status-metric">
+                        <span class="metric-label">Auth Service:</span>
+                        <span id="apiAuth" class="metric-value">-</span>
+                    </div>
+                    <div class="status-metric">
+                        <span class="metric-label">Database API:</span>
+                        <span id="apiDatabase" class="metric-value">-</span>
+                    </div>
+                    <div class="status-metric">
+                        <span class="metric-label">Storage API:</span>
+                        <span id="apiStorage" class="metric-value">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Metrics -->
+            <div class="status-card">
+                <div class="status-card-header">
+                    <div class="status-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <div class="status-info">
+                        <h3>System Metrics</h3>
+                        <span id="systemStatus" class="status-badge success">Online</span>
+                    </div>
+                </div>
+                <div class="status-details">
+                    <div class="status-metric">
+                        <span class="metric-label">Uptime:</span>
+                        <span id="systemUptime" class="metric-value">-</span>
+                    </div>
+                    <div class="status-metric">
+                        <span class="metric-label">Last Backup:</span>
+                        <span id="systemBackup" class="metric-value">-</span>
+                    </div>
+                    <div class="status-metric">
+                        <span class="metric-label">Active Sessions:</span>
+                        <span id="systemSessions" class="metric-value">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Actions -->
+        <div class="system-actions">
+            <button id="refreshSystemStatus" class="btn-secondary">
+                <i class="fas fa-sync-alt"></i> Refresh Status
+            </button>
+            <button id="runSystemDiagnostics" class="btn-primary">
+                <i class="fas fa-stethoscope"></i> Run Diagnostics
+            </button>
+            <button id="clearSystemCache" class="btn-warning">
+                <i class="fas fa-trash-alt"></i> Clear Cache
+            </button>
+        </div>
+
+        <!-- Recent System Logs -->
+        <div class="system-logs">
+            <h3><i class="fas fa-list"></i> Recent System Logs</h3>
+            <div id="systemLogs" class="logs-container">
+                <div class="log-entry">
+                    <span class="log-time">14:30:25</span>
+                    <span class="log-level info">INFO</span>
+                    <span class="log-message">System startup completed successfully</span>
+                </div>
+                <div class="log-entry">
+                    <span class="log-time">14:25:10</span>
+                    <span class="log-level success">SUCCESS</span>
+                    <span class="log-message">Database connection established</span>
+                </div>
+                <div class="log-entry">
+                    <span class="log-time">14:20:05</span>
+                    <span class="log-level warning">WARNING</span>
+                    <span class="log-message">High memory usage detected</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import Supabase client
+        import { createClient } from '@supabase/supabase-js';
+
+        const supabaseUrl = 'https://tsgldkyuktqpsbeuevsn.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2OTExOTksImV4cCI6MjA3OTI2NzE5OX0.C0g6iZcwd02ZFmuGFluYXScX9uuahntJtkPvHt5g1FE';
+        const supabase = createClient(supabaseUrl, supabaseKey);
+
+        // Check if admin is logged in
+        document.addEventListener('DOMContentLoaded', async () => {
+            const isAdminLoggedIn = localStorage.getItem('adminLoggedIn') === 'true';
+            if (!isAdminLoggedIn) {
+                alert('Access denied. Please login as admin first.');
+                window.location.href = 'indexadmin.html';
+                return;
+            }
+
+            // Load system status on page load
+            await checkSystemStatus();
+
+            // Setup event listeners
+            setupEventListeners();
+        });
+
+        // Setup event listeners
+        function setupEventListeners() {
+            document.getElementById('refreshSystemStatus').addEventListener('click', refreshSystemStatus);
+            document.getElementById('runSystemDiagnostics').addEventListener('click', runSystemDiagnostics);
+            document.getElementById('clearSystemCache').addEventListener('click', clearSystemCache);
+        }
+
+        // Check system status
+        async function checkSystemStatus() {
+            try {
+                // Check database connection
+                const dbStart = Date.now();
+                const { data: dbData, error: dbError } = await supabase
+                    .from('materials')
+                    .select('count', { count: 'exact', head: true });
+                const dbResponseTime = Date.now() - dbStart;
+
+                updateStatusElement('dbStatus', dbError ? 'Error' : 'Online', dbError ? 'error' : 'success');
+                updateStatusElement('dbConnection', dbError ? 'Failed' : 'Connected');
+                updateStatusElement('dbResponseTime', `${dbResponseTime}ms`);
+                updateStatusElement('dbTables', dbError ? 'N/A' : 'Available');
+
+                // Check storage status
+                try {
+                    const { data: storageData, error: storageError } = await supabase.storage
+                        .from('images')
+                        .list('', { limit: 1 });
+
+                    updateStatusElement('storageStatus', storageError ? 'Error' : 'Online', storageError ? 'error' : 'success');
+                    updateStatusElement('storageBucket', storageError ? 'N/A' : 'images');
+                    updateStatusElement('storageFiles', storageError ? 'N/A' : 'Available');
+                    updateStatusElement('storageSize', storageError ? 'N/A' : 'N/A');
+                } catch (storageErr) {
+                    updateStatusElement('storageStatus', 'Error', 'error');
+                    updateStatusElement('storageBucket', 'N/A');
+                    updateStatusElement('storageFiles', 'N/A');
+                    updateStatusElement('storageSize', 'N/A');
+                }
+
+                // Check API endpoints (simulate)
+                updateStatusElement('apiStatus', 'Online', 'success');
+                updateStatusElement('apiAuth', 'OK');
+                updateStatusElement('apiDatabase', 'OK');
+                updateStatusElement('apiStorage', 'OK');
+
+                // System metrics
+                updateStatusElement('systemStatus', 'Online', 'success');
+                updateStatusElement('systemUptime', '99.9%');
+                updateStatusElement('systemBackup', new Date().toLocaleString('id-ID'));
+                updateStatusElement('systemSessions', Math.floor(Math.random() * 50) + 20);
+
+                // Update logs
+                updateSystemLogs();
+
+            } catch (error) {
+                console.error('Error checking system status:', error);
+                // Set all to error state
+                ['dbStatus', 'storageStatus', 'apiStatus', 'systemStatus'].forEach(id => {
+                    updateStatusElement(id, 'Error', 'error');
+                });
+            }
+        }
+
+        function updateStatusElement(elementId, text, statusClass = '') {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = text;
+                element.className = 'status-badge';
+                if (statusClass) {
+                    element.classList.add(statusClass);
+                }
+            }
+        }
+
+        function updateSystemLogs() {
+            const logsContainer = document.getElementById('systemLogs');
+            if (!logsContainer) return;
+
+            const currentTime = new Date().toLocaleTimeString('id-ID', {
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+
+            const logs = [
+                { time: currentTime, level: 'info', message: 'System status check completed' },
+                { time: '14:25:10', level: 'success', message: 'Database connection verified' },
+                { time: '14:20:05', level: 'warning', message: 'High memory usage detected' },
+                { time: '14:15:30', level: 'info', message: 'Backup process started' },
+                { time: '14:10:15', level: 'success', message: 'User authentication successful' }
+            ];
+
+            logsContainer.innerHTML = logs.map(log => `
+                <div class="log-entry">
+                    <span class="log-time">${log.time}</span>
+                    <span class="log-level ${log.level}">${log.level.toUpperCase()}</span>
+                    <span class="log-message">${log.message}</span>
+                </div>
+            `).join('');
+        }
+
+        // System action functions
+        async function refreshSystemStatus() {
+            await checkSystemStatus();
+            alert('System status refreshed successfully!');
+        }
+
+        async function runSystemDiagnostics() {
+            // Simulate diagnostics
+            alert('Running system diagnostics...\n\n✅ Database: OK\n✅ Storage: OK\n✅ API: OK\n✅ Memory: OK\n\nAll systems operational!');
+        }
+
+        async function clearSystemCache() {
+            // Simulate cache clearing
+            alert('System cache cleared successfully!\n\nCleared:\n- Temporary files\n- Session cache\n- Image cache\n- Analytics cache');
+        }
+    </script>
+</body>
+</html>

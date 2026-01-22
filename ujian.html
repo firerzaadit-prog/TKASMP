@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ujian TKA Matematika - EduLearn</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script type="importmap">
+    {
+      "imports": {
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+    </script>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="ujian.css">
+    <!-- KaTeX for LaTeX rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+</head>
+<body>
+    <div class="exam-wrapper">
+        <div class="exam-container full-page">
+            <!-- Main Content -->
+            <div class="exam-main">
+                <!-- Full Page Header -->
+                <div class="full-page-header">
+                    <div class="header-left">
+                        <div class="header-title">
+                            <h3><i class="fas fa-tasks"></i> Ujian TKA Matematika</h3>
+                        </div>
+                    </div>
+                    <div class="header-center">
+                        <!-- Progress -->
+                        <div class="progress-section">
+                            <div class="progress-label">
+                                <span>Progress</span>
+                                <span id="progressText">0%</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <!-- Timer -->
+                        <div id="timerDisplay" class="timer-display">00:00:00</div>
+                    </div>
+                    <div class="header-right">
+                        <!-- Space for future elements -->
+                    </div>
+                </div>
+
+                <!-- Exam Header -->
+                <div class="exam-header">
+                    <h1><i class="fas fa-graduation-cap"></i> Ujian TKA Matematika <button id="navToggleBtn" class="nav-toggle-btn"><i class="fas fa-list-ol"></i></button></h1>
+                    <p>SMP - Tes Kemampuan Akademik</p>
+                </div>
+
+                <!-- Question Navigation -->
+                <div class="question-navigation-section">
+                    <div class="question-nav-title">
+                        <span><i class="fas fa-list-ol"></i> Navigasi Soal</span>
+                        <button class="nav-close-btn" onclick="document.querySelector('.question-navigation-section').classList.remove('show')">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div id="questionNav" class="question-nav">
+                        <!-- Question navigation buttons will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Question Card -->
+                <div id="questionCard" class="question-card">
+                    <!-- Question content will be populated here -->
+                </div>
+
+                <!-- Navigation Buttons -->
+                <div id="navigationButtons" class="navigation-buttons">
+                    <button id="prevBtn" class="nav-btn prev" disabled>
+                        <i class="fas fa-chevron-left"></i> Sebelumnya
+                    </button>
+
+                    <div id="questionCounter" class="question-counter">Soal 1 dari 10</div>
+
+                    <button id="nextBtn" class="nav-btn next">
+                        Selanjutnya <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+
+
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="ujian.js"></script>
+
+    <script>
+        // Initialize KaTeX auto-render for LaTeX support
+        document.addEventListener('DOMContentLoaded', function() {
+            // Function to render LaTeX in a specific element
+            function renderLatexInElement(element) {
+                if (window.renderMathInElement && element) {
+                    try {
+                        renderMathInElement(element, {
+                            delimiters: [
+                                {left: "$$", right: "$$", display: true},
+                                {left: "\\[", right: "\\]", display: true},
+                                {left: "$", right: "$", display: false},
+                                {left: "\\(", right: "\\)", display: false}
+                            ],
+                            throwOnError: false
+                        });
+                    } catch (error) {
+                        console.warn('KaTeX rendering error:', error);
+                    }
+                }
+            }
+
+            // Initial render for existing content
+            renderLatexInElement(document.body);
+
+            // Re-render when question changes
+            const questionCard = document.getElementById('questionCard');
+            if (questionCard) {
+                // Create a mutation observer to watch for content changes
+                const observer = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(mutation) {
+                        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                            // Re-render LaTeX in the question card
+                            renderLatexInElement(questionCard);
+                        }
+                    });
+                });
+
+                observer.observe(questionCard, {
+                    childList: true,
+                    subtree: true
+                });
+            }
+
+            // Also render when options change
+            const optionsContainer = document.querySelector('.options');
+            if (optionsContainer) {
+                const optionsObserver = new MutationObserver(function(mutations) {
+                    mutations.forEach(function(mutation) {
+                        if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                            renderLatexInElement(optionsContainer);
+                        }
+                    });
+                });
+
+                optionsObserver.observe(optionsContainer, {
+                    childList: true,
+                    subtree: true
+                });
+            }
+        });
+
+        // Answer Review Functionality
+        window.showAnswerReview = function(questions, userAnswers) {
+            const reviewContainer = document.getElementById('answerReview');
+            if (!reviewContainer) return;
+
+            reviewContainer.innerHTML = '';
+
+            questions.forEach((question, index) => {
+                const userAnswer = userAnswers[index];
+                const correctAnswer = question.correct_answer;
+                const explanation = question.explanation;
+
+                // Determine if answer is correct based on question type
+                let isCorrect = false;
+                if (question.question_type === 'PGK MCMA') {
+                    // For MCMA, check if selected answers match correct answers
+                    const selectedAnswers = (userAnswer || '').split(',').sort();
+                    const correctAnswers = Array.isArray(question.correct_answers)
+                        ? question.correct_answers.sort()
+                        : (question.correct_answers || '').split(',').sort();
+                    isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
+                } else if (question.question_type === 'PGK Kategori') {
+                    // For category questions, check mapping
+                    const selectedAnswers = typeof userAnswer === 'string' ? JSON.parse(userAnswer) : userAnswer;
+                    const correctMapping = typeof question.category_mapping === 'string'
+                        ? JSON.parse(question.category_mapping)
+                        : question.category_mapping;
+
+                    let allCorrect = true;
+                    for (const [stmtIndex, isTrue] of Object.entries(selectedAnswers || {})) {
+                        if (correctMapping[stmtIndex] !== isTrue) {
+                            allCorrect = false;
+                            break;
+                        }
+                    }
+                    for (const [stmtIndex, shouldBeTrue] of Object.entries(correctMapping || {})) {
+                        if (shouldBeTrue && selectedAnswers[stmtIndex] !== true) {
+                            allCorrect = false;
+                            break;
+                        }
+                    }
+                    isCorrect = allCorrect;
+                } else {
+                    // For regular questions
+                    isCorrect = userAnswer === correctAnswer;
+                }
+
+                const reviewItem = document.createElement('div');
+                reviewItem.className = `answer-review-item ${isCorrect ? 'correct' : 'incorrect'}`;
+
+                // Get question text (handle composite questions)
+                let questionText = '';
+                if (question.question_sections && Array.isArray(question.question_sections)) {
+                    questionText = question.question_sections
+                        .sort((a, b) => (a.order || 0) - (b.order || 0))
+                        .map(section => section.type === 'text' ? section.content : '')
+                        .join(' ');
+                } else {
+                    questionText = question.question_text || '';
+                }
+
+                reviewItem.innerHTML = `
+                    <div class="answer-review-header">
+                        <span class="question-number-review">Soal ${index + 1}</span>
+                        <span class="answer-status ${isCorrect ? 'correct' : 'incorrect'}">
+                            ${isCorrect ? 'Benar' : 'Salah'}
+                        </span>
+                    </div>
+
+                    <div class="question-text" style="font-size: 0.9rem; margin-bottom: 0.5rem; color: #4b5563;">
+                        ${questionText}
+                    </div>
+
+                    <div class="user-answer ${!isCorrect ? 'incorrect' : ''}">
+                        <strong>Jawaban Anda:</strong> ${getAnswerText(userAnswer, question)}
+                    </div>
+
+                    ${!isCorrect ? `
+                    <div class="correct-answer">
+                        <strong>Jawaban Benar:</strong> ${getCorrectAnswerText(question)}
+                    </div>
+                    ` : ''}
+
+                    ${explanation ? `
+                    <div class="explanation">
+                        <h4><i class="fas fa-lightbulb"></i> Pembahasan:</h4>
+                        <div>${explanation}</div>
+                    </div>
+                    ` : ''}
+                `;
+
+                reviewContainer.appendChild(reviewItem);
+
+                // Re-render LaTeX in the review item
+                if (window.renderMathInElement) {
+                    renderMathInElement(reviewItem, {
+                        delimiters: [
+                            {left: "$$", right: "$$", display: true},
+                            {left: "\\[", right: "\\]", display: true},
+                            {left: "$", right: "$", display: false},
+                            {left: "\\(", right: "\\)", display: false}
+                        ],
+                        throwOnError: false
+                    });
+                }
+            });
+        };
+
+        // Helper function to get answer text
+        function getAnswerText(answer, question) {
+            if (!answer || answer === null || answer === '') return 'Tidak dijawab';
+
+            if (question.question_type === 'PGK MCMA') {
+                // For MCMA, show selected options
+                const selectedOptions = answer.split(',');
+                const optionTexts = selectedOptions.map(opt => {
+                    const letter = opt.trim();
+                    const optionKey = `option_${letter.toLowerCase()}`;
+                    return `${letter}. ${question[optionKey] || 'N/A'}`;
+                });
+                return optionTexts.join(', ');
+            } else if (question.question_type === 'PGK Kategori') {
+                // For category questions, show selected statements
+                try {
+                    const selectedAnswers = typeof answer === 'string' ? JSON.parse(answer) : answer;
+                    const selectedStatements = Object.keys(selectedAnswers || {}).filter(key => selectedAnswers[key] === true);
+                    return selectedStatements.length > 0 ? selectedStatements.join(', ') : 'Tidak ada yang dipilih';
+                } catch (e) {
+                    return 'Format jawaban tidak valid';
+                }
+            } else {
+                // For regular multiple choice
+                const optionKey = `option_${answer.toLowerCase()}`;
+                const optionText = question[optionKey];
+                return optionText ? `${answer}. ${optionText}` : answer;
+            }
+        }
+
+        // Helper function to get correct answer text
+        function getCorrectAnswerText(question) {
+            if (question.question_type === 'PGK MCMA') {
+                const correctAnswers = Array.isArray(question.correct_answers)
+                    ? question.correct_answers
+                    : (question.correct_answers || '').split(',');
+                const optionTexts = correctAnswers.map(ans => {
+                    const letter = ans.trim();
+                    const optionKey = `option_${letter.toLowerCase()}`;
+                    return `${letter}. ${question[optionKey] || 'N/A'}`;
+                });
+                return optionTexts.join(', ');
+            } else if (question.question_type === 'PGK Kategori') {
+                // For category questions, show correct statements
+                try {
+                    const correctMapping = typeof question.category_mapping === 'string'
+                        ? JSON.parse(question.category_mapping)
+                        : question.category_mapping;
+                    const correctStatements = Object.keys(correctMapping || {}).filter(key => correctMapping[key] === true);
+                    return correctStatements.length > 0 ? correctStatements.join(', ') : 'Tidak ada yang benar';
+                } catch (e) {
+                    return 'Format jawaban tidak valid';
+                }
+            } else {
+                // For regular multiple choice
+                const optionKey = `option_${question.correct_answer.toLowerCase()}`;
+                const optionText = question[optionKey];
+                return optionText ? `${question.correct_answer}. ${optionText}` : question.correct_answer;
+            }
+        }
+
+        // Make functions globally available
+        window.getAnswerText = getAnswerText;
+        window.getCorrectAnswerText = getCorrectAnswerText;
+
+        // Answer Feedback Functionality
+        window.showAnswerFeedback = function(selectedOption, correctAnswer, questionData) {
+            // Remove previous feedback
+            document.querySelectorAll('.option').forEach(opt => {
+                opt.classList.remove('correct-highlight', 'incorrect-highlight', 'selected-correct', 'selected-incorrect');
+            });
+
+            const options = document.querySelectorAll('.option');
+            const selectedIndex = Array.from(options).indexOf(selectedOption);
+            const correctIndex = parseInt(correctAnswer) - 1;
+
+            // Highlight correct answer
+            if (options[correctIndex]) {
+                options[correctIndex].classList.add('correct-highlight');
+            }
+
+            // Highlight selected answer
+            if (selectedIndex === correctIndex) {
+                selectedOption.classList.add('selected-correct');
+                showFeedbackMessage('Benar! Jawaban Anda tepat.', 'success');
+            } else {
+                selectedOption.classList.add('selected-incorrect');
+                showFeedbackMessage('Salah. Jawaban yang benar sudah ditandai.', 'error');
+            }
+
+            // Disable further selection
+            options.forEach(opt => {
+                opt.style.pointerEvents = 'none';
+                opt.style.opacity = '0.7';
+            });
+
+            // Re-enable after 3 seconds
+            setTimeout(() => {
+                options.forEach(opt => {
+                    opt.style.pointerEvents = 'auto';
+                    opt.style.opacity = '1';
+                    opt.classList.remove('correct-highlight', 'selected-correct', 'selected-incorrect');
+                });
+                hideFeedbackMessage();
+            }, 3000);
+        };
+
+        function showFeedbackMessage(message, type) {
+            // Remove existing message
+            const existing = document.getElementById('feedback-message');
+            if (existing) existing.remove();
+
+            const messageDiv = document.createElement('div');
+            messageDiv.id = 'feedback-message';
+            messageDiv.className = `feedback-message ${type}`;
+            messageDiv.innerHTML = `
+                <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-times-circle'}"></i>
+                ${message}
+            `;
+
+            const questionCard = document.getElementById('questionCard');
+            if (questionCard) {
+                questionCard.appendChild(messageDiv);
+            }
+        }
+
+        function hideFeedbackMessage() {
+            const message = document.getElementById('feedback-message');
+            if (message) {
+                message.remove();
+            }
+        }
+    </script>
+</body>
+</html>
