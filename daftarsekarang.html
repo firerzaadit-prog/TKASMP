@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daftar - EduLearn TKA SMP Platform</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script type="importmap">
+    {
+      "imports": {
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+    </script>
+    <link rel="stylesheet" href="style.css">
+</head>
+</head>
+<body>
+
+    <div class="login-section">
+        <div class="login-header"> 
+            <h1>Daftar Akun Baru 👋</h1>
+            <p>Buat akun EduLearn untuk mulai belajar Tes Kemampuan Akademik (TKA).</p>
+        </div>
+
+        <form id="registerForm">
+            <div class="form-group">
+                <label for="fullName">Nama Lengkap</label>
+                <div class="input-wrapper">
+                    <input type="text" id="fullName" placeholder="Nama Lengkap Anda" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="regEmail">Email Mahasiswa/Siswa</label>
+                <div class="input-wrapper">
+                    <input type="email" id="regEmail" placeholder="nama@institusi.ac.id" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="regPassword">Kata Sandi</label>
+                <div class="input-wrapper">
+                    <input type="password" id="regPassword" placeholder="••••••••" required>
+                    <i class="fas fa-eye toggle-password" id="toggleRegPassword"></i>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="confirmPassword">Konfirmasi Kata Sandi</label>
+                <div class="input-wrapper">
+                    <input type="password" id="confirmPassword" placeholder="••••••••" required>
+                    <i class="fas fa-eye toggle-password" id="toggleConfirmPassword"></i>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-submit">Daftar Sekarang</button>
+        </form>
+
+        <div class="divider">
+            <span>Atau daftar dengan</span>
+        </div>
+
+        <div class="social-login">
+            <button id="google-signin-btn" class="btn-google">
+                <img src="https://developers.google.com/identity/images/g-logo.png" alt="Google" width="20">
+                Daftar dengan Google
+            </button>
+        </div>
+
+        <div class="register-link">
+            Sudah memiliki akun? <a href="index.html">Masuk Sekarang</a>
+        </div>
+    </div>
+
+    <div class="banner-section">
+        <div class="banner-bg"></div>
+        <div class="banner-content">
+            <h2>Tes Kemampuan Akademik</h2>
+            <p>"TKA SMP adalah Tes Kemampuan Akademik untuk jenjang SMP, yaitu asesmen opsional dan tidak wajib yang bertujuan untuk mengukur pencapaian akademik siswa dalam mata pelajaran Bahasa Indonesia dan Matematika. Tes ini tidak menentukan kelulusan, melainkan berfungsi sebagai alat ukur yang memberikan data objektif untuk pemetaan pendidikan nasional dan dapat menjadi salah satu komponen dalam seleksi masuk jenjang selanjutnya."</p>
+        </div>
+    </div>
+
+    <script type="module" src="script.js"></script>
+</body>
+</html>

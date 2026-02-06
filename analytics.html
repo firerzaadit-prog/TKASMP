@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Analytics Dashboard - EduLearn</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script type="importmap">
+    {
+      "imports": {
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+    </script>
+    <link rel="stylesheet" href="analytics.css">
+    <!-- Chart.js for data visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <!-- TensorFlow.js for AI predictive models -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.15.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis@1.5.1/dist/tfjs-vis.umd.min.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="analytics-navigation">
+        <div class="nav-brand">
+            <a href="admin.html" class="brand-link">
+                <i class="fas fa-arrow-left"></i>
+                <span>Kembali ke Admin</span>
+            </a>
+        </div>
+        <div class="nav-actions">
+            <a href="system-status.html" class="system-status-btn" id="systemStatusBtn">
+                <i class="fas fa-server"></i>
+                <span class="status-indicator online"></span>
+            </a>
+            <button id="analyticsLogoutBtn" class="logout-btn">
+                <i class="fas fa-sign-out-alt"></i>
+                <span>Logout</span>
+            </button>
+        </div>
+    </nav>
+
+    <div class="analytics-wrapper">
+        <div class="analytics-container">
+            <!-- Header -->
+            <div class="analytics-header">
+                <div class="header-content">
+                    <div class="header-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <div class="header-text">
+                        <h1><i class="fas fa-brain"></i> AI Analytics Dashboard</h1>
+                        <p>Insights Cerdas untuk Pembelajaran yang Personalized</p>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button onclick="refreshAnalytics()" class="refresh-btn">
+                        <i class="fas fa-sync-alt"></i> Refresh Data AI
+                    </button>
+                    <button onclick="exportAnalytics()" class="export-btn">
+                        <i class="fas fa-download"></i> Export
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filters and Controls -->
+            <div class="analytics-controls">
+                <div class="control-group">
+                    <label><i class="fas fa-calendar"></i> Periode:</label>
+                    <select id="timeRange" onchange="updateTimeRange()">
+                        <option value="7d">7 Hari Terakhir</option>
+                        <option value="30d">30 Hari Terakhir</option>
+                        <option value="90d">3 Bulan Terakhir</option>
+                        <option value="all">Semua Data</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label><i class="fas fa-graduation-cap"></i> Mata Pelajaran:</label>
+                    <select id="subjectFilter" onchange="updateSubjectFilter()">
+                        <option value="all">Semua Mata Pelajaran</option>
+                        <option value="Matematika">Matematika</option>
+                        <option value="Bahasa Indonesia">Bahasa Indonesia</option>
+                        <option value="IPA">IPA</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label><i class="fas fa-users"></i> Kelas:</label>
+                    <select id="classFilter" onchange="updateClassFilter()">
+                        <option value="all">Semua Kelas</option>
+                        <option value="7A">Kelas 7A</option>
+                        <option value="7B">Kelas 7B</option>
+                        <option value="8A">Kelas 8A</option>
+                        <option value="8B">Kelas 8B</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- AI Insights Banner -->
+            <div class="ai-insights-banner">
+                <div class="insights-header">
+                    <i class="fas fa-lightbulb"></i>
+                    <h3>AI Insights</h3>
+                    <div class="ai-info-tooltip">
+                        <i class="fas fa-info-circle"></i>
+                        <span class="tooltip-text">Analisis AI dilakukan otomatis setelah siswa menyelesaikan ujian. Klik Refresh untuk memuat data terbaru.</span>
+                    </div>
+                </div>
+                <div id="aiInsights" class="insights-content">
+                    <div class="insight-loading">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>AI sedang menganalisis data...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Analytics Grid -->
+            <div class="analytics-grid">
+                <!-- Performance Overview -->
+                <div class="analytics-card overview-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-chart-bar"></i> Overview Performa</h3>
+                    </div>
+                    <div class="card-content">
+                        <div class="overview-stats">
+                            <div class="stat-item">
+                                <div class="stat-value" id="totalStudents">0</div>
+                                <div class="stat-label">Total Siswa</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="avgScore">0%</div>
+                                <div class="stat-label">Rata-rata Skor</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="passRate">0%</div>
+                                <div class="stat-label">Tingkat Kelulusan</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value" id="totalExams">0</div>
+                                <div class="stat-label">Total Ujian</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Student Clustering -->
+                <div class="analytics-card clustering-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-users-cog"></i> Clustering Siswa (AI)</h3>
+                        <span class="card-subtitle">Pengelompokan berdasarkan pola performa</span>
+                    </div>
+                    <div class="card-content">
+                        <canvas id="clusteringChart"></canvas>
+                        <div class="clustering-legend">
+                            <div class="legend-item">
+                                <div class="legend-color high-performer"></div>
+                                <span>High Performer</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color average"></div>
+                                <span>Average</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color struggling"></div>
+                                <span>Perlu Bantuan</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Performance Trends -->
+                <div class="analytics-card trends-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-chart-line"></i> Tren Performa</h3>
+                        <span class="card-subtitle">Prediksi performa berdasarkan data historis</span>
+                    </div>
+                    <div class="card-content">
+                        <canvas id="trendsChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Skill Analysis -->
+                <div class="analytics-card skills-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-brain"></i> Analisis Kemampuan</h3>
+                        <span class="card-subtitle">Mastery level per kompetensi</span>
+                    </div>
+                    <div class="card-content">
+                        <canvas id="skillsRadar"></canvas>
+                    </div>
+                </div>
+
+                <!-- Difficulty vs Performance -->
+                <div class="analytics-card difficulty-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-balance-scale"></i> Tingkat Kesulitan</h3>
+                        <span class="card-subtitle">Korelasi antara difficulty soal dan performa siswa</span>
+                    </div>
+                    <div class="card-content">
+                        <canvas id="difficultyChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Top Students -->
+                <div class="analytics-card top-students-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-trophy"></i> Top Performer</h3>
+                        <span class="card-subtitle">Siswa dengan performa terbaik</span>
+                    </div>
+                    <div class="card-content">
+                        <div id="topStudentsList" class="students-list">
+                            <!-- Top students will be populated here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Students Needing Help -->
+                <div class="analytics-card help-needed-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-exclamation-triangle"></i> Perlu Perhatian</h3>
+                        <span class="card-subtitle">Siswa yang memerlukan bantuan tambahan</span>
+                    </div>
+                    <div class="card-content">
+                        <div id="helpNeededList" class="students-list">
+                            <!-- Students needing help will be populated here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Question Quality Analysis -->
+                <div class="analytics-card questions-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-question-circle"></i> Kualitas Soal</h3>
+                        <span class="card-subtitle">Analisis discrimination dan difficulty index</span>
+                    </div>
+                    <div class="card-content">
+                        <canvas id="questionsChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Learning Path Visualization -->
+                <div class="analytics-card learning-path-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-route"></i> Learning Path Visualization</h3>
+                        <span class="card-subtitle">Adaptive learning progression tracking</span>
+                    </div>
+                    <div class="card-content">
+                        <div id="learningPathContainer" class="learning-path-container">
+                            <!-- Learning path visualization will be rendered here -->
+                            <div class="learning-path-placeholder">
+                                <i class="fas fa-route fa-3x"></i>
+                                <p>Loading learning paths...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Concept Mastery Heatmaps -->
+                <div class="analytics-card concept-mastery-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-fire"></i> Concept Mastery Heatmaps</h3>
+                        <span class="card-subtitle">Visual mastery levels across concepts</span>
+                    </div>
+                    <div class="card-content">
+                        <canvas id="conceptMasteryHeatmap"></canvas>
+                        <div class="heatmap-legend">
+                            <div class="legend-item">
+                                <div class="legend-color low-mastery"></div>
+                                <span>Low Mastery</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color medium-mastery"></div>
+                                <span>Medium Mastery</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color high-mastery"></div>
+                                <span>High Mastery</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Adaptive Content Recommendations -->
+                <div class="analytics-card adaptive-recommendations-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-lightbulb"></i> Adaptive Content Recommendations</h3>
+                        <span class="card-subtitle">AI-powered content suggestions</span>
+                    </div>
+                    <div class="card-content">
+                        <div id="adaptiveRecommendations" class="recommendations-list">
+                            <!-- Adaptive recommendations will be populated here -->
+                            <div class="recommendation-loading">
+                                <i class="fas fa-spinner fa-spin"></i>
+                                <span>Analyzing student needs...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Real-time Assessment Metrics -->
+                <div class="analytics-card realtime-assessment-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-tachometer-alt"></i> Real-time Assessment Metrics</h3>
+                        <span class="card-subtitle">Live performance indicators</span>
+                    </div>
+                    <div class="card-content">
+                        <div class="realtime-metrics">
+                            <div class="metric-item">
+                                <div class="metric-value" id="currentEngagement">0%</div>
+                                <div class="metric-label">Current Engagement</div>
+                                <div class="metric-trend" id="engagementTrend">
+                                    <i class="fas fa-arrow-up"></i> +5%
+                                </div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-value" id="adaptiveDifficulty">Medium</div>
+                                <div class="metric-label">Adaptive Difficulty</div>
+                                <div class="metric-status" id="difficultyStatus">
+                                    <span class="status-indicator optimal"></span> Optimal
+                                </div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-value" id="learningVelocity">2.3</div>
+                                <div class="metric-label">Learning Velocity</div>
+                                <div class="metric-trend" id="velocityTrend">
+                                    <i class="fas fa-arrow-up"></i> +0.2
+                                </div>
+                            </div>
+                            <div class="metric-item">
+                                <div class="metric-value" id="conceptRetention">87%</div>
+                                <div class="metric-label">Concept Retention</div>
+                                <div class="metric-trend" id="retentionTrend">
+                                    <i class="fas fa-arrow-up"></i> +3%
+                                </div>
+                            </div>
+                        </div>
+                        <div class="realtime-chart-container">
+                            <canvas id="realtimeAssessmentChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detailed Analytics Tables -->
+            <div class="detailed-analytics">
+                <div class="analytics-tabs">
+                    <button class="tab-btn active" onclick="switchTab('students', this)">Detail Siswa</button>
+                    <button class="tab-btn" onclick="switchTab('questions', this)">Detail Soal</button>
+                    <button class="tab-btn" onclick="switchTab('gemini', this)">Grok AI</button>
+                    <button class="tab-btn" onclick="switchTab('predictions', this)">Prediksi AI</button>
+                </div>
+
+                <div id="studentsTab" class="tab-content active">
+                    <div class="data-table-container">
+                        <table id="studentsTable" class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Nama Siswa</th>
+                                    <th>Kelas</th>
+                                    <th>Rata-rata Skor</th>
+                                    <th>Jumlah Ujian</th>
+                                    <th>Cluster</th>
+                                    <th>Rekomendasi AI</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Student data will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="questionsTab" class="tab-content">
+                    <div class="data-table-container">
+                        <table id="questionsTable" class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID Soal</th>
+                                    <th>Mata Pelajaran</th>
+                                    <th>Bab</th>
+                                    <th>Tingkat Kesulitan</th>
+                                    <th>Discrimination Index</th>
+                                    <th>Jumlah Dijawab</th>
+                                    <th>Tingkat Keberhasilan</th>
+                                    <th>Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Question data will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="geminiTab" class="tab-content">
+                    <div class="gemini-content">
+                        <div class="gemini-header">
+                            <div class="gemini-status">
+                                <h4><i class="fas fa-robot"></i> Status Grok AI</h4>
+                                <div id="grokStatusDisplay" class="status-display">
+                                    <!-- Grok status will be shown here -->
+                                </div>
+                            </div>
+                            <div class="gemini-actions">
+                                <button onclick="downloadGrokAnalyses()" class="download-btn">
+                                    <i class="fas fa-download"></i> Download Analisis
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="gemini-chat">
+                            <h4><i class="fas fa-comments"></i> Chat dengan Grok AI</h4>
+                            <div id="grokChatContainer" class="chat-container">
+                                <div id="grokChatMessages" class="chat-messages">
+                                    <div class="chat-message ai-message">
+                                        <div class="message-avatar">
+                                            <i class="fas fa-robot"></i>
+                                        </div>
+                                        <div class="message-content">
+                                            <div class="message-text">Halo! Saya Grok, AI dari xAI. Saya siap membantu Anda menganalisis data siswa dan memberikan insights tentang performa pembelajaran. Apa yang ingin Anda tanyakan?</div>
+                                            <div class="message-time">Sekarang</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="chat-input-container">
+                                    <input type="text" id="grokChatInput" class="chat-input" placeholder="Tanyakan sesuatu tentang analytics..." maxlength="500">
+                                    <button onclick="sendGrokMessage()" class="chat-send-btn" id="grokSendBtn">
+                                        <i class="fas fa-paper-plane"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="gemini-analyses">
+                            <h4><i class="fas fa-brain"></i> Analisis Jawaban Siswa (Grok AI)</h4>
+                            <div id="grokAnalysesList" class="analyses-list">
+                                <!-- Grok analyses will be populated here -->
+                            </div>
+                        </div>
+
+                        <div class="gemini-insights">
+                            <h4><i class="fas fa-chart-bar"></i> Insights dari Grok AI</h4>
+                            <div id="grokInsightsList" class="insights-list">
+                                <!-- Grok insights will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="predictionsTab" class="tab-content">
+                    <div class="predictions-content">
+                        <div class="prediction-item">
+                            <h4><i class="fas fa-chart-line"></i> Prediksi Performa Siswa</h4>
+                            <div id="performancePredictions" class="prediction-list">
+                                <!-- AI predictions will be populated here -->
+                            </div>
+                        </div>
+                        <div class="prediction-item">
+                            <h4><i class="fas fa-lightbulb"></i> Rekomendasi AI</h4>
+                            <div id="aiRecommendations" class="recommendation-list">
+                                <!-- AI recommendations will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Student Detail Modal -->
+    <div id="studentModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="studentName">Detail Siswa</h3>
+                <button onclick="closeModal()" class="close-btn">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="studentDetail">
+                <!-- Student detail will be populated here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching functionality (global scope)
+        function switchTab(tabName, button) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Remove active class from all buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            // Show selected tab
+            document.getElementById(tabName + 'Tab').classList.add('active');
+            button.classList.add('active');
+        }
+
+        // Handle URL hash for direct tab navigation
+        document.addEventListener('DOMContentLoaded', () => {
+            const hash = window.location.hash.substring(1);
+            if (hash) {
+                // Find the button for the hash
+                const button = document.querySelector(`.tab-btn[onclick*="switchTab('${hash}'"]`);
+                if (button) {
+                    switchTab(hash, button);
+                }
+            }
+        });
+    </script>
+
+    <script type="module" defer src="analytics.js"></script>
+</body>
+</html>

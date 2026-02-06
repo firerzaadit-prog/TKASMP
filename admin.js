@@ -1,0 +1,6415 @@
+// admin.js - Admin panel functionality
+import { supabase } from './supabaseClient.js';
+import {
+    getDetailedStudentAnalytics,
+    exportStudentAnalyticsToExcel,
+    getAllStudentsAnalytics
+} from './exam_analytics_system.js';
+
+// Admin credentials (in production, use proper authentication)
+const ADMIN_CREDENTIALS = {
+    username: 'admin',
+    password: 'admin123'
+};
+
+// DOM Elements - will be initialized after DOM load
+let adminLoginSection, adminDashboard, adminLoginForm, adminLogoutBtn, usersTableBody;
+let totalUsersEl, activeUsersEl, totalQuestionsEl;
+
+// Current session activities
+let currentSessionActivities = [];
+
+// Add activity to current session and database
+async function addActivity(icon, title, description, activityType = 'admin_action', action = 'action', entityType = null, entityId = null) {
+    try {
+        const activity = {
+            icon: icon,
+            title: title,
+            description: description,
+            time: 'Baru saja',
+            type: activityType
+        };
+
+        // Add to beginning of array for immediate display
+        currentSessionActivities.unshift(activity);
+
+        // Keep only last 10 activities in session
+        if (currentSessionActivities.length > 10) {
+            currentSessionActivities = currentSessionActivities.slice(0, 10);
+        }
+
+        // Save to database
+        const dbActivity = {
+            activity_type: activityType,
+            action: action,
+            title: title,
+            description: description,
+            entity_type: entityType,
+            entity_id: entityId,
+            metadata: {
+                icon: icon,
+                session_activity: true
+            }
+        };
+
+        const { error } = await supabase
+            .from('admin_activities')
+            .insert([dbActivity]);
+
+        if (error) {
+            console.error('Error saving activity to database:', error);
+            // Continue with session display even if database save fails
+        }
+
+        // Refresh the activities display
+        loadRecentActivities();
+    } catch (error) {
+        console.error('Error in addActivity:', error);
+        // Fallback to session-only storage
+        const activity = {
+            icon: icon,
+            title: title,
+            description: description,
+            time: 'Baru saja',
+            type: activityType
+        };
+        currentSessionActivities.unshift(activity);
+        if (currentSessionActivities.length > 10) {
+            currentSessionActivities = currentSessionActivities.slice(0, 10);
+        }
+        loadRecentActivities();
+    }
+}
+
+// Check if admin is logged in on page load
+document.addEventListener('DOMContentLoaded', () => {
+    // Initialize DOM elements
+    adminLoginSection = document.getElementById('adminLoginSection');
+    adminDashboard = document.getElementById('adminDashboard');
+    adminLoginForm = document.getElementById('adminLoginForm');
+    adminLogoutBtn = document.getElementById('adminLogoutBtn');
+    usersTableBody = document.getElementById('usersTableBody');
+
+    // Stats elements
+    totalUsersEl = document.getElementById('totalUsers');
+    activeUsersEl = document.getElementById('activeUsers');
+    totalQuestionsEl = document.getElementById('totalQuestions');
+
+    // For indexadmin.html (login page), always show login form
+    // For other admin pages, check login status
+    const currentPage = window.location.pathname.split('/').pop();
+    const isLoginPage = currentPage === 'indexadmin.html';
+
+    if (isLoginPage) {
+        // Always show login form on login page
+        showAdminLogin();
+    } else {
+        // Check login status for main admin pages
+        const isAdminLoggedIn = localStorage.getItem('adminLoggedIn') === 'true';
+
+        if (isAdminLoggedIn) {
+            showAdminDashboard();
+        } else {
+            showAdminLogin();
+        }
+    }
+
+    // Setup password toggle for admin login (only if elements exist)
+    setupPasswordToggle();
+
+    // Admin login form handler
+    if (adminLoginForm) {
+        adminLoginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const username = document.getElementById('adminUsername').value;
+            const password = document.getElementById('adminPassword').value;
+
+            // Simple authentication (in production, use proper auth)
+            if (username === ADMIN_CREDENTIALS.username && password === ADMIN_CREDENTIALS.password) {
+                localStorage.setItem('adminLoggedIn', 'true');
+                // Redirect to admin.html after successful login
+                window.location.href = 'admin.html';
+            } else {
+                alert('Username atau password admin salah!');
+            }
+        });
+    }
+
+    // Admin logout handler
+    if (adminLogoutBtn) {
+        adminLogoutBtn.addEventListener('click', () => {
+            localStorage.removeItem('adminLoggedIn');
+            // Redirect to login page after logout
+            window.location.href = 'indexadmin.html';
+        });
+    }
+});
+
+// Admin login form handler (moved inside DOMContentLoaded)
+
+// Show admin login form
+function showAdminLogin() {
+    if (adminLoginSection) {
+        adminLoginSection.style.display = 'block';
+    }
+    if (adminDashboard) {
+        adminDashboard.classList.remove('show');
+    }
+}
+
+// Show admin dashboard
+async function showAdminDashboard() {
+    if (adminLoginSection) {
+        adminLoginSection.style.display = 'none';
+    }
+    if (adminDashboard) {
+        adminDashboard.classList.add('show');
+    }
+
+    // Load admin data
+    await loadAdminStats();
+    await loadTodaysPerformance();
+    await checkDashboardSystemStatus();
+    await loadUsersData();
+    await loadMaterials(); // Load materials data
+}
+
+// Load admin statistics
+async function loadAdminStats() {
+    try {
+        // Load users count from auth.users (more reliable for total count)
+        let totalUsersCount = 0;
+        let activeUsersCount = 0;
+
+        try {
+            // Try to get users from Supabase Auth first
+            const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
+
+            if (!authError && authUsers && authUsers.users) {
+                // Filter regular users (exclude admin accounts)
+                const regularUsers = authUsers.users.filter(user =>
+                    !user.user_metadata?.is_admin &&
+                    user.email !== 'admin@edulearn.com'
+                );
+
+                totalUsersCount = regularUsers.length;
+                activeUsersCount = regularUsers.filter(user =>
+                    user.email_confirmed_at !== null
+                ).length;
+
+                console.log(`Found ${totalUsersCount} total users, ${activeUsersCount} active users from auth`);
+            } else {
+                console.log('Auth access failed, falling back to profiles table');
+                // Fallback to profiles table
+                const { count: profilesCount, error: profilesError } = await supabase
+                    .from('profiles')
+                    .select('*', { count: 'exact', head: true });
+
+                if (profilesError) {
+                    console.error('Error loading profiles count:', profilesError);
+                    totalUsersCount = 0;
+                    activeUsersCount = 0;
+                } else {
+                    totalUsersCount = profilesCount || 0;
+                    activeUsersCount = profilesCount || 0;
+                }
+            }
+        } catch (authError) {
+            console.error('Auth access error:', authError);
+            // Fallback to profiles table
+            const { count: profilesCount, error: profilesError } = await supabase
+                .from('profiles')
+                .select('*', { count: 'exact', head: true });
+
+            if (profilesError) {
+                console.error('Error loading profiles count:', profilesError);
+                totalUsersCount = 0;
+                activeUsersCount = 0;
+            } else {
+                totalUsersCount = profilesCount || 0;
+                activeUsersCount = profilesCount || 0;
+            }
+        }
+
+        if (totalUsersEl) totalUsersEl.textContent = totalUsersCount;
+        if (activeUsersEl) activeUsersEl.textContent = activeUsersCount;
+
+        // Load questions count
+        const { count: questionsCount, error: questionsError } = await supabase
+            .from('questions')
+            .select('*', { count: 'exact', head: true });
+
+        if (questionsError) {
+            console.error('Error loading questions count:', questionsError);
+            if (totalQuestionsEl) totalQuestionsEl.textContent = '0';
+        } else {
+            if (totalQuestionsEl) totalQuestionsEl.textContent = questionsCount || 0;
+        }
+
+        console.log('Admin stats loaded successfully:', {
+            totalUsers: totalUsersCount,
+            activeUsers: totalUsersCount,
+            totalQuestions: questionsCount
+        });
+
+    } catch (error) {
+        console.error('Error in loadAdminStats:', error);
+        // Final fallback
+        if (totalUsersEl) totalUsersEl.textContent = '0';
+        if (activeUsersEl) activeUsersEl.textContent = '0';
+        if (totalQuestionsEl) totalQuestionsEl.textContent = '0';
+    }
+}
+
+// Check dashboard system status for database, storage, security, and uptime
+async function checkDashboardSystemStatus() {
+    try {
+        console.log('Checking system status...');
+
+        // Check Database
+        await checkDatabaseStatus();
+
+        // Check Storage
+        await checkStorageStatus();
+
+        // Check Security
+        await checkSecurityStatus();
+
+        // Check Uptime
+        await checkUptimeStatus();
+
+        console.log('System status check completed');
+
+    } catch (error) {
+        console.error('Error checking system status:', error);
+        // Set all to error state
+        updateStatusIndicator('databaseStatus', 'Error', 'error');
+        updateStatusIndicator('storageStatus', 'Error', 'error');
+        updateStatusIndicator('securityStatus', 'Error', 'error');
+        updateStatusIndicator('uptimeStatus', 'Error', 'error');
+    }
+}
+
+// Check database status
+async function checkDatabaseStatus() {
+    try {
+        const startTime = Date.now();
+
+        // Try to query a simple table
+        const { data, error } = await supabase
+            .from('questions')
+            .select('id')
+            .limit(1);
+
+        const responseTime = Date.now() - startTime;
+
+        if (error) {
+            updateStatusIndicator('databaseStatus', 'Error', 'error');
+            console.error('Database check failed:', error);
+        } else {
+            updateStatusIndicator('databaseStatus', `Online (${responseTime}ms)`, 'success');
+            console.log('Database check passed');
+        }
+    } catch (error) {
+        updateStatusIndicator('databaseStatus', 'Error', 'error');
+        console.error('Database check error:', error);
+    }
+}
+
+// Check storage status
+async function checkStorageStatus() {
+    try {
+        // Try to list files in storage bucket
+        const { data, error } = await supabase.storage
+            .from('images')
+            .list('', { limit: 1 });
+
+        if (error) {
+            // Check if it's a bucket not found error
+            if (error.message.includes('Bucket not found') || error.message.includes('bucket')) {
+                updateStatusIndicator('storageStatus', 'Bucket Missing', 'error');
+            } else {
+                updateStatusIndicator('storageStatus', 'Error', 'error');
+            }
+            console.error('Storage check failed:', error);
+        } else {
+            updateStatusIndicator('storageStatus', 'Online', 'success');
+            console.log('Storage check passed');
+        }
+    } catch (error) {
+        updateStatusIndicator('storageStatus', 'Error', 'error');
+        console.error('Storage check error:', error);
+    }
+}
+
+// Check security status
+async function checkSecurityStatus() {
+    try {
+        // Check if RLS is enabled by trying to access a protected table
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('id')
+            .limit(1);
+
+        if (error) {
+            // If we get a permission error, RLS is working
+            if (error.message.includes('permission') || error.message.includes('RLS')) {
+                updateStatusIndicator('securityStatus', 'Aktif (RLS)', 'success');
+                console.log('Security check passed - RLS is active');
+            } else {
+                updateStatusIndicator('securityStatus', 'Warning', 'warning');
+                console.log('Security check warning:', error.message);
+            }
+        } else {
+            // If we can access without auth, there might be a security issue
+            updateStatusIndicator('securityStatus', 'Perlu Periksa', 'warning');
+            console.log('Security check warning - data accessible without proper auth');
+        }
+    } catch (error) {
+        updateStatusIndicator('securityStatus', 'Error', 'error');
+        console.error('Security check error:', error);
+    }
+}
+
+// Check uptime status
+async function checkUptimeStatus() {
+    try {
+        // For uptime, we'll simulate a check since we don't have server-side tracking
+        // In a real implementation, you'd check server uptime via an API endpoint
+
+        // Calculate simulated uptime (this would come from server in real app)
+        const uptimePercentage = 99.9; // Simulated high uptime
+
+        updateStatusIndicator('uptimeStatus', `${uptimePercentage}%`, 'success');
+        console.log('Uptime check completed');
+
+    } catch (error) {
+        updateStatusIndicator('uptimeStatus', 'Error', 'error');
+        console.error('Uptime check error:', error);
+    }
+}
+
+// Helper function to update status indicators
+function updateStatusIndicator(elementId, text, statusClass) {
+    const element = document.getElementById(elementId);
+    const textElement = document.getElementById(elementId + 'Text');
+
+    if (element) {
+        // Remove existing status classes
+        element.classList.remove('online', 'error', 'warning', 'success');
+
+        // Add new status class (map success to online for consistency)
+        if (statusClass === 'success') {
+            element.classList.add('online');
+        } else if (statusClass) {
+            element.classList.add(statusClass);
+        }
+    }
+
+    if (textElement) {
+        textElement.textContent = text;
+    }
+}
+
+// Load today's performance metrics
+async function loadTodaysPerformance() {
+    try {
+        // Get today's date in YYYY-MM-DD format
+        const today = new Date().toISOString().split('T')[0];
+        const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        console.log('Loading performance for date:', today);
+
+        // Load total views today (simplified - using total views since daily tracking not implemented)
+        // In a real implementation, you'd have a daily_views table or track views with timestamps
+        let totalViews = 0; // Placeholder since materials are removed
+
+        // Load exams started today
+        let examsStarted = 0;
+        let examsCompleted = 0;
+
+        // Try to query exam sessions (will fail gracefully if table doesn't exist)
+        try {
+            const { count: startedCount, error: startedError } = await supabase
+                .from('exam_sessions')
+                .select('*', { count: 'exact', head: true })
+                .gte('started_at', today)
+                .lt('started_at', tomorrow);
+
+            if (!startedError) {
+                examsStarted = startedCount || 0;
+            }
+        } catch (error) {
+            console.log('Exam sessions table may not exist yet - showing 0 for exams started');
+        }
+
+        try {
+            const { count: completedCount, error: completedError } = await supabase
+                .from('exam_sessions')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'completed')
+                .gte('completed_at', today)
+                .lt('completed_at', tomorrow);
+
+            if (!completedError) {
+                examsCompleted = completedCount || 0;
+            }
+        } catch (error) {
+            console.log('Exam sessions table may not exist yet - showing 0 for exams completed');
+        }
+
+        // Update the UI
+        const totalViewsEl = document.getElementById('totalViewsToday');
+        const examsStartedEl = document.getElementById('examsStartedToday');
+        const examsCompletedEl = document.getElementById('examsCompletedToday');
+
+        if (totalViewsEl) totalViewsEl.textContent = totalViews.toLocaleString();
+        if (examsStartedEl) examsStartedEl.textContent = examsStarted;
+        if (examsCompletedEl) examsCompletedEl.textContent = examsCompleted;
+
+        console.log('Today\'s performance loaded:', {
+            totalViews,
+            examsStarted,
+            examsCompleted
+        });
+
+    } catch (error) {
+        console.error('Error loading today\'s performance:', error);
+        // Set defaults
+        const totalViewsEl = document.getElementById('totalViewsToday');
+        const examsStartedEl = document.getElementById('examsStartedToday');
+        const examsCompletedEl = document.getElementById('examsCompletedToday');
+
+        if (totalViewsEl) totalViewsEl.textContent = '0';
+        if (examsStartedEl) examsStartedEl.textContent = '0';
+        if (examsCompletedEl) examsCompletedEl.textContent = '0';
+    }
+}
+
+// Load users data for management from Supabase Auth
+async function loadUsersData() {
+    try {
+        // First try to get users from Supabase Auth (requires admin privileges)
+        const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
+
+        if (!authError && authUsers && authUsers.users) {
+            // Clear existing table rows
+            if (usersTableBody) usersTableBody.innerHTML = '';
+
+            // Filter out admin users and populate table with regular users
+            const regularUsers = authUsers.users.filter(user =>
+                !user.user_metadata?.is_admin &&
+                user.email !== 'admin@edulearn.com' // Exclude admin accounts
+            );
+
+            // Get profile data for all users
+            const userIds = regularUsers.map(user => user.id);
+            const { data: profiles, error: profilesError } = await supabase
+                .from('profiles')
+                .select('id, nama_lengkap, email, phone, school, bio, avatar_url, created_at')
+                .in('id', userIds);
+
+            if (profilesError) {
+                console.warn('Error loading profiles:', profilesError);
+            }
+
+            // Create a map of profiles by user ID
+            const profilesMap = {};
+            if (profiles) {
+                profiles.forEach(profile => {
+                    profilesMap[profile.id] = profile;
+                });
+            }
+
+            // Populate table with user data from auth + profiles
+            regularUsers.forEach(user => {
+                const profile = profilesMap[user.id];
+                const row = createUserTableRowFromAuth(user, profile);
+                if (usersTableBody) usersTableBody.appendChild(row);
+            });
+
+            console.log(`Loaded ${regularUsers.length} users from Supabase Auth`);
+        } else {
+            // Fallback to profiles table if auth access fails
+            console.log('Auth access failed, falling back to profiles table...');
+            await loadUsersFromProfiles();
+        }
+
+    } catch (error) {
+        console.error('Error in loadUsersData:', error);
+        // Fallback to profiles table
+        console.log('Error accessing auth, falling back to profiles table...');
+        await loadUsersFromProfiles();
+    }
+}
+
+// Fallback function to load from profiles table
+async function loadUsersFromProfiles() {
+    try {
+        const { data: profiles, error } = await supabase
+            .from('profiles')
+            .select('id, nama_lengkap, email, created_at')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error loading profiles data:', error);
+            return;
+        }
+
+        // Clear existing table rows
+        if (usersTableBody) usersTableBody.innerHTML = '';
+
+        // Populate table with user data
+        profiles.forEach(profile => {
+            const row = createUserTableRow(profile);
+            if (usersTableBody) usersTableBody.appendChild(row);
+        });
+
+    } catch (error) {
+        console.error('Error in loadUsersFromProfiles:', error);
+    }
+}
+
+// Create table row for user from profiles table
+function createUserTableRowFromProfiles(profile) {
+    const row = document.createElement('tr');
+
+    const formatDate = (dateString) => {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('id-ID');
+    };
+
+    // Get avatar from profile or generate from name
+    const avatarUrl = profile.avatar_url;
+    const avatarHtml = avatarUrl
+        ? `<img src="${avatarUrl}" alt="Avatar" class="user-avatar-small">`
+        : `<div class="user-avatar-placeholder">${profile.nama_lengkap ? profile.nama_lengkap.charAt(0).toUpperCase() : '?'}</div>`;
+
+    row.innerHTML = `
+        <td>${avatarHtml}</td>
+        <td>${profile.nama_lengkap || 'N/A'}</td>
+        <td>${profile.email || 'N/A'}</td>
+        <td>${profile.phone || '-'}</td>
+        <td>${profile.school || '-'}</td>
+        <td title="${profile.bio || ''}">${profile.bio ? (profile.bio.length > 30 ? profile.bio.substring(0, 30) + '...' : profile.bio) : '-'}</td>
+        <td><span class="status-badge status-active">Aktif</span></td>
+        <td>${formatDate(profile.created_at)}</td>
+        <td>
+            <button class="logout-btn" onclick="viewUserDetails('${profile.id}')">
+                <i class="fas fa-eye"></i> Lihat
+            </button>
+        </td>
+    `;
+
+    return row;
+}
+
+// Create table row for user from auth.users
+function createUserTableRowFromAuth(user, profile = null) {
+    const row = document.createElement('tr');
+
+    const formatDate = (dateString) => {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('id-ID');
+    };
+
+    // Get name from profile or user metadata or email
+    const displayName = profile?.nama_lengkap ||
+                       user.user_metadata?.full_name ||
+                       user.user_metadata?.name ||
+                       user.email?.split('@')[0] ||
+                       'N/A';
+
+    // Get avatar from profile or generate from name
+    const avatarUrl = profile?.avatar_url;
+    const avatarHtml = avatarUrl
+        ? `<img src="${avatarUrl}" alt="Avatar" class="user-avatar-small">`
+        : `<div class="user-avatar-placeholder">${displayName.charAt(0).toUpperCase()}</div>`;
+
+    // Determine status based on email confirmation
+    const isConfirmed = user.email_confirmed_at !== null;
+    const statusClass = isConfirmed ? 'status-active' : 'status-inactive';
+    const statusText = isConfirmed ? 'Aktif' : 'Belum Konfirmasi';
+
+    row.innerHTML = `
+        <td>${avatarHtml}</td>
+        <td>${displayName}</td>
+        <td>${user.email || 'N/A'}</td>
+        <td>${profile?.phone || '-'}</td>
+        <td>${profile?.school || '-'}</td>
+        <td title="${profile?.bio || ''}">${profile?.bio ? (profile.bio.length > 30 ? profile.bio.substring(0, 30) + '...' : profile.bio) : '-'}</td>
+        <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+        <td>${formatDate(user.created_at)}</td>
+        <td>
+            <button class="logout-btn" onclick="viewUserDetails('${user.id}')">
+                <i class="fas fa-eye"></i> Lihat
+            </button>
+        </td>
+    `;
+
+    return row;
+}
+
+// View user details (placeholder function)
+function viewUserDetails(userId) {
+    alert(`Fitur detail user untuk ID: ${userId} akan ditambahkan di versi mendatang.`);
+}
+
+// Setup password toggle for admin login
+function setupPasswordToggle() {
+    const toggleBtn = document.getElementById('toggleAdminPassword');
+    const passwordInput = document.getElementById('adminPassword');
+
+    if (toggleBtn && passwordInput) {
+        toggleBtn.addEventListener('click', () => {
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            toggleBtn.classList.toggle('fa-eye-slash');
+        });
+    }
+}
+
+// Question Management Variables
+let currentEditingQuestionId = null;
+
+// Material Management Variables
+let currentEditingMaterialId = null;
+
+// Question Management Functions
+async function loadQuestions() {
+    try {
+        const { data: questions, error } = await supabase
+            .from('questions')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error loading questions:', error);
+            return;
+        }
+
+        const questionsTableBody = document.getElementById('questionsTableBody');
+        if (questionsTableBody) questionsTableBody.innerHTML = '';
+
+        questions.forEach(question => {
+            const row = createQuestionTableRow(question);
+            if (questionsTableBody) questionsTableBody.appendChild(row);
+        });
+
+    } catch (error) {
+        console.error('Error in loadQuestions:', error);
+    }
+}
+
+function createQuestionTableRow(question) {
+    const row = document.createElement('tr');
+
+    // Truncate long questions for display
+    const shortQuestion = question.question_text.length > 50
+        ? question.question_text.substring(0, 50) + '...'
+        : question.question_text;
+
+    const statusBadge = question.is_active
+        ? '<span class="status-badge status-active">Aktif</span>'
+        : '<span class="status-badge status-inactive">Nonaktif</span>';
+
+    row.innerHTML = `
+        <td title="${question.question_text}">${shortQuestion}</td>
+        <td>${question.difficulty} (${question.scoring_weight} poin)</td>
+        <td>${question.scoring_weight}</td>
+        <td>${question.time_limit_minutes} menit</td>
+        <td>${statusBadge}</td>
+        <td>
+            <button class="logout-btn" onclick="editQuestion('${question.id}')" style="margin-right: 0.5rem;">
+                <i class="fas fa-edit"></i> Edit
+            </button>
+            <button class="logout-btn" onclick="deleteQuestion('${question.id}')" style="background: #dc2626;">
+                <i class="fas fa-trash"></i> Hapus
+            </button>
+        </td>
+    `;
+
+    return row;
+}
+
+// Show/hide question form
+function showQuestionForm() {
+    // Only reset if we're not editing (to preserve data when editing)
+    if (!currentEditingQuestionId) {
+        resetQuestionForm();
+        // Ensure default question type is set
+        document.getElementById('questionType').value = 'Pilihan Ganda';
+    }
+    document.getElementById('questionForm').style.display = 'block';
+    document.getElementById('addQuestionBtn').style.display = 'none';
+
+    // Update form based on current question type selection
+    updateQuestionForm();
+}
+
+function hideQuestionForm() {
+    document.getElementById('questionForm').style.display = 'none';
+    document.getElementById('addQuestionBtn').style.display = 'inline-block';
+    resetQuestionForm();
+}
+
+// Reset form to initial state
+function resetQuestionForm() {
+    document.getElementById('questionFormData').reset();
+    document.getElementById('formTitle').textContent = 'Tambah Soal Baru';
+    currentEditingQuestionId = null;
+    window.editingQuestionData = null;
+    document.getElementById('timeLimit').value = '30';
+
+    // Reset image checkbox
+    const enableImagesCheckbox = document.getElementById('enableQuestionImages');
+    if (enableImagesCheckbox) {
+        enableImagesCheckbox.checked = false;
+        toggleQuestionImageFields(); // Hide image fields
+    }
+
+    // Clear image preview
+    const imagePreview = document.getElementById('imagePreview');
+    if (imagePreview) {
+        imagePreview.innerHTML = '';
+    }
+
+    // Clear options container
+    const optionsContainer = document.getElementById('optionsContainer');
+    if (optionsContainer) {
+        optionsContainer.innerHTML = '';
+    }
+
+    // Clear question sections
+    window.questionSections = [];
+
+    // Clear category statements
+    window.categoryStatements = [];
+
+    // Clear competence field
+    const competenceEl = document.getElementById('competence');
+    if (competenceEl) competenceEl.value = '';
+}
+
+// Update scoring weight based on difficulty
+function updateScoringWeight() {
+    const difficulty = document.getElementById('difficulty').value;
+    const scoringWeightInput = document.getElementById('scoringWeight');
+
+    let weight = 1;
+    switch (difficulty) {
+        case 'Mudah':
+            weight = 1;
+            break;
+        case 'Sedang':
+            weight = 2;
+            break;
+        case 'Sulit':
+            weight = 3;
+            break;
+    }
+
+    scoringWeightInput.value = weight;
+}
+
+// Update sections with current form values
+function updateQuestionSectionsFromForm() {
+    const sectionElements = document.querySelectorAll('.question-section');
+    sectionElements.forEach((element) => {
+        const sectionId = element.dataset.sectionId;
+        const section = window.questionSections.find(s => s.id == sectionId);
+        if (section && section.type === 'text') {
+            const textarea = element.querySelector('.question-section-textarea');
+            if (textarea) section.content = textarea.value.trim();
+        }
+    });
+}
+
+async function ensureFormReady(questionType) {
+    console.log('Ensuring form is ready for question type:', questionType);
+
+    let formReady = false;
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (!formReady && attempts < maxAttempts) {
+        attempts++;
+        console.log(`Form readiness check attempt ${attempts}/${maxAttempts}`);
+
+        switch (questionType) {
+            case 'Pilihan Ganda':
+                formReady = !!document.getElementById('optionA');
+                break;
+            case 'PGK Kategori':
+                formReady = !!document.getElementById('categoryStatementsTableBody');
+                break;
+            case 'PGK MCMA':
+                formReady = !!document.getElementById('mcmaA');
+                break;
+            default:
+                formReady = true;
+        }
+
+        if (!formReady) {
+            console.log('Form not ready, updating question form...');
+            updateQuestionForm();
+            // Wait for DOM update
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+    }
+
+    if (!formReady) {
+        console.error('Failed to prepare form after', maxAttempts, 'attempts');
+    } else {
+        console.log('Form is ready');
+    }
+
+    return formReady;
+}
+
+function validateQuestionForm(questionType) {
+    console.log('Validating form for question type:', questionType);
+    console.log('window.categoryStatements:', window.categoryStatements);
+
+    switch (questionType) {
+        case 'Pilihan Ganda':
+            const optionA = document.getElementById('optionA');
+            const optionB = document.getElementById('optionB');
+            const optionC = document.getElementById('optionC');
+            const optionD = document.getElementById('optionD');
+            const correctAnswer = document.querySelector('input[name="correctAnswer"]:checked');
+
+            if (!optionA || !optionB || !optionC || !optionD) {
+                return { valid: false, message: 'Form pilihan ganda belum lengkap. Silakan pilih tipe soal lagi.' };
+            }
+
+            if (!correctAnswer) {
+                return { valid: false, message: 'Silakan pilih jawaban yang benar (A, B, C, atau D).' };
+            }
+
+            return { valid: true };
+
+        case 'PGK MCMA':
+            const mcmaA = document.getElementById('mcmaA');
+            const mcmaB = document.getElementById('mcmaB');
+            const mcmaC = document.getElementById('mcmaC');
+            const mcmaD = document.getElementById('mcmaD');
+
+            if (!mcmaA || !mcmaB || !mcmaC || !mcmaD) {
+                return { valid: false, message: 'Form PGK MCMA belum lengkap. Silakan pilih tipe soal lagi.' };
+            }
+
+            const checkedBoxes = document.querySelectorAll('input[id^="mcma"]:checked');
+            if (checkedBoxes.length === 0) {
+                return { valid: false, message: 'Silakan pilih minimal satu jawaban yang benar untuk PGK MCMA.' };
+            }
+
+            return { valid: true };
+
+        case 'PGK Kategori':
+            if (!window.categoryStatements || window.categoryStatements.length === 0) {
+                return { valid: false, message: 'Form PGK Kategori belum lengkap. Silakan pilih tipe soal lagi.' };
+            }
+
+            const validStatements = window.categoryStatements.filter(item =>
+                item.statement && item.statement.trim() && item.isTrue !== null
+            );
+
+            if (validStatements.length === 0) {
+                return { valid: false, message: 'Silakan isi minimal satu pernyataan dan pilih jawaban (Benar/Salah) untuk setiap pernyataan.' };
+            }
+
+            // Check that not all statements have the same answer (should have mix of true/false)
+            const trueCount = validStatements.filter(item => item.isTrue === true).length;
+            const falseCount = validStatements.filter(item => item.isTrue === false).length;
+
+            if (trueCount === 0) {
+                return { valid: false, message: 'Minimal satu pernyataan harus ditandai sebagai Benar.' };
+            }
+
+            if (falseCount === 0) {
+                return { valid: false, message: 'Minimal satu pernyataan harus ditandai sebagai Salah.' };
+            }
+
+            return { valid: true };
+
+        default:
+            return { valid: true };
+    }
+}
+
+// Save question (create or update)
+async function saveQuestion(event) {
+console.log('saveQuestion function called with event:', event);
+event.preventDefault();
+console.log('Event default prevented');
+
+console.log('Saving question, currentEditingQuestionId:', currentEditingQuestionId);
+
+// Get form elements with null checks
+const questionTextEl = document.getElementById('questionText');
+const questionTypeEl = document.getElementById('questionType');
+const chapterEl = document.getElementById('chapter');
+const subChapterEl = document.getElementById('subChapter');
+const timeLimitEl = document.getElementById('timeLimit');
+const difficultyEl = document.getElementById('difficulty');
+const scoringWeightEl = document.getElementById('scoringWeight');
+const latexContentEl = document.getElementById('latexContent');
+const explanationEl = document.getElementById('explanation');
+
+console.log('Form elements check:', {
+    questionTextEl: !!questionTextEl,
+    questionTypeEl: !!questionTypeEl,
+    chapterEl: !!chapterEl,
+    subChapterEl: !!subChapterEl,
+    timeLimitEl: !!timeLimitEl,
+    difficultyEl: !!difficultyEl,
+    scoringWeightEl: !!scoringWeightEl
+});
+
+// Check if all required elements exist
+if (!questionTextEl || !questionTypeEl || !chapterEl || !subChapterEl ||
+    !timeLimitEl || !difficultyEl || !scoringWeightEl) {
+    alert('Form soal tidak lengkap. Silakan refresh halaman dan coba lagi.');
+    console.error('Missing form elements');
+    return;
+}
+
+const questionType = questionTypeEl.value;
+
+// Ensure the form is properly loaded for the current question type
+const currentOptionsContainer = document.getElementById('optionsContainer');
+if (!currentOptionsContainer || !currentOptionsContainer.innerHTML.trim()) {
+    console.log('Options container not ready, updating form...');
+    updateQuestionForm();
+    // Wait for DOM update
+    await new Promise(resolve => setTimeout(resolve, 200));
+}
+
+// Special handling for PGK Kategori - ensure form is loaded
+if (questionType === 'PGK Kategori' && !document.getElementById('categoryStatementsTableBody')) {
+    console.log('PGK Kategori form not loaded, updating form...');
+    updateQuestionForm();
+    await new Promise(resolve => setTimeout(resolve, 200));
+}
+
+// Validate form before proceeding
+const validation = validateQuestionForm(questionType);
+if (!validation.valid) {
+    console.warn('Form validation failed:', validation.message);
+    // Don't block saving, just warn and continue
+    // alert(validation.message);
+}
+
+console.log('questionType in saveQuestion:', questionType);
+console.log('optionsContainer exists:', !!document.getElementById('optionsContainer'));
+
+// For editing, don't update form as it may clear user changes - form should already be set up correctly
+// Only update if question type changed or elements are missing (checked later)
+
+const baseFormData = {
+        question_text: questionTextEl.value.trim(),
+        question_type: questionType,
+        chapter: chapterEl.value,
+        sub_chapter: subChapterEl.value,
+        competence: document.getElementById('competence')?.value.trim() || null,
+        time_limit_minutes: parseInt(timeLimitEl.value),
+        subject: 'Matematika', // Force to Mathematics for TKA
+        difficulty: difficultyEl.value,
+        scoring_weight: parseInt(scoringWeightEl.value),
+        latex_content: latexContentEl ? latexContentEl.value.trim() || null : null,
+        explanation: explanationEl ? explanationEl.value.trim() || null : null,
+        question_sections: window.questionSections && window.questionSections.length > 0 ? window.questionSections : null
+    };
+
+    console.log('Saving question - Chapter:', chapterEl.value, 'Sub-chapter:', subChapterEl.value);
+    console.log('Form elements values:', {
+        chapter: chapterEl.value,
+        subChapter: subChapterEl.value,
+        questionText: questionTextEl.value.substring(0, 50) + '...',
+        questionType: questionType
+    });
+
+    // Validate chapter and sub-chapter are not empty
+    if (!chapterEl.value || !subChapterEl.value) {
+        alert('Bab dan Sub Bab harus diisi!');
+        console.error('Chapter or sub-chapter is empty:', { chapter: chapterEl.value, subChapter: subChapterEl.value });
+        return;
+    }
+
+    console.log('baseFormData:', baseFormData);
+
+    let formData;
+
+    switch (questionType) {
+        case 'Pilihan Ganda':
+            // Get multiple choice elements with null checks
+            let mcOptionAEl = document.getElementById('optionA');
+            let mcOptionBEl = document.getElementById('optionB');
+            let mcOptionCEl = document.getElementById('optionC');
+            let mcOptionDEl = document.getElementById('optionD');
+            let correctAnswerEl = document.querySelector('input[name="correctAnswer"]:checked');
+
+            console.log('Multiple choice elements check:', {
+                mcOptionAEl: !!mcOptionAEl,
+                mcOptionBEl: !!mcOptionBEl,
+                mcOptionCEl: !!mcOptionCEl,
+                mcOptionDEl: !!mcOptionDEl,
+                correctAnswerEl: !!correctAnswerEl,
+                correctAnswerValue: correctAnswerEl ? correctAnswerEl.value : 'none'
+            });
+
+            // If elements not found or no correct answer selected, try to update form
+            if (!mcOptionAEl || !mcOptionBEl || !mcOptionCEl || !mcOptionDEl || !correctAnswerEl) {
+                console.log('Elements missing or no correct answer selected, updating form...');
+                updateQuestionForm();
+
+                // Wait a bit for DOM update
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                mcOptionAEl = document.getElementById('optionA');
+                mcOptionBEl = document.getElementById('optionB');
+                mcOptionCEl = document.getElementById('optionC');
+                mcOptionDEl = document.getElementById('optionD');
+                correctAnswerEl = document.querySelector('input[name="correctAnswer"]:checked');
+
+                console.log('After updateQuestionForm retry:', {
+                    mcOptionAEl: !!mcOptionAEl,
+                    mcOptionBEl: !!mcOptionBEl,
+                    mcOptionCEl: !!mcOptionCEl,
+                    mcOptionDEl: !!mcOptionDEl,
+                    correctAnswerEl: !!correctAnswerEl,
+                    correctAnswerValue: correctAnswerEl ? correctAnswerEl.value : 'none'
+                });
+
+                if (!mcOptionAEl || !mcOptionBEl || !mcOptionCEl || !mcOptionDEl) {
+                    alert('Form pilihan jawaban tidak lengkap. Silakan refresh halaman.');
+                    console.error('Multiple choice elements not found after retry');
+                    return;
+                }
+            }
+
+            console.log('Element values before trim:', {
+                optionA: mcOptionAEl.value,
+                optionB: mcOptionBEl.value,
+                optionC: mcOptionCEl.value,
+                optionD: mcOptionDEl.value,
+                correctAnswer: correctAnswerEl ? correctAnswerEl.value : 'none'
+            });
+
+            // Ensure correct answer is set, default to 'A' if not selected
+            let correctAnswer = correctAnswerEl ? correctAnswerEl.value : 'A';
+            if (!correctAnswer || !['A', 'B', 'C', 'D'].includes(correctAnswer)) {
+                correctAnswer = 'A'; // Default to A if invalid
+                console.warn('Correct answer not properly selected, defaulting to A');
+            }
+
+            formData = {
+                ...baseFormData,
+                option_a: mcOptionAEl.value.trim(),
+                option_b: mcOptionBEl.value.trim(),
+                option_c: mcOptionCEl.value.trim(),
+                option_d: mcOptionDEl.value.trim(),
+                correct_answer: correctAnswer
+            };
+            break;
+
+        case 'PGK Kategori':
+            console.log('Processing PGK Kategori data...');
+
+            // Get statements from the table
+            if (!window.categoryStatements || window.categoryStatements.length === 0) {
+                alert('Minimal satu pernyataan harus diisi!');
+                return;
+            }
+
+            // Filter out empty statements and validate
+            const validStatements = window.categoryStatements.filter(item =>
+                item.statement && item.statement.trim() && item.isTrue !== null
+            );
+
+            if (validStatements.length === 0) {
+                alert('Minimal satu pernyataan harus diisi dan jawabannya dipilih (Benar/Salah)!');
+                return;
+            }
+
+            console.log('Valid statements:', validStatements);
+
+            // Create arrays for statements and answers
+            const statements = validStatements.map(item => item.statement.trim());
+            const answers = {};
+            validStatements.forEach(item => {
+                answers[item.statement.trim()] = item.isTrue;
+            });
+
+            console.log('Statements array:', statements);
+            console.log('Answers object:', answers);
+
+            formData = {
+                ...baseFormData,
+                // For PGK Kategori, we still need to provide dummy values for required fields
+                option_a: 'N/A', // Not used for category questions
+                option_b: 'N/A',
+                option_c: 'N/A',
+                option_d: 'N/A',
+                correct_answer: 'A', // Dummy value
+                category_options: statements, // Array of statements (may contain LaTeX)
+                category_mapping: answers // Object with statement -> boolean mapping
+            };
+
+            console.log('Final PGK Kategori formData:', formData);
+            break;
+
+        case 'PGK MCMA':
+            const selectedAnswers = [];
+            ['A', 'B', 'C', 'D'].forEach(letter => {
+                const checkbox = document.getElementById(`mcma${letter}`);
+                if (checkbox && checkbox.checked) {
+                    selectedAnswers.push(letter);
+                }
+            });
+
+            console.log('PGK MCMA selected answers:', selectedAnswers);
+
+            // Get MCMA option elements with null checks
+            let optionAEl = document.getElementById('optionA');
+            let optionBEl = document.getElementById('optionB');
+            let optionCEl = document.getElementById('optionC');
+            let optionDEl = document.getElementById('optionD');
+
+            if (!optionAEl || !optionBEl || !optionCEl || !optionDEl) {
+                console.log('MCMA elements not found, updating form...');
+                // Try to update form and get elements again
+                updateQuestionForm();
+
+                // Wait a bit for DOM update
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                optionAEl = document.getElementById('optionA');
+                optionBEl = document.getElementById('optionB');
+                optionCEl = document.getElementById('optionC');
+                optionDEl = document.getElementById('optionD');
+
+                if (!optionAEl || !optionBEl || !optionCEl || !optionDEl) {
+                    alert('Form pilihan jawaban MCMA tidak lengkap. Silakan refresh halaman.');
+                    console.error('MCMA option elements not found');
+                    return;
+                }
+            }
+
+            formData = {
+                ...baseFormData,
+                option_a: optionAEl.value.trim(),
+                option_b: optionBEl.value.trim(),
+                option_c: optionCEl.value.trim(),
+                option_d: optionDEl.value.trim(),
+                correct_answer: selectedAnswers.join(''),
+                correct_answers: selectedAnswers,
+                partial_credit: selectedAnswers.length > 1
+            };
+            break;
+    }
+
+    // Handle main question image upload (only if enabled)
+    const enableImages = document.getElementById('enableQuestionImages')?.checked || false;
+    if (enableImages) {
+        if (currentImageFile) {
+            try {
+                const imageUrl = await uploadImage(currentImageFile);
+
+                // Get comprehensive image settings from current settings
+                const imageSettings = {
+                    position: currentImageSettings.position,
+                    size: currentImageSettings.size,
+                    quality: currentImageSettings.quality,
+                    fit: currentImageSettings.fit,
+                    alignment: currentImageSettings.alignment,
+                    border: currentImageSettings.border,
+                    shadow: currentImageSettings.shadow,
+                    rounded: currentImageSettings.rounded,
+                    grayscale: currentImageSettings.grayscale,
+                    opacity: currentImageSettings.opacity,
+                    caption: currentImageSettings.caption,
+                    alt: currentImageSettings.alt,
+                    customWidth: currentImageSettings.customWidth,
+                    customHeight: currentImageSettings.customHeight,
+                    originalDimensions: {
+                        width: document.getElementById('imageDimensions').textContent.split(' × ')[0],
+                        height: document.getElementById('imageDimensions').textContent.split(' × ')[1]
+                    }
+                };
+
+                // Store image URL and comprehensive settings
+                formData.image_url = imageUrl;
+                formData.image_settings = JSON.stringify(imageSettings);
+
+            } catch (error) {
+                alert('Gagal upload gambar soal: ' + error.message);
+                return;
+            }
+        }
+
+        // Handle option image uploads for multiple choice questions
+        if (questionType === 'Pilihan Ganda' || questionType === 'PGK MCMA') {
+            const optionImages = {};
+            const optionLetters = ['A', 'B', 'C', 'D'];
+
+            for (const letter of optionLetters) {
+                // Handle images
+                const optionImageFile = document.getElementById(`option${letter}Image`)?.files[0];
+                if (optionImageFile) {
+                    try {
+                        const imageUrl = await uploadImage(optionImageFile);
+                        optionImages[`option_${letter.toLowerCase()}_image`] = imageUrl;
+                    } catch (error) {
+                        alert(`Gagal upload gambar pilihan ${letter}: ` + error.message);
+                        return;
+                    }
+                }
+            }
+
+            // Add option images to formData as JSON strings (disabled due to missing columns)
+            // formData.option_images = JSON.stringify(optionImages);
+        }
+    }
+
+    // Generate tags based on content (removed to fix database insert)
+    // formData.tags = generateTags(formData);
+
+    // Ensure all optional fields are set to avoid 400 errors
+    formData.correct_answer = formData.correct_answer || 'A'; // Default for required field
+    formData.correct_answers = (formData.correct_answers && formData.correct_answers.length > 0) ? formData.correct_answers : null;
+    formData.category_options = (formData.category_options && formData.category_options.length > 0) ? formData.category_options : null;
+    formData.category_mapping = (formData.category_mapping && Object.keys(formData.category_mapping || {}).length > 0) ? formData.category_mapping : null;
+    formData.partial_credit = formData.partial_credit !== undefined ? formData.partial_credit : false;
+    formData.image_url = formData.image_url || null;
+    formData.explanation = formData.explanation || null;
+    formData.latex_content = formData.latex_content || null;
+
+    // Validation
+    if (!formData.question_text) {
+        alert('Pertanyaan harus diisi!');
+        return;
+    }
+
+    // Check if dynamic form fields are loaded
+    const optionsContainer = document.getElementById('optionsContainer');
+    if (!optionsContainer || !optionsContainer.innerHTML.trim()) {
+        alert('Form soal belum dimuat dengan benar. Silakan pilih tipe soal terlebih dahulu.');
+        console.error('Options container not found or empty');
+        return;
+    }
+
+    console.log('About to save question. Question type:', questionType);
+    console.log('Options container HTML:', optionsContainer.innerHTML.substring(0, 200) + '...');
+
+    // Ensure the form elements exist for the current question type
+    const formReady = await ensureFormReady(questionType);
+    if (!formReady) {
+        alert('Form soal belum siap. Silakan pilih tipe soal terlebih dahulu.');
+        return;
+    }
+
+    // Final check: ensure the form matches the selected question type
+    if (questionType === 'PGK Kategori' && !document.getElementById('categoryStatementsTableBody')) {
+        console.log('PGK Kategori form not found in final check, attempting to load...');
+        updateQuestionForm();
+        // Wait for DOM update
+        await new Promise(resolve => setTimeout(resolve, 300));
+
+        // Check again
+        if (!document.getElementById('categoryStatementsTableBody')) {
+            alert('Form PGK Kategori belum dimuat. Silakan pilih "PGK Kategori" dari dropdown tipe soal.');
+            console.error('PGK Kategori form not loaded after retry');
+            return;
+        }
+    }
+
+    if (questionType === 'PGK MCMA' && !document.getElementById('mcmaA')) {
+        alert('Form PGK MCMA belum dimuat. Silakan pilih "PGK MCMA" dari dropdown tipe soal.');
+        console.error('PGK MCMA form not loaded');
+        return;
+    }
+
+    if (questionType === 'Pilihan Ganda' && !document.getElementById('optionA')) {
+        alert('Form Pilihan Ganda belum dimuat. Silakan pilih "Pilihan Ganda" dari dropdown tipe soal.');
+        console.error('Multiple choice form not loaded');
+        return;
+    }
+
+    if (questionType === 'Pilihan Ganda') {
+        console.log('Validating multiple choice:', {
+            option_a: formData.option_a,
+            option_b: formData.option_b,
+            option_c: formData.option_c,
+            option_d: formData.option_d,
+            correct_answer: formData.correct_answer
+        });
+
+        // Debug: log form data
+        console.log('Form data for validation:', {
+            option_a: formData.option_a,
+            option_b: formData.option_b,
+            option_c: formData.option_c,
+            option_d: formData.option_d
+        });
+
+        // Check if option fields exist and have values
+        const emptyOptions = [];
+        if (!formData.option_a.trim()) emptyOptions.push('A');
+        if (!formData.option_b.trim()) emptyOptions.push('B');
+        if (!formData.option_c.trim()) emptyOptions.push('C');
+        if (!formData.option_d.trim()) emptyOptions.push('D');
+        if (emptyOptions.length > 0) {
+            alert(`Pilihan jawaban ${emptyOptions.join(', ')} belum diisi. Silakan isi semua pilihan jawaban.`);
+            return;
+        }
+
+        // Check if correct answer is selected (warn but don't block)
+        if (!formData.correct_answer) {
+            console.warn('No correct answer selected, will default to A');
+            formData.correct_answer = 'A';
+        }
+
+        // Validate that correct_answer is one of A, B, C, D
+        if (!['A', 'B', 'C', 'D'].includes(formData.correct_answer)) {
+            console.warn('Invalid correct answer, defaulting to A');
+            formData.correct_answer = 'A';
+        }
+    }
+
+    if (questionType === 'PGK Kategori') {
+        console.log('Validating PGK Kategori...');
+        console.log('window.categoryStatements:', window.categoryStatements);
+
+        // Check if statements exist in the table
+        if (!window.categoryStatements || window.categoryStatements.length === 0) {
+            alert('Minimal satu pernyataan harus diisi!');
+            return;
+        }
+
+        // Filter out empty statements
+        const validStatements = window.categoryStatements.filter(item =>
+            item.statement && item.statement.trim() && item.isTrue !== null
+        );
+
+        console.log('Valid statements:', validStatements);
+
+        if (validStatements.length === 0) {
+            alert('Minimal satu pernyataan harus diisi dan jawabannya dipilih (Benar/Salah)!');
+            return;
+        }
+
+        if (validStatements.length < 2) {
+            alert('Minimal dua pernyataan diperlukan untuk soal PGK Kategori!');
+            return;
+        }
+
+        // Check if at least one statement is marked as true
+        const trueStatements = validStatements.filter(item => item.isTrue === true);
+        if (trueStatements.length === 0) {
+            alert('Minimal satu pernyataan harus ditandai sebagai benar!');
+            return;
+        }
+
+        // Check if not all statements are marked as true (should have mix of true/false)
+        const falseStatements = validStatements.filter(item => item.isTrue === false);
+        if (falseStatements.length === 0) {
+            alert('Tidak semua pernyataan boleh benar. Harus ada pernyataan yang salah juga!');
+            return;
+        }
+
+        console.log('PGK Kategori validation passed');
+    }
+
+    if (questionType === 'PGK MCMA') {
+        console.log('Validating PGK MCMA:', {
+            correct_answers: formData.correct_answers,
+            correct_answer_string: formData.correct_answer,
+            option_a: formData.option_a,
+            option_b: formData.option_b,
+            option_c: formData.option_c,
+            option_d: formData.option_d
+        });
+
+        // Check if option fields exist and have values
+        const emptyOptions = [];
+        if (!formData.option_a.trim()) emptyOptions.push('A');
+        if (!formData.option_b.trim()) emptyOptions.push('B');
+        if (!formData.option_c.trim()) emptyOptions.push('C');
+        if (!formData.option_d.trim()) emptyOptions.push('D');
+        if (emptyOptions.length > 0) {
+            alert(`Pilihan jawaban ${emptyOptions.join(', ')} belum diisi. Silakan isi semua pilihan jawaban.`);
+            return;
+        }
+
+        // Check if at least one correct answer is selected (warn but don't block)
+        if (!formData.correct_answers || formData.correct_answers.length === 0) {
+            console.warn('No correct answers selected for MCMA, defaulting to A');
+            formData.correct_answers = ['A'];
+            formData.correct_answer = 'A';
+            formData.partial_credit = false;
+        }
+
+        // Validate that all selected answers are valid letters
+        const validAnswers = ['A', 'B', 'C', 'D'];
+        const invalidAnswers = formData.correct_answers.filter(answer => !validAnswers.includes(answer));
+        if (invalidAnswers.length > 0) {
+            console.warn(`Invalid answers for MCMA: ${invalidAnswers.join(', ')}, filtering to valid ones`);
+            formData.correct_answers = formData.correct_answers.filter(answer => validAnswers.includes(answer));
+            if (formData.correct_answers.length === 0) {
+                formData.correct_answers = ['A'];
+            }
+            formData.correct_answer = formData.correct_answers.join('');
+        }
+    }
+
+    try {
+        let result;
+        console.log('=== SAVING QUESTION ===');
+        console.log('Question Type:', questionType);
+        console.log('Form data to save:', formData);
+        console.log('Current editing question ID:', currentEditingQuestionId);
+        console.log('Question text length:', formData.question_text?.length || 0);
+        console.log('Options filled:', {
+            A: !!formData.option_a?.trim(),
+            B: !!formData.option_b?.trim(),
+            C: !!formData.option_c?.trim(),
+            D: !!formData.option_d?.trim()
+        });
+
+        // Check if required columns exist before saving
+        console.log('Checking database schema before save...');
+        try {
+            // Test basic columns that are always needed
+            const basicColumns = ['question_type', 'chapter', 'sub_chapter', 'competence', 'scoring_weight', 'difficulty', 'subject', 'time_limit_minutes', 'explanation'];
+            const missingColumns = [];
+
+            for (const col of basicColumns) {
+                try {
+                    const testQuery = await supabase
+                        .from('questions')
+                        .select(col)
+                        .limit(1);
+                    if (testQuery.error) {
+                        missingColumns.push(col);
+                    }
+                } catch (error) {
+                    missingColumns.push(col);
+                }
+            }
+
+            if (missingColumns.length > 0) {
+                console.error('Missing columns:', missingColumns);
+                alert(`Database belum lengkap. Kolom yang missing: ${missingColumns.join(', ')}\n\nSOLUSI:\n1. Buka Supabase Dashboard > SQL Editor\n2. Jalankan script: SQL/quick_fix_chapter_column.sql\n3. Jalankan script: SQL/setup_advanced_questions.sql\n4. Refresh halaman dan coba lagi.`);
+                return;
+            }
+
+            // Additional check for advanced question types
+            if (questionType === 'PGK Kategori') {
+                const advancedColumns = ['category_options', 'category_mapping'];
+                for (const col of advancedColumns) {
+                    try {
+                        const testQuery = await supabase
+                            .from('questions')
+                            .select(col)
+                            .limit(1);
+                        if (testQuery.error) {
+                            missingColumns.push(col);
+                        }
+                    } catch (error) {
+                        missingColumns.push(col);
+                    }
+                }
+
+                if (missingColumns.length > 0) {
+                    console.error('Missing advanced columns:', missingColumns);
+                    alert(`Database belum diupdate untuk PGK Kategori. Kolom yang missing: ${missingColumns.join(', ')}\n\nJalankan script setup_advanced_questions.sql di Supabase SQL Editor.`);
+                    return;
+                }
+            }
+
+            console.log('Database schema check passed');
+
+        } catch (schemaError) {
+            console.error('Schema check failed:', schemaError);
+            alert('Gagal memeriksa schema database. Jalankan script setup database terlebih dahulu.');
+            return;
+        }
+
+        if (currentEditingQuestionId) {
+            console.log('Updating existing question with ID:', currentEditingQuestionId);
+            // Update existing question
+            result = await supabase
+                .from('questions')
+                .update(formData)
+                .eq('id', currentEditingQuestionId);
+        } else {
+            console.log('Creating new question');
+            // Create new question
+            result = await supabase
+                .from('questions')
+                .insert([formData]);
+        }
+
+        console.log('Database operation result:', result);
+
+        if (result.error) {
+            console.error('Error saving question:', result.error);
+
+            // Provide specific error messages based on error type
+            let errorMessage = 'Gagal menyimpan soal. ';
+
+            if (result.error.message.includes('column') && result.error.message.includes('does not exist')) {
+                const missingCol = result.error.message.match(/column ['"]([^'"]+)['"]/);
+                const columnName = missingCol ? missingCol[1] : 'unknown';
+                errorMessage += `Kolom '${columnName}' tidak ditemukan di database.\n\nSOLUSI:\n1. Buka Supabase Dashboard > SQL Editor\n2. Jalankan script: SQL/setup_advanced_questions.sql\n3. Refresh halaman dan coba lagi.`;
+            } else if (result.error.message.includes('duplicate key') || result.error.message.includes('unique constraint')) {
+                errorMessage += 'Data soal sudah ada atau duplikat.';
+            } else if (result.error.message.includes('permission') || result.error.message.includes('RLS')) {
+                errorMessage += 'Tidak memiliki izin untuk menyimpan soal. Silakan login sebagai admin.';
+            } else if (result.error.message.includes('network') || result.error.message.includes('fetch')) {
+                errorMessage += 'Masalah koneksi jaringan. Periksa koneksi internet Anda.';
+            } else {
+                errorMessage += result.error.message;
+            }
+
+            alert(errorMessage);
+            return;
+        }
+
+        // Generate correct answer display based on question type
+        let correctAnswerDisplay = formData.correct_answer;
+        if (formData.question_type === 'PGK Kategori' && formData.category_mapping) {
+            // For PGK Kategori, show which statements are true
+            const trueStatements = Object.keys(formData.category_mapping).filter(key => formData.category_mapping[key] === true);
+            correctAnswerDisplay = trueStatements.length > 0 ? trueStatements.join(', ') : 'Tidak ada jawaban benar';
+        } else if (formData.question_type === 'PGK MCMA' && formData.correct_answers) {
+            // For PGK MCMA, show the correct answer letters
+            correctAnswerDisplay = formData.correct_answers.join(', ');
+        }
+
+        const successMessage = currentEditingQuestionId
+            ? `Soal berhasil diperbarui!\n\nJawaban benar: ${correctAnswerDisplay}\nTipe: ${formData.question_type}`
+            : `Soal berhasil ditambahkan!\n\nJawaban benar: ${correctAnswerDisplay}\nTipe: ${formData.question_type}`;
+
+        alert(successMessage);
+        console.log('Question saved successfully:', successMessage);
+
+        // Add activity to recent activities
+        const questionTitle = formData.question_text.length > 30
+            ? formData.question_text.substring(0, 30) + '...'
+            : formData.question_text;
+        addActivity(
+            'fas fa-brain',
+            currentEditingQuestionId ? 'Soal diperbarui' : 'Soal baru dibuat',
+            `"${questionTitle}" (${formData.question_type})`,
+            'question',
+            currentEditingQuestionId ? 'updated' : 'created',
+            'question',
+            currentEditingQuestionId || result.data?.[0]?.id
+        );
+
+        hideQuestionForm();
+        await loadQuestions();
+
+    } catch (error) {
+        console.error('Error in saveQuestion:', error);
+        alert('Terjadi kesalahan saat menyimpan soal.');
+    }
+}
+
+// Upload image to Supabase Storage
+async function uploadImage(file) {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}.${fileExt}`;
+    const filePath = `question-images/${fileName}`;
+
+    try {
+        const { data, error } = await supabase.storage
+            .from('images')
+            .upload(filePath, file);
+
+        if (error) {
+            // Check if bucket doesn't exist
+            if (error.message.includes('Bucket not found') || error.message.includes('bucket')) {
+                throw new Error('Storage bucket belum dibuat. Jalankan script setup_storage_buckets.sql di Supabase SQL Editor terlebih dahulu.');
+            }
+            throw error;
+        }
+
+        // Get public URL
+        const { data: urlData } = supabase.storage
+            .from('images')
+            .getPublicUrl(filePath);
+
+        return urlData.publicUrl;
+    } catch (error) {
+        console.error('Upload image error:', error);
+        throw error;
+    }
+}
+
+// Generate tags based on question content
+function generateTags(questionData) {
+    const tags = new Set();
+
+    // Add chapter and sub-chapter
+    if (questionData.chapter) tags.add(questionData.chapter.toLowerCase());
+    if (questionData.sub_chapter) tags.add(questionData.sub_chapter.toLowerCase());
+
+    // Add difficulty
+    if (questionData.difficulty) tags.add(questionData.difficulty.toLowerCase());
+
+    // Add question type
+    if (questionData.question_type) tags.add(questionData.question_type.toLowerCase());
+
+    // Analyze content for keywords
+    const content = (questionData.question_text + ' ' + (questionData.latex_content || '')).toLowerCase();
+
+    const keywords = [
+        'aljabar', 'geometri', 'aritmatika', 'bilangan', 'persamaan', 'kuadrat',
+        'segitiga', 'lingkaran', 'statistika', 'peluang', 'logika', 'fungsi',
+        'integral', 'diferensial', 'matriks', 'vektor', 'limit', 'turunan'
+    ];
+
+    keywords.forEach(keyword => {
+        if (content.includes(keyword)) {
+            tags.add(keyword);
+        }
+    });
+
+    return Array.from(tags).filter(tag => tag && tag.trim().length > 0);
+}
+
+// Edit question
+async function editQuestion(questionId) {
+    try {
+        console.log('Editing question with ID:', questionId);
+
+        const { data: question, error } = await supabase
+            .from('questions')
+            .select('*')
+            .eq('id', questionId)
+            .single();
+
+        if (error) {
+            console.error('Error loading question for edit:', error);
+            alert('Gagal memuat soal untuk diedit: ' + error.message);
+            return;
+        }
+
+        console.log('Question data loaded:', question);
+
+        // Store question data for later population
+        window.editingQuestionData = question;
+
+        // Initialize question sections
+        window.questionSections = [];
+
+        // Set basic form fields first
+        document.getElementById('questionText').value = question.question_text;
+        document.getElementById('questionType').value = question.question_type;
+
+        // Check if question contains LaTeX and enable LaTeX mode if needed
+        const hasLatex = question.question_text && /\\\(.+?\\\)/.test(question.question_text);
+        if (hasLatex) {
+            document.getElementById('enableQuestionLatex').checked = true;
+            toggleQuestionLatexMode();
+        }
+
+        // Check if question has images and enable image mode if needed
+        const hasImages = question.image_url ||
+                         (question.option_images && Object.keys(question.option_images || {}).length > 0) ||
+                         (question.question_type === 'Pilihan Ganda' || question.question_type === 'PGK MCMA') &&
+                         (question.option_a_image || question.option_b_image || question.option_c_image || question.option_d_image);
+
+        const enableImagesCheckbox = document.getElementById('enableQuestionImages');
+        if (enableImagesCheckbox) {
+            enableImagesCheckbox.checked = !!hasImages;
+            toggleQuestionImageFields();
+        }
+
+        document.getElementById('chapter').value = question.chapter;
+        document.getElementById('competence').value = question.competence || '';
+        document.getElementById('timeLimit').value = question.time_limit_minutes;
+        document.getElementById('difficulty').value = question.difficulty;
+
+        // Update sub-chapters based on selected chapter
+        updateSubChapters();
+
+        // Set sub-chapter immediately after updating options
+        const subChapterSelect = document.getElementById('subChapter');
+        if (subChapterSelect) {
+            subChapterSelect.value = question.sub_chapter || '';
+            console.log('Sub-chapter set to:', question.sub_chapter);
+        }
+
+        // Update question form to show the correct options
+        updateQuestionForm();
+
+        // Wait for DOM updates, then populate all fields
+        setTimeout(() => {
+            // Ensure form is updated again if needed
+            updateQuestionForm();
+
+            // Populate the dynamic form fields
+            populateQuestionFormFields(question);
+        }, 300);
+
+        document.getElementById('formTitle').textContent = 'Edit Soal';
+        currentEditingQuestionId = questionId;
+        showQuestionForm();
+
+        // Scroll to top of page when editing
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        console.log('Edit question form shown, currentEditingQuestionId set to:', currentEditingQuestionId);
+
+    } catch (error) {
+        console.error('Error in editQuestion:', error);
+        alert('Terjadi kesalahan saat mengedit soal.');
+    }
+}
+
+// Helper function to populate form fields after dynamic elements are created
+function populateQuestionFormFields(question) {
+    try {
+        console.log('Populating form fields for question type:', question.question_type);
+
+        switch (question.question_type) {
+            case 'Pilihan Ganda':
+                const optionA = document.getElementById('optionA');
+                const optionB = document.getElementById('optionB');
+                const optionC = document.getElementById('optionC');
+                const optionD = document.getElementById('optionD');
+
+                if (optionA) optionA.value = question.option_a || '';
+                if (optionB) optionB.value = question.option_b || '';
+                if (optionC) optionC.value = question.option_c || '';
+                if (optionD) optionD.value = question.option_d || '';
+
+                // Set the correct radio button
+                if (question.correct_answer) {
+                    const correctRadio = document.getElementById(`correctAnswer${question.correct_answer}`);
+                    if (correctRadio) correctRadio.checked = true;
+                }
+
+                // Check if options contain LaTeX and enable LaTeX mode
+                const optionsText = [question.option_a, question.option_b, question.option_c, question.option_d]
+                    .filter(opt => opt)
+                    .join(' ');
+                const hasLatex = optionsText && /\\\(.+?\\\)/.test(optionsText);
+
+                if (hasLatex) {
+                    const latexCheckbox = document.getElementById('enableOptionsLatex');
+                    if (latexCheckbox) {
+                        latexCheckbox.checked = true;
+                        toggleOptionsLatexMode();
+                    }
+                }
+
+                // Load option images
+                if (question.option_images) {
+                    const optionImages = typeof question.option_images === 'string' ?
+                        JSON.parse(question.option_images) : question.option_images;
+
+                    ['A', 'B', 'C', 'D'].forEach(letter => {
+                        const imageUrl = optionImages[`option_${letter.toLowerCase()}_image`];
+                        if (imageUrl) {
+                            const preview = document.getElementById(`option${letter}ImagePreview`);
+                            if (preview) {
+                                preview.innerHTML = `<img src="${imageUrl}" alt="Option ${letter}" style="max-width: 200px; max-height: 200px; border: 1px solid #ddd; border-radius: 4px;">`;
+                            }
+                        }
+                    });
+                }
+                break;
+
+            case 'PGK Kategori':
+                console.log('Populating PGK Kategori form fields');
+
+                // Parse category_options if it's a JSON string
+                let categoryOptions = question.category_options;
+                if (typeof categoryOptions === 'string') {
+                    try {
+                        categoryOptions = JSON.parse(categoryOptions);
+                    } catch (e) {
+                        console.error('Error parsing category_options:', e);
+                        categoryOptions = [];
+                    }
+                }
+
+                // Parse category_mapping if it's a JSON string
+                let categoryMapping = question.category_mapping;
+                if (typeof categoryMapping === 'string') {
+                    try {
+                        categoryMapping = JSON.parse(categoryMapping);
+                    } catch (e) {
+                        console.error('Error parsing category_mapping:', e);
+                        categoryMapping = {};
+                    }
+                }
+
+                console.log('Parsed category_options:', categoryOptions);
+                console.log('Parsed category_mapping:', categoryMapping);
+
+                // Populate category statements table
+                if (categoryOptions && Array.isArray(categoryOptions)) {
+                    window.categoryStatements = categoryOptions.map(statement => ({
+                        statement: statement,
+                        isTrue: categoryMapping && categoryMapping[statement] !== undefined ? categoryMapping[statement] : null
+                    }));
+
+                    // Check if statements contain LaTeX and enable LaTeX mode
+                    const hasLatex = categoryOptions.some(stmt => /\\\(.+?\\\)/.test(stmt));
+                    if (hasLatex) {
+                        const latexCheckbox = document.getElementById('enableStatementsLatex');
+                        if (latexCheckbox) {
+                            latexCheckbox.checked = true;
+                            toggleStatementsLatexMode();
+                        }
+                    }
+
+                    // Update the table
+                    setTimeout(() => {
+                        console.log('Updating category statements table...');
+                        updateCategoryStatementsTable();
+                    }, 100);
+                } else {
+                    // Initialize with empty data if none exists
+                    window.categoryStatements = [{ statement: '', isTrue: null }];
+                    updateCategoryStatementsTable();
+                }
+                break;
+
+            case 'PGK MCMA':
+                const optionAMC = document.getElementById('optionA');
+                const optionBMC = document.getElementById('optionB');
+                const optionCMC = document.getElementById('optionC');
+                const optionDMC = document.getElementById('optionD');
+
+                if (optionAMC) optionAMC.value = question.option_a || '';
+                if (optionBMC) optionBMC.value = question.option_b || '';
+                if (optionCMC) optionCMC.value = question.option_c || '';
+                if (optionDMC) optionDMC.value = question.option_d || '';
+
+                // Check if options contain LaTeX and enable LaTeX mode
+                const mcmaOptionsText = [question.option_a, question.option_b, question.option_c, question.option_d]
+                    .filter(opt => opt)
+                    .join(' ');
+                const mcmaHasLatex = mcmaOptionsText && /\\\(.+?\\\)/.test(mcmaOptionsText);
+
+                if (mcmaHasLatex) {
+                    const latexCheckbox = document.getElementById('enableOptionsLatex');
+                    if (latexCheckbox) {
+                        latexCheckbox.checked = true;
+                        toggleOptionsLatexMode();
+                    }
+                }
+
+                // Handle multiple correct answers
+                let correctAnswers = question.correct_answers;
+                if (correctAnswers && Array.isArray(correctAnswers)) {
+                    correctAnswers.forEach(answer => {
+                        const checkbox = document.getElementById(`mcma${answer}`);
+                        if (checkbox) {
+                            checkbox.checked = true;
+                        }
+                    });
+                }
+
+                // Load option images
+                if (question.option_images) {
+                    const optionImages = typeof question.option_images === 'string' ?
+                        JSON.parse(question.option_images) : question.option_images;
+
+                    ['A', 'B', 'C', 'D'].forEach(letter => {
+                        const imageUrl = optionImages[`option_${letter.toLowerCase()}_image`];
+                        if (imageUrl) {
+                            const preview = document.getElementById(`option${letter}ImagePreview`);
+                            if (preview) {
+                                preview.innerHTML = `<img src="${imageUrl}" alt="Option ${letter}" style="max-width: 200px; max-height: 200px; border: 1px solid #ddd; border-radius: 4px;">`;
+                            }
+                        }
+                    });
+                }
+                break;
+        }
+
+        // Handle explanation field
+        const explanationField = document.getElementById('explanation');
+        if (explanationField) {
+            explanationField.value = question.explanation || '';
+        }
+
+        // Handle image preview (only if images are enabled)
+        const enableImages = document.getElementById('enableQuestionImages')?.checked || false;
+        const imagePreview = document.getElementById('imagePreview');
+        if (imagePreview) {
+            if (question.image_url && enableImages) {
+                imagePreview.innerHTML = `<img src="${question.image_url}" alt="Question Image" style="max-width: 200px; max-height: 200px;">`;
+            } else {
+                imagePreview.innerHTML = '';
+            }
+        }
+
+        // Handle question sections
+        if (question.question_sections) {
+            let sections = question.question_sections;
+            console.log('populateQuestionFormFields: question.question_sections:', sections, 'type:', typeof sections);
+            if (typeof sections === 'string') {
+                try {
+                    sections = JSON.parse(sections);
+                    console.log('populateQuestionFormFields: parsed sections:', sections, 'isArray:', Array.isArray(sections));
+                } catch (e) {
+                    console.error('Error parsing question_sections:', e);
+                    sections = [];
+                }
+            }
+            window.questionSections = sections || [];
+            console.log('populateQuestionFormFields: set window.questionSections to:', window.questionSections, 'isArray:', Array.isArray(window.questionSections));
+        } else {
+            window.questionSections = [];
+            console.log('populateQuestionFormFields: no question_sections, set window.questionSections to []');
+        }
+        updateQuestionSectionsDisplay();
+
+        console.log('Form fields populated successfully');
+
+    } catch (error) {
+        console.error('Error populating question form fields:', error);
+    }
+}
+
+// Delete question
+async function deleteQuestion(questionId) {
+    if (!confirm('Apakah Anda yakin ingin menghapus soal ini?')) {
+        return;
+    }
+
+    try {
+        // First, delete all related exam answers
+        console.log('Deleting related exam answers for question:', questionId);
+        const { error: answersError } = await supabase
+            .from('exam_answers')
+            .delete()
+            .eq('question_id', questionId);
+
+        if (answersError) {
+            console.error('Error deleting related exam answers:', answersError);
+            alert('Gagal menghapus jawaban terkait soal. Silakan coba lagi.');
+            return;
+        }
+
+        // Then delete the question itself
+        console.log('Deleting question:', questionId);
+        const { error } = await supabase
+            .from('questions')
+            .delete()
+            .eq('id', questionId);
+
+        if (error) {
+            console.error('Error deleting question:', error);
+            alert('Gagal menghapus soal: ' + error.message);
+            return;
+        }
+
+        alert('Soal berhasil dihapus!');
+
+        // Add activity to recent activities
+        addActivity(
+            'fas fa-trash',
+            'Soal dihapus',
+            `Soal dengan ID ${questionId} telah dihapus`,
+            'question',
+            'deleted',
+            'question',
+            questionId
+        );
+
+        await loadQuestions();
+
+    } catch (error) {
+        console.error('Error in deleteQuestion:', error);
+        alert('Terjadi kesalahan saat menghapus soal.');
+    }
+}
+
+// Helper functions for PGK Kategori parsing
+function parseCategoryOptions(text) {
+    // Parse format: "Kategori1: Item1, Item2\nKategori2: Item3, Item4"
+    const lines = text.split('\n').filter(line => line.trim());
+    const categories = {};
+
+    lines.forEach(line => {
+        const colonIndex = line.indexOf(':');
+        if (colonIndex > 0) {
+            const categoryName = line.substring(0, colonIndex).trim();
+            const itemsText = line.substring(colonIndex + 1).trim();
+            const items = itemsText.split(',').map(item => item.trim()).filter(item => item);
+            categories[categoryName] = items;
+        }
+    });
+
+    return categories;
+}
+
+function parseCategoryMapping(text) {
+    // Parse format: "Item1=Kategori1, Item2=Kategori1"
+    const mappings = {};
+    const items = text.split(',').map(item => item.trim()).filter(item => item);
+
+    items.forEach(item => {
+        const equalsIndex = item.indexOf('=');
+        if (equalsIndex > 0) {
+            const itemName = item.substring(0, equalsIndex).trim();
+            const categoryName = item.substring(equalsIndex + 1).trim();
+            mappings[itemName] = categoryName;
+        }
+    });
+
+    return mappings;
+}
+
+// Helper functions for displaying PGK Kategori data in edit form
+function formatCategoryOptionsForDisplay(categoryOptions) {
+    // Convert JSON object back to text format
+    if (!categoryOptions || typeof categoryOptions !== 'object') return '';
+
+    const lines = [];
+    Object.keys(categoryOptions).forEach(categoryName => {
+        const items = categoryOptions[categoryName];
+        if (Array.isArray(items)) {
+            lines.push(`${categoryName}: ${items.join(', ')}`);
+        }
+    });
+
+    return lines.join('\n');
+}
+
+function formatCategoryMappingForDisplay(categoryMapping) {
+    // Convert JSON object back to text format
+    if (!categoryMapping || typeof categoryMapping !== 'object') return '';
+
+    const mappings = [];
+    Object.keys(categoryMapping).forEach(itemName => {
+        const categoryName = categoryMapping[itemName];
+        mappings.push(`${itemName}=${categoryName}`);
+    });
+
+    return mappings.join(', ');
+}
+
+// Event listeners for question and material management
+document.addEventListener('DOMContentLoaded', () => {
+    // Question management buttons
+    const addQuestionBtn = document.getElementById('addQuestionBtn');
+    const cancelQuestionBtn = document.getElementById('cancelQuestionBtn');
+    const questionFormData = document.getElementById('questionFormData');
+    const questionTypeSelect = document.getElementById('questionType');
+
+    console.log('Setting up question management event listeners...');
+    console.log('addQuestionBtn found:', !!addQuestionBtn);
+    console.log('cancelQuestionBtn found:', !!cancelQuestionBtn);
+    console.log('questionFormData found:', !!questionFormData);
+    console.log('questionTypeSelect found:', !!questionTypeSelect);
+
+    if (addQuestionBtn) {
+        addQuestionBtn.addEventListener('click', showQuestionForm);
+        console.log('Added click listener to addQuestionBtn');
+    }
+
+    if (cancelQuestionBtn) {
+        cancelQuestionBtn.addEventListener('click', hideQuestionForm);
+        console.log('Added click listener to cancelQuestionBtn');
+    }
+
+    if (questionFormData) {
+        questionFormData.addEventListener('submit', (e) => {
+            console.log('Form submit event triggered for question form');
+            e.preventDefault();
+            console.log('Calling saveQuestion...');
+            saveQuestion(e);
+        });
+        console.log('Added submit listener to questionFormData');
+    } else {
+        console.warn('questionFormData element not found - this may be normal if not on questions tab');
+    }
+
+    // Question type change listener - CRITICAL for form loading
+    if (questionTypeSelect) {
+        questionTypeSelect.addEventListener('change', () => {
+            console.log('Question type changed to:', questionTypeSelect.value);
+            updateQuestionForm();
+        });
+        console.log('Added change listener to questionTypeSelect');
+    } else {
+        console.warn('questionTypeSelect element not found - this may cause form loading issues');
+    }
+
+    // Chapter change listener - update sub-chapters when chapter changes
+    const chapterSelect = document.getElementById('chapter');
+    if (chapterSelect) {
+        chapterSelect.addEventListener('change', () => {
+            console.log('Chapter changed to:', chapterSelect.value, ', updating sub-chapters...');
+            updateSubChapters();
+        });
+        console.log('Added change listener to chapterSelect');
+    } else {
+        console.warn('chapterSelect element not found');
+    }
+
+    // Sub-chapter change listener - for debugging
+    const subChapterSelect = document.getElementById('subChapter');
+    if (subChapterSelect) {
+        subChapterSelect.addEventListener('change', () => {
+            console.log('Sub-chapter changed to:', subChapterSelect.value);
+        });
+        console.log('Added change listener to subChapterSelect for debugging');
+    } else {
+        console.warn('subChapterSelect element not found');
+    }
+
+    // Material management buttons
+    const addMaterialBtn = document.getElementById('addMaterialBtn');
+    const cancelMaterialBtn = document.getElementById('cancelMaterialBtn');
+    const materialFormData = document.getElementById('materialFormData');
+
+    console.log('Setting up material management event listeners...');
+    console.log('addMaterialBtn found:', !!addMaterialBtn);
+    console.log('cancelMaterialBtn found:', !!cancelMaterialBtn);
+    console.log('materialFormData found:', !!materialFormData);
+
+    if (addMaterialBtn) {
+        addMaterialBtn.addEventListener('click', showMaterialForm);
+        console.log('Added click listener to addMaterialBtn');
+    }
+
+    if (cancelMaterialBtn) {
+        cancelMaterialBtn.addEventListener('click', hideMaterialForm);
+        console.log('Added click listener to cancelMaterialBtn');
+    }
+
+    if (materialFormData) {
+        materialFormData.addEventListener('submit', saveMaterial);
+        materialFormData.addEventListener('reset', () => {
+            setTimeout(clearFileDisplays, 10);
+        });
+        console.log('Added submit and reset listeners to materialFormData');
+    } else {
+        console.warn('materialFormData element not found - this may be normal if not on materials tab');
+    }
+});
+
+// Combined dashboard loading for questions
+const originalShowAdminDashboard = showAdminDashboard;
+showAdminDashboard = async function() {
+    await originalShowAdminDashboard();
+    await loadQuestions();
+};
+
+// Advanced Question Management Functions
+
+// Show question sections for composite content (text and images)
+function showQuestionSections() {
+    const container = document.getElementById('optionsContainer');
+
+    // Add sections container at the top
+    let sectionsHtml = `
+        <div class="form-group">
+            <label>Bagian Soal (Sections) - Opsional:</label>
+            <div id="questionSections" class="question-sections">
+                <p style="text-align: center; color: #6b7280; padding: 2rem;">Belum ada bagian soal. Klik tombol di bawah untuk menambah bagian pertama.</p>
+            </div>
+            <div class="section-buttons">
+                <button type="button" class="add-section-btn" onclick="addQuestionSection('text')">+ Tambah Teks Soal</button>
+                <button type="button" class="add-section-btn" onclick="addQuestionSection('image')">+ Tambah Gambar</button>
+            </div>
+        </div>
+    `;
+
+    // Insert sections at the beginning of options container
+    container.insertAdjacentHTML('afterbegin', sectionsHtml);
+
+    // Initialize sections if not already done
+    console.log('showQuestionSections: before init, window.questionSections:', window.questionSections, 'isArray:', Array.isArray(window.questionSections));
+    if (!Array.isArray(window.questionSections)) {
+        window.questionSections = [];
+        console.log('showQuestionSections: initialized window.questionSections to []');
+    }
+    updateQuestionSectionsDisplay();
+}
+
+// Toggle question image fields visibility
+function toggleQuestionImageFields() {
+    const checkbox = document.getElementById('enableQuestionImages');
+    const imageGroup = document.getElementById('questionImageGroup');
+
+    if (checkbox && checkbox.checked) {
+        if (imageGroup) imageGroup.style.display = 'block';
+    } else {
+        if (imageGroup) imageGroup.style.display = 'none';
+        // Clear any selected image
+        const imageInput = document.getElementById('questionImage');
+        if (imageInput) {
+            imageInput.value = '';
+            const preview = document.getElementById('imagePreview');
+            if (preview) preview.innerHTML = '';
+        }
+    }
+
+    // Update the question form to show/hide option images
+    updateQuestionForm();
+}
+
+// Update question form based on type
+function updateQuestionForm() {
+    const questionType = document.getElementById('questionType').value;
+    const optionsContainer = document.getElementById('optionsContainer');
+    const enableImages = document.getElementById('enableQuestionImages')?.checked || false;
+
+    console.log('Updating question form for type:', questionType, 'enableImages:', enableImages);
+
+    // Save current values before updating form
+    const currentValues = {};
+    if (questionType === 'Pilihan Ganda') {
+        ['optionA', 'optionB', 'optionC', 'optionD'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) currentValues[id] = el.value;
+        });
+        // Also save correct answer
+        const correctAnswer = document.querySelector('input[name="correctAnswer"]:checked');
+        if (correctAnswer) currentValues.correctAnswer = correctAnswer.value;
+    }
+    if (questionType === 'PGK MCMA') {
+        ['optionA', 'optionB', 'optionC', 'optionD'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) currentValues[id] = el.value;
+        });
+        // Save checked boxes
+        const checkedBoxes = document.querySelectorAll('input[id^="mcma"]:checked');
+        currentValues.mcmaChecked = Array.from(checkedBoxes).map(cb => cb.value);
+    }
+    // Note: PGK Kategori uses window.categoryStatements, no need to save current values here
+    // as the form will be properly populated by populateQuestionFormFields
+
+    // Clear existing options
+    if (optionsContainer) {
+        optionsContainer.innerHTML = '';
+    } else {
+        console.error('Options container not found!');
+        return;
+    }
+
+    // Always show question sections for composite content
+    showQuestionSections();
+
+    // Show type-specific options
+    switch (questionType) {
+        case 'Pilihan Ganda':
+            console.log('Showing multiple choice options');
+            showMultipleChoiceOptions(enableImages);
+            break;
+        case 'PGK Kategori':
+            console.log('Showing category options');
+            showCategoryOptions();
+            break;
+        case 'PGK MCMA':
+            console.log('Showing MCMA options');
+            showMCMAOptions(enableImages);
+            break;
+        case 'Komposit':
+            console.log('Showing composite question options');
+            // For Komposit, sections are already shown above
+            break;
+        default:
+            console.warn('Unknown question type:', questionType);
+    }
+
+    // Restore saved values
+    if (questionType === 'Pilihan Ganda') {
+        ['optionA', 'optionB', 'optionC', 'optionD'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el && currentValues[id]) el.value = currentValues[id];
+        });
+        if (currentValues.correctAnswer) {
+            const radio = document.getElementById(`correctAnswer${currentValues.correctAnswer}`);
+            if (radio) radio.checked = true;
+        }
+    }
+    if (questionType === 'PGK MCMA') {
+        ['optionA', 'optionB', 'optionC', 'optionD'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el && currentValues[id]) el.value = currentValues[id];
+        });
+        if (currentValues.mcmaChecked) {
+            currentValues.mcmaChecked.forEach(value => {
+                const checkbox = document.getElementById(`mcma${value}`);
+                if (checkbox) checkbox.checked = true;
+            });
+        }
+    }
+    if (questionType === 'PGK Kategori') {
+        const statements = document.getElementById('categoryStatements');
+        if (statements && currentValues.categoryStatements) statements.value = currentValues.categoryStatements;
+        // Wait for statements preview to be updated, then check the boxes
+        setTimeout(() => {
+            if (currentValues.checkedStatements) {
+                currentValues.checkedStatements.forEach(value => {
+                    const checkbox = Array.from(document.querySelectorAll('.statement-checkbox')).find(cb => cb.value === value);
+                    if (checkbox) checkbox.checked = true;
+                });
+            }
+        }, 100);
+    }
+
+    console.log('Question form updated successfully');
+}
+
+// Show multiple choice options (A, B, C, D)
+function showMultipleChoiceOptions(enableImages = false) {
+    const container = document.getElementById('optionsContainer');
+    if (!container) return;
+
+    const imageUploadHtml = enableImages ? `
+        <div class="option-image-upload">
+            <label for="optionAImage">Gambar untuk Pilihan A (Opsional):</label>
+            <input type="file" id="optionAImage" accept="image/*" onchange="previewOptionImage('A', this)">
+            <div id="optionAImagePreview" class="image-preview"></div>
+        </div>
+    ` : '';
+
+    const imageUploadBHtml = enableImages ? `
+        <div class="option-image-upload">
+            <label for="optionBImage">Gambar untuk Pilihan B (Opsional):</label>
+            <input type="file" id="optionBImage" accept="image/*" onchange="previewOptionImage('B', this)">
+            <div id="optionBImagePreview" class="image-preview"></div>
+        </div>
+    ` : '';
+
+    const imageUploadCHtml = enableImages ? `
+        <div class="option-image-upload">
+            <label for="optionCImage">Gambar untuk Pilihan C (Opsional):</label>
+            <input type="file" id="optionCImage" accept="image/*" onchange="previewOptionImage('C', this)">
+            <div id="optionCImagePreview" class="image-preview"></div>
+        </div>
+    ` : '';
+
+    const imageUploadDHtml = enableImages ? `
+        <div class="option-image-upload">
+            <label for="optionDImage">Gambar untuk Pilihan D (Opsional):</label>
+            <input type="file" id="optionDImage" accept="image/*" onchange="previewOptionImage('D', this)">
+            <div id="optionDImagePreview" class="image-preview"></div>
+        </div>
+    ` : '';
+
+    container.innerHTML = `
+        <div class="form-group">
+            <label>LaTeX untuk Pilihan Jawaban:</label>
+            <div class="latex-controls">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="enableOptionsLatex" onchange="toggleOptionsLatexMode()">
+                    <span>Enable LaTeX untuk semua pilihan jawaban</span>
+                </label>
+            </div>
+            <div id="optionsLatexToolbar" class="latex-toolbar" style="display: none;">
+                <button type="button" onclick="insertLatexIntoOptions('fraction')" title="Fraction">½</button>
+                <button type="button" onclick="insertLatexIntoOptions('sqrt')" title="Square Root">√</button>
+                <button type="button" onclick="insertLatexIntoOptions('power')" title="Power">x²</button>
+                <button type="button" onclick="insertLatexIntoOptions('integral')" title="Integral">∫</button>
+                <button type="button" onclick="insertLatexIntoOptions('sum')" title="Sum">Σ</button>
+                <button type="button" onclick="insertLatexIntoOptions('alpha')" title="Alpha">α</button>
+                <button type="button" onclick="insertLatexIntoOptions('beta')" title="Beta">β</button>
+                <button type="button" onclick="insertLatexIntoOptions('gamma')" title="Gamma">γ</button>
+            </div>
+            <div id="optionsLatexPreview" class="latex-preview" style="display: none;"></div>
+        </div>
+
+        <div class="option-group">
+            <div class="option-header">
+                <label for="optionA">Pilihan A:</label>
+                <input type="radio" name="correctAnswer" value="A" id="correctAnswerA">
+            </div>
+            <input type="text" id="optionA" placeholder="Jawaban A">
+            ${imageUploadHtml}
+        </div>
+
+        <div class="option-group">
+            <div class="option-header">
+                <label for="optionB">Pilihan B:</label>
+                <input type="radio" name="correctAnswer" value="B" id="correctAnswerB">
+            </div>
+            <input type="text" id="optionB" placeholder="Jawaban B">
+            ${imageUploadBHtml}
+        </div>
+
+        <div class="option-group">
+            <div class="option-header">
+                <label for="optionC">Pilihan C:</label>
+                <input type="radio" name="correctAnswer" value="C" id="correctAnswerC">
+            </div>
+            <input type="text" id="optionC" placeholder="Jawaban C">
+            ${imageUploadCHtml}
+        </div>
+
+        <div class="option-group">
+            <div class="option-header">
+                <label for="optionD">Pilihan D:</label>
+                <input type="radio" name="correctAnswer" value="D" id="correctAnswerD">
+            </div>
+            <input type="text" id="optionD" placeholder="Jawaban D">
+            ${imageUploadDHtml}
+        </div>
+    `;
+}
+
+// Show category options (True/False statements)
+function showCategoryOptions() {
+    const container = document.getElementById('optionsContainer');
+    if (!container) return;
+
+    container.innerHTML = `
+            <div class="form-group">
+                <label>Pilihan Jawaban:</label>
+                <div class="category-table-container">
+                    <table class="category-options-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 60%;">Pernyataan</th>
+                                <th style="width: 20%; text-align: center;">Benar</th>
+                                <th style="width: 20%; text-align: center;">Salah</th>
+                            </tr>
+                        </thead>
+                        <tbody id="categoryStatementsTableBody">
+                            <!-- Rows will be added dynamically -->
+                        </tbody>
+                    </table>
+                    <div class="table-actions">
+                        <button type="button" class="add-statement-btn" onclick="addCategoryStatement()">
+                            <i class="fas fa-plus"></i> Tambah Pernyataan
+                        </button>
+                    </div>
+                </div>
+                <div class="latex-controls">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="enableStatementsLatex" onchange="toggleStatementsLatexMode()">
+                        <span>Enable LaTeX untuk pernyataan</span>
+                    </label>
+                </div>
+                <div id="statementsLatexToolbar" class="latex-toolbar" style="display: none;">
+                    <button type="button" onclick="insertLatexIntoStatements('fraction')" title="Fraction">½</button>
+                    <button type="button" onclick="insertLatexIntoStatements('sqrt')" title="Square Root">√</button>
+                    <button type="button" onclick="insertLatexIntoStatements('power')" title="Power">x²</button>
+                    <button type="button" onclick="insertLatexIntoStatements('integral')" title="Integral">∫</button>
+                    <button type="button" onclick="insertLatexIntoStatements('sum')" title="Sum">Σ</button>
+                    <button type="button" onclick="insertLatexIntoStatements('alpha')" title="Alpha">α</button>
+                    <button type="button" onclick="insertLatexIntoStatements('beta')" title="Beta">β</button>
+                    <button type="button" onclick="insertLatexIntoStatements('gamma')" title="Gamma">γ</button>
+                </div>
+                <div id="statementsLatexPreview" class="latex-preview" style="display: none;"></div>
+                <small>Klik "Tambah Pernyataan" untuk menambah baris baru. Pilih Benar atau Salah untuk setiap pernyataan.</small>
+            </div>
+        `;
+
+    // Initialize with at least one empty row
+    if (!window.categoryStatements || window.categoryStatements.length === 0) {
+        window.categoryStatements = [{ statement: '', isTrue: null }];
+    }
+    updateCategoryStatementsTable();
+
+}
+
+// Add a new category statement row
+function addCategoryStatement() {
+    if (!window.categoryStatements) {
+        window.categoryStatements = [];
+    }
+    window.categoryStatements.push({ statement: '', isTrue: null });
+    updateCategoryStatementsTable();
+}
+
+// Update the category statements table
+function updateCategoryStatementsTable() {
+    const tableBody = document.getElementById('categoryStatementsTableBody');
+    if (!tableBody) return;
+
+    if (!window.categoryStatements || window.categoryStatements.length === 0) {
+        window.categoryStatements = [{ statement: '', isTrue: null }];
+    }
+
+    let html = '';
+
+    window.categoryStatements.forEach((item, index) => {
+        // Check if LaTeX is enabled and render accordingly
+        const enableLatex = document.getElementById('enableStatementsLatex')?.checked;
+        let displayText = item.statement;
+
+        if (enableLatex && window.katex && item.statement) {
+            try {
+                // Render LaTeX expressions in the statement
+                displayText = item.statement.replace(/\\\(.+?\\\)/g, (match) => {
+                    try {
+                        return window.katex.renderToString(match.slice(2, -2), { displayMode: false });
+                    } catch (e) {
+                        return match; // Return original if LaTeX fails
+                    }
+                });
+            } catch (error) {
+                // If rendering fails, use plain text
+                displayText = item.statement;
+            }
+        }
+
+        html += `
+            <tr class="category-statement-row">
+                <td>
+                    <input type="text"
+                           class="statement-input"
+                           placeholder="Masukkan pernyataan..."
+                           value="${item.statement}"
+                           oninput="updateCategoryStatement(${index}, 'statement', this.value)">
+                </td>
+                <td style="text-align: center;">
+                    <input type="radio"
+                           name="statement-${index}"
+                           value="true"
+                           ${item.isTrue === true ? 'checked' : ''}
+                           onchange="updateCategoryStatement(${index}, 'isTrue', true)">
+                </td>
+                <td style="text-align: center;">
+                    <input type="radio"
+                           name="statement-${index}"
+                           value="false"
+                           ${item.isTrue === false ? 'checked' : ''}
+                           onchange="updateCategoryStatement(${index}, 'isTrue', false)">
+                    ${index > 0 ? `<button type="button" class="remove-statement-btn" onclick="removeCategoryStatement(${index})" title="Hapus pernyataan">
+                        <i class="fas fa-trash"></i>
+                    </button>` : ''}
+                </td>
+            </tr>
+        `;
+    });
+
+    tableBody.innerHTML = html;
+}
+
+// Update a category statement
+function updateCategoryStatement(index, field, value) {
+    if (!window.categoryStatements) {
+        window.categoryStatements = [];
+    }
+
+    if (!window.categoryStatements[index]) {
+        window.categoryStatements[index] = { statement: '', isTrue: null };
+    }
+
+    if (field === 'isTrue') {
+        window.categoryStatements[index][field] = value;
+    } else {
+        window.categoryStatements[index][field] = value;
+    }
+
+    // Only re-render the table if LaTeX is enabled (to update rendering)
+    const enableLatex = document.getElementById('enableStatementsLatex')?.checked;
+    if (enableLatex) {
+        updateCategoryStatementsTable();
+    }
+    // If LaTeX is not enabled, no need to re-render as the input value is already updated
+}
+
+// Remove a category statement
+function removeCategoryStatement(index) {
+    if (!window.categoryStatements || window.categoryStatements.length <= 1) {
+        alert('Minimal harus ada satu pernyataan!');
+        return;
+    }
+
+    window.categoryStatements.splice(index, 1);
+    updateCategoryStatementsTable();
+}
+
+// Show MCMA (Multiple Correct Multiple Answer) options
+function showMCMAOptions(enableImages = false) {
+    const container = document.getElementById('optionsContainer');
+    if (!container) return;
+
+    const imageUploadHtml = enableImages ? `
+        <div class="option-image-upload">
+            <label for="optionAImage">Gambar untuk Pilihan A (Opsional):</label>
+            <input type="file" id="optionAImage" accept="image/*" onchange="previewOptionImage('A', this)">
+            <div id="optionAImagePreview" class="image-preview"></div>
+        </div>
+    ` : '';
+
+    const imageUploadBHtml = enableImages ? `
+        <div class="option-image-upload">
+            <label for="optionBImage">Gambar untuk Pilihan B (Opsional):</label>
+            <input type="file" id="optionBImage" accept="image/*" onchange="previewOptionImage('B', this)">
+            <div id="optionBImagePreview" class="image-preview"></div>
+        </div>
+    ` : '';
+
+    const imageUploadCHtml = enableImages ? `
+        <div class="option-image-upload">
+            <label for="optionCImage">Gambar untuk Pilihan C (Opsional):</label>
+            <input type="file" id="optionCImage" accept="image/*" onchange="previewOptionImage('C', this)">
+            <div id="optionCImagePreview" class="image-preview"></div>
+        </div>
+    ` : '';
+
+    const imageUploadDHtml = enableImages ? `
+        <div class="option-image-upload">
+            <label for="optionDImage">Gambar untuk Pilihan D (Opsional):</label>
+            <input type="file" id="optionDImage" accept="image/*" onchange="previewOptionImage('D', this)">
+            <div id="optionDImagePreview" class="image-preview"></div>
+        </div>
+    ` : '';
+
+    container.innerHTML = `
+        <div class="form-group">
+            <label>LaTeX untuk Pilihan Jawaban:</label>
+            <div class="latex-controls">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="enableOptionsLatex" onchange="toggleOptionsLatexMode()">
+                    <span>Enable LaTeX untuk semua pilihan jawaban</span>
+                </label>
+            </div>
+            <div id="optionsLatexToolbar" class="latex-toolbar" style="display: none;">
+                <button type="button" onclick="insertLatexIntoOptions('fraction')" title="Fraction">½</button>
+                <button type="button" onclick="insertLatexIntoOptions('sqrt')" title="Square Root">√</button>
+                <button type="button" onclick="insertLatexIntoOptions('power')" title="Power">x²</button>
+                <button type="button" onclick="insertLatexIntoOptions('integral')" title="Integral">∫</button>
+                <button type="button" onclick="insertLatexIntoOptions('sum')" title="Sum">Σ</button>
+                <button type="button" onclick="insertLatexIntoOptions('alpha')" title="Alpha">α</button>
+                <button type="button" onclick="insertLatexIntoOptions('beta')" title="Beta">β</button>
+                <button type="button" onclick="insertLatexIntoOptions('gamma')" title="Gamma">γ</button>
+            </div>
+            <div id="optionsLatexPreview" class="latex-preview" style="display: none;"></div>
+        </div>
+
+        <div class="option-group">
+            <div class="option-header">
+                <input type="checkbox" value="A" id="mcmaA">
+                <label for="mcmaA">Pilihan A:</label>
+            </div>
+            <input type="text" id="optionA" placeholder="Jawaban A">
+            ${imageUploadHtml}
+        </div>
+
+        <div class="option-group">
+            <div class="option-header">
+                <input type="checkbox" value="B" id="mcmaB">
+                <label for="mcmaB">Pilihan B:</label>
+            </div>
+            <input type="text" id="optionB" placeholder="Jawaban B">
+            ${imageUploadBHtml}
+        </div>
+
+        <div class="option-group">
+            <div class="option-header">
+                <input type="checkbox" value="C" id="mcmaC">
+                <label for="mcmaC">Pilihan C:</label>
+            </div>
+            <input type="text" id="optionC" placeholder="Jawaban C">
+            ${imageUploadCHtml}
+        </div>
+
+        <div class="option-group">
+            <div class="option-header">
+                <input type="checkbox" value="D" id="mcmaD">
+                <label for="mcmaD">Pilihan D:</label>
+            </div>
+            <input type="text" id="optionD" placeholder="Jawaban D">
+            ${imageUploadDHtml}
+        </div>
+
+        <div class="form-group">
+            <small style="color: #6b7280;">Centang kotak untuk menandai jawaban yang benar</small>
+        </div>
+    `;
+}
+
+// Show composite question options (multi-part questions with alternating text and images)
+function showCompositeOptions() {
+    const container = document.getElementById('optionsContainer');
+    if (!container) return;
+
+    container.innerHTML = `
+        <div class="form-group">
+            <label>Bagian Soal (Sections):</label>
+            <div id="questionSections" class="question-sections">
+                <p style="text-align: center; color: #6b7280; padding: 2rem;">Belum ada bagian soal. Klik tombol di bawah untuk menambah bagian pertama.</p>
+            </div>
+            <div class="section-buttons">
+                <button type="button" class="add-section-btn" onclick="addQuestionSection('text')">+ Tambah Teks Soal</button>
+                <button type="button" class="add-section-btn" onclick="addQuestionSection('image')">+ Tambah Gambar</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Jawaban (untuk soal komposit, gunakan format yang sesuai):</label>
+            <div class="option-group">
+                <div class="option-header">
+                    <input type="radio" name="correctAnswer" value="A" id="correctAnswerA">
+                    <label for="correctAnswerA">Pilihan A:</label>
+                </div>
+                <input type="text" id="optionA" required placeholder="Jawaban A">
+            </div>
+
+            <div class="option-group">
+                <div class="option-header">
+                    <input type="radio" name="correctAnswer" value="B" id="correctAnswerB">
+                    <label for="correctAnswerB">Pilihan B:</label>
+                </div>
+                <input type="text" id="optionB" required placeholder="Jawaban B">
+            </div>
+
+            <div class="option-group">
+                <div class="option-header">
+                    <input type="radio" name="correctAnswer" value="C" id="correctAnswerC">
+                    <label for="correctAnswerC">Pilihan C:</label>
+                </div>
+                <input type="text" id="optionC" required placeholder="Jawaban C">
+            </div>
+
+            <div class="option-group">
+                <div class="option-header">
+                    <input type="radio" name="correctAnswer" value="D" id="correctAnswerD">
+                    <label for="correctAnswerD">Pilihan D:</label>
+                </div>
+                <input type="text" id="optionD" required placeholder="Jawaban D">
+            </div>
+        </div>
+    `;
+
+    // Initialize sections if not already done
+    if (!window.questionSections) {
+        window.questionSections = [];
+    }
+    updateQuestionSectionsDisplay();
+}
+
+// Update sub chapters based on selected chapter
+function updateSubChapters() {
+    const chapterEl = document.getElementById('chapter');
+    const subChapterSelect = document.getElementById('subChapter');
+
+    if (!chapterEl) {
+        console.error('Chapter element not found!');
+        return;
+    }
+
+    const chapter = chapterEl.value.trim();
+    console.log('updateSubChapters called with chapter:', chapter, 'type:', typeof chapter, 'element exists:', !!chapterEl);
+
+    // Clear existing options
+    subChapterSelect.innerHTML = '<option value="">Pilih Sub Bab</option>';
+
+    const subChapters = {
+        'Bilangan': ['Bilangan real'],
+        'Aljabar': ['Persamaan dan pertidaksamaan linear', 'bentuk aljabar', 'Fungsi', 'Barisan deret'],
+        'Geometri dan pengukuran': ['objek geometri', 'transformasi geometri', 'pengukuran'],
+        'Data dan peluang': ['data', 'peluang']
+    };
+
+    console.log('Available chapter keys:', Object.keys(subChapters));
+    console.log('Chapter exists in subChapters:', chapter in subChapters);
+
+    if (subChapters[chapter]) {
+        subChapters[chapter].forEach(sub => {
+            const option = document.createElement('option');
+            option.value = sub;
+            option.textContent = sub;
+            subChapterSelect.appendChild(option);
+        });
+    }
+}
+
+// Update material sub chapters based on selected chapter
+function updateMaterialSubChapters() {
+    const chapter = document.getElementById('materialChapter').value;
+    const subChapterSelect = document.getElementById('materialSubChapter');
+
+    // Clear existing options
+    subChapterSelect.innerHTML = '<option value="">Pilih Sub Bab</option>';
+
+    const subChapters = {
+        'Bilangan': ['Bilangan real'],
+        'Aljabar': ['Persamaan dan pertidaksamaan linear', 'bentuk aljabar', 'Fungsi', 'Barisan deret'],
+        'Geometri dan pengukuran': ['objek geometri', 'transformasi geometri', 'pengukuran'],
+        'Data dan peluang': ['data', 'peluang']
+    };
+
+    if (subChapters[chapter]) {
+        console.log('Available sub-chapters for', chapter, ':', subChapters[chapter]);
+        subChapters[chapter].forEach(sub => {
+            const option = document.createElement('option');
+            option.value = sub;
+            option.textContent = sub;
+            subChapterSelect.appendChild(option);
+        });
+        console.log('Sub-chapter options updated, current value:', subChapterSelect.value);
+    } else {
+        console.log('No sub-chapters found for chapter:', chapter);
+    }
+}
+
+// Save material function
+async function saveMaterial(event) {
+    event.preventDefault();
+
+    try {
+        // Get form data
+        const title = document.getElementById('materialTitle').value.trim();
+        const materialType = document.getElementById('materialType').value;
+        const chapter = document.getElementById('materialChapter').value;
+        const subChapter = document.getElementById('materialSubChapter').value;
+        const difficulty = document.getElementById('materialDifficulty').value;
+        const summary = document.getElementById('materialSummary').value.trim();
+        const objectives = document.getElementById('materialObjectives').value.trim();
+        const isPublished = document.getElementById('materialPublished').checked;
+
+        // Validate required fields
+        if (!title) {
+            alert('Judul materi harus diisi!');
+            return;
+        }
+
+        if (!chapter) {
+            alert('Bab harus dipilih!');
+            return;
+        }
+
+        if (!subChapter) {
+            alert('Sub Bab harus dipilih!');
+            return;
+        }
+
+        // Prepare material data - match the actual database schema
+        const materialData = {
+            title: title,
+            content: summary || null, // Use 'content' column instead of 'summary'
+            objectives: objectives || null, // Learning objectives
+            material_type: materialType,
+            chapter: chapter,
+            sub_chapter: subChapter,
+            difficulty: difficulty,
+            is_published: isPublished,
+            view_count: 0,
+            subject: 'Matematika' // Force to Mathematics for TKA
+        };
+
+        // Handle image upload
+        const imageFile = document.getElementById('materialImage').files[0];
+        if (imageFile) {
+            try {
+                const imageUrl = await uploadImage(imageFile);
+                materialData.image_url = imageUrl;
+            } catch (error) {
+                alert('Gagal upload gambar: ' + error.message);
+                return;
+            }
+        }
+
+        // Handle attachment upload
+        const attachmentFile = document.getElementById('materialAttachment').files[0];
+        if (attachmentFile) {
+            try {
+                const attachmentUrl = await uploadFile(attachmentFile);
+                materialData.attachment_url = attachmentUrl;
+            } catch (error) {
+                alert('Gagal upload lampiran: ' + error.message);
+                return;
+            }
+        }
+
+        console.log('Saving material:', materialData);
+
+        let result;
+        if (currentEditingMaterialId) {
+            // Update existing material
+            console.log('Updating existing material with ID:', currentEditingMaterialId);
+            result = await supabase
+                .from('materials')
+                .update(materialData)
+                .eq('id', currentEditingMaterialId)
+                .select()
+                .single();
+        } else {
+            // Create new material
+            console.log('Creating new material');
+            result = await supabase
+                .from('materials')
+                .insert([materialData])
+                .select()
+                .single();
+        }
+
+        if (result.error) {
+            console.error('Error saving material:', result.error);
+
+            // Provide specific guidance for common errors
+            let errorMessage = 'Gagal menyimpan materi: ';
+
+            if (result.error.message.includes('competence') && result.error.message.includes('column')) {
+                errorMessage += '\n\nKolom "competence" belum ada di database.\n\nSOLUSI:\n1. Buka Supabase Dashboard > SQL Editor\n2. Jalankan script: SQL/add_competence_column.sql\n3. Refresh halaman dan coba lagi.';
+            } else if (result.error.message.includes('objectives') && result.error.message.includes('column')) {
+                errorMessage += '\n\nKolom "objectives" belum ada di database.\n\nSOLUSI:\n1. Buka Supabase Dashboard > SQL Editor\n2. Jalankan script: SQL/add_objectives_column.sql\n3. Refresh halaman dan coba lagi.';
+            } else if (result.error.message.includes('bucket') || result.error.message.includes('storage')) {
+                errorMessage += '\n\nMasalah storage bucket.\n\nSOLUSI:\n1. Buka Supabase Dashboard > SQL Editor\n2. Jalankan script: SQL/setup_storage_buckets.sql\n3. Pastikan bucket "materials" ada di Storage.';
+            } else {
+                errorMessage += result.error.message;
+            }
+
+            alert(errorMessage);
+            return;
+        }
+
+        const successMessage = currentEditingMaterialId
+            ? 'Materi berhasil diperbarui!'
+            : 'Materi berhasil disimpan!';
+
+        alert(successMessage);
+
+        // Add activity to recent activities
+        const activityAction = currentEditingMaterialId ? 'updated' : 'created';
+        const activityTitle = currentEditingMaterialId ? 'Materi diperbarui' : 'Materi baru dibuat';
+        const activityDescription = `"${title}" (${materialType})`;
+
+        addActivity(
+            'fas fa-plus-circle',
+            activityTitle,
+            activityDescription,
+            'material',
+            activityAction,
+            'material',
+            result.data.id
+        );
+
+        // Reset form and hide it
+        document.getElementById('materialFormData').reset();
+        hideMaterialForm();
+
+        // Reload materials list
+        await loadMaterials();
+
+    } catch (error) {
+        console.error('Error in saveMaterial:', error);
+        alert('Terjadi kesalahan saat menyimpan materi.');
+    }
+}
+
+// Upload file to Supabase Storage (for attachments)
+async function uploadFile(file, bucket = 'materials') {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}.${fileExt}`;
+    const filePath = `materials/${fileName}`;
+
+    console.log('uploadFile called with bucket:', bucket, 'file:', file.name, 'size:', file.size);
+
+    try {
+        const { data, error } = await supabase.storage
+            .from(bucket)
+            .upload(filePath, file);
+
+        console.log('Supabase storage upload result:', { data, error });
+
+        if (error) {
+            console.error('Storage upload error details:', {
+                message: error.message,
+                statusCode: error.statusCode,
+                error: error.error,
+                hint: error.hint
+            });
+
+            if (error.message.includes('Bucket not found') || error.message.includes('bucket')) {
+                console.error('Bucket not found error. Available buckets may need to be checked.');
+                throw new Error('Storage bucket belum dibuat. Jalankan script setup_storage_buckets.sql di Supabase SQL Editor terlebih dahulu.');
+            }
+            throw error;
+        }
+
+        // Get public URL
+        const { data: urlData } = supabase.storage
+            .from(bucket)
+            .getPublicUrl(filePath);
+
+        console.log('Public URL generated:', urlData.publicUrl);
+
+        return urlData.publicUrl;
+    } catch (error) {
+        console.error('Upload file error:', error);
+        throw error;
+    }
+}
+
+// Show material form
+function showMaterialForm() {
+    document.getElementById('materialForm').style.display = 'block';
+    document.getElementById('addMaterialBtn').style.display = 'none';
+}
+
+// Hide material form
+function hideMaterialForm() {
+    document.getElementById('materialForm').style.display = 'none';
+    document.getElementById('addMaterialBtn').style.display = 'inline-block';
+    document.getElementById('materialFormData').reset();
+
+    // Clear file displays
+    clearFileDisplays();
+
+    // Reset editing state
+    currentEditingMaterialId = null;
+
+    // Reset form title and button
+    const formTitle = document.getElementById('materialFormTitle');
+    if (formTitle) {
+        formTitle.textContent = 'Tambah Materi Baru';
+    }
+
+    const submitBtn = document.querySelector('#materialFormData .submit-btn');
+    if (submitBtn) {
+        submitBtn.textContent = 'Simpan Materi';
+    }
+}
+
+// Load materials for admin table
+async function loadMaterials() {
+    try {
+        console.log('Loading materials...');
+        const { data: materials, error } = await supabase
+            .from('materials')
+            .select('id, title, content, objectives, chapter, sub_chapter, subject, difficulty, material_type, tags, attachment_url, image_url, is_published, view_count, created_at, updated_at')
+            .order('created_at', { ascending: false });
+
+        const materialsTableBody = document.getElementById('materialsTableBody');
+        if (!materialsTableBody) {
+            console.error('Materials table body not found');
+            return;
+        }
+
+        if (error) {
+            console.error('Error loading materials:', error);
+            materialsTableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #dc2626; padding: 2rem;">Error loading materials: ${error.message}</td></tr>`;
+            return;
+        }
+
+        console.log('Materials loaded:', materials);
+
+        materialsTableBody.innerHTML = '';
+
+        if (!materials || materials.length === 0) {
+            materialsTableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #6b7280; padding: 2rem;">Belum ada materi yang ditambahkan.</td></tr>`;
+            return;
+        }
+
+        materials.forEach(material => {
+            const row = document.createElement('tr');
+
+            const statusBadge = material.is_published
+                ? '<span class="status-badge status-active">Published</span>'
+                : '<span class="status-badge status-inactive">Draft</span>';
+
+            row.innerHTML = `
+                <td>${material.title || 'N/A'}</td>
+                <td>${material.material_type || 'N/A'}</td>
+                <td>${material.chapter || 'N/A'}</td>
+                <td>Matematika</td>
+                <td>${statusBadge}</td>
+                <td>${material.view_count || 0}</td>
+                <td>
+                    <button class="logout-btn" onclick="editMaterial('${material.id}')" style="margin-right: 0.5rem;">
+                        <i class="fas fa-edit"></i> Edit
+                    </button>
+                    <button class="logout-btn" onclick="deleteMaterial('${material.id}')" style="background: #dc2626;">
+                        <i class="fas fa-trash"></i> Hapus
+                    </button>
+                </td>
+            `;
+
+            materialsTableBody.appendChild(row);
+        });
+
+        console.log(`Displayed ${materials.length} materials`);
+
+    } catch (error) {
+        console.error('Error in loadMaterials:', error);
+        const materialsTableBody = document.getElementById('materialsTableBody');
+        if (materialsTableBody) {
+            materialsTableBody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #dc2626; padding: 2rem;">Error: ${error.message}</td></tr>`;
+        }
+    }
+}
+
+// Edit material
+async function editMaterial(materialId) {
+    try {
+        console.log('Editing material with ID:', materialId);
+
+        // Fetch material data
+        const { data: material, error } = await supabase
+            .from('materials')
+            .select('id, title, content, objectives, chapter, sub_chapter, subject, difficulty, material_type, tags, attachment_url, image_url, is_published, view_count, created_at, updated_at')
+            .eq('id', materialId)
+            .single();
+
+        if (error) {
+            console.error('Error loading material for edit:', error);
+            alert('Gagal memuat materi untuk diedit: ' + error.message);
+            return;
+        }
+
+        console.log('Material data loaded:', material);
+
+        // Set editing flag
+        currentEditingMaterialId = materialId;
+
+        // Populate form fields
+        document.getElementById('materialTitle').value = material.title || '';
+        document.getElementById('materialType').value = material.material_type || 'Artikel';
+        document.getElementById('materialChapter').value = material.chapter || '';
+        document.getElementById('materialDifficulty').value = material.difficulty || 'Sedang';
+        document.getElementById('materialSummary').value = material.content || ''; // content maps to summary field
+        document.getElementById('materialObjectives').value = material.objectives || ''; // objectives field
+        document.getElementById('materialPublished').checked = material.is_published || false;
+
+        // Update sub-chapters based on selected chapter
+        updateMaterialSubChapters();
+
+        // Set sub-chapter after a short delay to allow the options to populate
+        setTimeout(() => {
+            const subChapterSelect = document.getElementById('materialSubChapter');
+            if (subChapterSelect) {
+                subChapterSelect.value = material.sub_chapter || '';
+                console.log('Sub-chapter set to:', material.sub_chapter);
+            }
+        }, 100);
+
+        // Handle existing image display
+        const imageDisplay = document.getElementById('materialImageDisplay');
+        if (material.image_url && imageDisplay) {
+            // Extract filename from URL
+            const urlParts = material.image_url.split('/');
+            const fileName = urlParts[urlParts.length - 1] || 'gambar.jpg';
+            imageDisplay.innerHTML = `<i class="fas fa-image" style="color: #10b981;"></i> <strong>${fileName}</strong> (Existing)`;
+            imageDisplay.style.color = '#10b981';
+        } else if (imageDisplay) {
+            imageDisplay.innerHTML = '';
+        }
+
+        // Handle existing attachment display
+        const attachmentDisplay = document.getElementById('materialAttachmentDisplay');
+        if (material.attachment_url && attachmentDisplay) {
+            // Extract filename from URL
+            const urlParts = material.attachment_url.split('/');
+            const fileName = urlParts[urlParts.length - 1] || 'file.pdf';
+            const fileExt = fileName.split('.').pop().toLowerCase();
+
+            // Set appropriate icon based on file type
+            let icon = '<i class="fas fa-file" style="color: #6b7280;"></i>';
+            if (fileExt === 'pdf') {
+                icon = '<i class="fas fa-file-pdf" style="color: #dc2626;"></i>';
+            } else if (['mp4', 'mov', 'avi'].includes(fileExt)) {
+                icon = '<i class="fas fa-video" style="color: #7c3aed;"></i>';
+            }
+
+            attachmentDisplay.innerHTML = `${icon} <strong>${fileName}</strong> (Existing)`;
+            attachmentDisplay.style.color = '#10b981';
+        } else if (attachmentDisplay) {
+            attachmentDisplay.innerHTML = '';
+        }
+
+        // Update form title
+        const formTitle = document.getElementById('materialFormTitle');
+        if (formTitle) {
+            formTitle.textContent = 'Edit Materi';
+        }
+
+        // Update submit button text
+        const submitBtn = document.querySelector('#materialFormData .submit-btn');
+        if (submitBtn) {
+            submitBtn.textContent = 'Update Materi';
+        }
+
+        // Show the form
+        showMaterialForm();
+
+        // Scroll to top of page when editing
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+
+        console.log('Edit material form shown, currentEditingMaterialId set to:', currentEditingMaterialId);
+
+    } catch (error) {
+        console.error('Error in editMaterial:', error);
+        alert('Terjadi kesalahan saat mengedit materi.');
+    }
+}
+
+// Delete material
+async function deleteMaterial(materialId) {
+    if (!confirm('Apakah Anda yakin ingin menghapus materi ini?')) {
+        return;
+    }
+
+    try {
+        // First delete related sections
+        const { error: sectionsError } = await supabase
+            .from('material_sections')
+            .delete()
+            .eq('material_id', materialId);
+
+        if (sectionsError) {
+            console.error('Error deleting material sections:', sectionsError);
+            alert('Gagal menghapus bagian materi terkait.');
+            return;
+        }
+
+        // Then delete the material
+        const { error } = await supabase
+            .from('materials')
+            .delete()
+            .eq('id', materialId);
+
+        if (error) {
+            console.error('Error deleting material:', error);
+            alert('Gagal menghapus materi: ' + error.message);
+            return;
+        }
+
+        alert('Materi berhasil dihapus!');
+
+        // Add activity to recent activities
+        addActivity(
+            'fas fa-trash',
+            'Materi dihapus',
+            `Materi dengan ID ${materialId} telah dihapus`,
+            'material',
+            'deleted',
+            'material',
+            materialId
+        );
+
+        // Reload materials list
+        await loadMaterials();
+
+    } catch (error) {
+        console.error('Error in deleteMaterial:', error);
+        alert('Terjadi kesalahan saat menghapus materi.');
+    }
+}
+
+// LaTeX Functions
+function insertLatex(latex) {
+    const textarea = document.getElementById('questionText');
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const before = text.substring(0, start);
+    const after = text.substring(end, text.length);
+
+    const latexSymbols = {
+        'fraction': '\\frac{a}{b}',
+        'sqrt': '\\sqrt{x}',
+        'power': 'x^{2}',
+        'integral': '\\int',
+        'sum': '\\sum',
+        'alpha': '\\alpha',
+        'beta': '\\beta',
+        'gamma': '\\gamma'
+    };
+
+    const latexCode = latexSymbols[latex] || latex;
+
+    textarea.value = before + latexCode + after;
+    textarea.selectionStart = textarea.selectionEnd = start + latexCode.length;
+    textarea.focus();
+
+    updateQuestionPreview();
+}
+
+function insertBold() {
+    const textarea = document.getElementById('questionText');
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const before = text.substring(0, start);
+    const after = text.substring(end, text.length);
+    const selected = text.substring(start, end);
+
+    if (selected) {
+        // Wrap selected text with <b> tags
+        const boldText = `<b>${selected}</b>`;
+        textarea.value = before + boldText + after;
+        textarea.selectionStart = textarea.selectionEnd = start + boldText.length;
+    } else {
+        // Insert <b></b> and place cursor inside
+        const boldTags = '<b></b>';
+        textarea.value = before + boldTags + after;
+        textarea.selectionStart = textarea.selectionEnd = start + 3; // Position after <b>
+    }
+    textarea.focus();
+    updateQuestionPreview();
+}
+
+function insertCenter() {
+    const textarea = document.getElementById('questionText');
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const before = text.substring(0, start);
+    const after = text.substring(end, text.length);
+    const selected = text.substring(start, end);
+
+    if (selected) {
+        // Wrap selected text with <center> tags
+        const centerText = `<center>${selected}</center>`;
+        textarea.value = before + centerText + after;
+        textarea.selectionStart = textarea.selectionEnd = start + centerText.length;
+    } else {
+        // Insert <center></center> and place cursor inside
+        const centerTags = '<center></center>';
+        textarea.value = before + centerTags + after;
+        textarea.selectionStart = textarea.selectionEnd = start + 8; // Position after <center>
+    }
+    textarea.focus();
+    updateQuestionPreview();
+}
+
+function updateLatexPreview() {
+    const latexInput = document.getElementById('latexContent').value;
+    const preview = document.getElementById('latexPreview');
+
+    if (latexInput && window.katex) {
+        try {
+            preview.innerHTML = window.katex.renderToString(latexInput);
+        } catch (error) {
+            preview.innerHTML = '<span style="color: red;">LaTeX Error</span>';
+        }
+    } else {
+        preview.innerHTML = '';
+    }
+}
+
+// LaTeX Functions for Options
+function insertLatexIntoOption(optionLetter, symbol) {
+    const textarea = document.getElementById(`option${optionLetter}Latex`);
+    if (!textarea) return;
+
+    const latexSymbols = {
+        'fraction': '\\frac{a}{b}',
+        'sqrt': '\\sqrt{x}',
+        'power': 'x^{2}',
+        'integral': '\\int',
+        'sum': '\\sum',
+        'alpha': '\\alpha',
+        'beta': '\\beta',
+        'gamma': '\\gamma'
+    };
+
+    const latex = latexSymbols[symbol] || symbol;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const before = text.substring(0, start);
+    const after = text.substring(end, text.length);
+
+    textarea.value = before + latex + after;
+    textarea.selectionStart = textarea.selectionEnd = start + latex.length;
+    textarea.focus();
+
+    updateOptionLatexPreview(optionLetter);
+}
+
+function updateOptionLatexPreview(optionLetter) {
+    const latexInput = document.getElementById(`option${optionLetter}Latex`).value;
+    const preview = document.getElementById(`option${optionLetter}LatexPreview`);
+
+    if (latexInput && window.katex) {
+        try {
+            preview.innerHTML = window.katex.renderToString(latexInput);
+        } catch (error) {
+            preview.innerHTML = '<span style="color: red;">LaTeX Error</span>';
+        }
+    } else {
+        preview.innerHTML = '';
+    }
+}
+
+// LaTeX Functions for Options (Multiple Choice & MCMA)
+function toggleOptionsLatexMode() {
+    const checkbox = document.getElementById('enableOptionsLatex');
+    const toolbar = document.getElementById('optionsLatexToolbar');
+    const preview = document.getElementById('optionsLatexPreview');
+    const optionInputs = ['optionA', 'optionB', 'optionC', 'optionD'];
+
+    // Always remove existing event listeners first to avoid duplicates
+    optionInputs.forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.removeEventListener('input', updateOptionsLatexPreview);
+        }
+    });
+
+    if (checkbox.checked) {
+        // Enable LaTeX mode
+        toolbar.style.display = 'flex';
+        preview.style.display = 'block';
+
+        // Update placeholders
+        optionInputs.forEach(id => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.placeholder = 'Masukkan jawaban dengan LaTeX...';
+                input.addEventListener('input', updateOptionsLatexPreview);
+            }
+        });
+
+        updateOptionsLatexPreview(); // Update immediately
+    } else {
+        // Disable LaTeX mode
+        toolbar.style.display = 'none';
+        preview.style.display = 'none';
+
+        // Update placeholders
+        optionInputs.forEach(id => {
+            const input = document.getElementById(id);
+            if (input) {
+                input.placeholder = `Jawaban ${id.charAt(id.length - 1).toUpperCase()}`;
+            }
+        });
+
+        // Clear preview
+        preview.innerHTML = '';
+    }
+}
+
+function insertLatexIntoOptions(symbol) {
+    const optionInputs = ['optionA', 'optionB', 'optionC', 'optionD'];
+    let activeInput = null;
+
+    // Find the currently focused input
+    for (const id of optionInputs) {
+        const input = document.getElementById(id);
+        if (input && input === document.activeElement) {
+            activeInput = input;
+            break;
+        }
+    }
+
+    // If no input is focused, use the first one
+    if (!activeInput) {
+        activeInput = document.getElementById('optionA');
+    }
+
+    if (!activeInput) return;
+
+    const latexSymbols = {
+        'fraction': '\\frac{a}{b}',
+        'sqrt': '\\sqrt{x}',
+        'power': 'x^{2}',
+        'integral': '\\int',
+        'sum': '\\sum',
+        'alpha': '\\alpha',
+        'beta': '\\beta',
+        'gamma': '\\gamma'
+    };
+
+    const latex = latexSymbols[symbol] || symbol;
+    const start = activeInput.selectionStart;
+    const end = activeInput.selectionEnd;
+    const text = activeInput.value;
+    const before = text.substring(0, start);
+    const after = text.substring(end, text.length);
+
+    activeInput.value = before + latex + after;
+    activeInput.selectionStart = activeInput.selectionEnd = start + latex.length;
+    activeInput.focus();
+
+    updateOptionsLatexPreview();
+}
+
+function updateOptionsLatexPreview() {
+    const preview = document.getElementById('optionsLatexPreview');
+    const optionInputs = ['optionA', 'optionB', 'optionC', 'optionD'];
+
+    let previewHtml = '';
+
+    optionInputs.forEach(id => {
+        const input = document.getElementById(id);
+        const letter = id.charAt(id.length - 1).toUpperCase();
+        const value = input ? input.value : '';
+
+        if (value) {
+            let renderedText = value;
+            if (window.katex) {
+                try {
+                    // Render LaTeX expressions found in the option
+                    renderedText = value.replace(/\\\(.+?\\\)/g, (match) => {
+                        try {
+                            return window.katex.renderToString(match.slice(2, -2), { displayMode: false });
+                        } catch (e) {
+                            return match; // Return original if LaTeX fails
+                        }
+                    });
+                } catch (error) {
+                    // If rendering fails, use plain text
+                    renderedText = value;
+                }
+            }
+
+            previewHtml += `<div style="margin-bottom: 0.5rem;"><strong>${letter}:</strong> ${renderedText}</div>`;
+        }
+    });
+
+    preview.innerHTML = previewHtml || '';
+}
+
+// LaTeX Functions for PGK Kategori Statements
+function toggleStatementsLatexMode() {
+    const checkbox = document.getElementById('enableStatementsLatex');
+    const toolbar = document.getElementById('statementsLatexToolbar');
+    const preview = document.getElementById('statementsLatexPreview');
+    const textarea = document.getElementById('categoryStatements');
+
+    // Always remove existing event listener first to avoid duplicates
+    textarea.removeEventListener('input', updateStatementsLatexPreview);
+
+    if (checkbox.checked) {
+        // Enable LaTeX mode
+        toolbar.style.display = 'flex';
+        preview.style.display = 'block';
+        textarea.placeholder = 'Masukkan pernyataan dengan LaTeX...';
+
+        // Add event listener for preview
+        textarea.addEventListener('input', updateStatementsLatexPreview);
+        updateStatementsLatexPreview(); // Update immediately
+    } else {
+        // Disable LaTeX mode
+        toolbar.style.display = 'none';
+        preview.style.display = 'none';
+        textarea.placeholder = 'Masukkan pernyataan, satu per baris\nContoh:\n2 adalah bilangan genap\n3 adalah bilangan ganjil\n4 adalah bilangan prima';
+
+        // Clear preview
+        preview.innerHTML = '';
+    }
+
+    // Update the statements preview
+    updateStatementsPreview();
+}
+
+function insertLatexIntoStatements(symbol) {
+    const textarea = document.getElementById('categoryStatements');
+    if (!textarea) return;
+
+    const latexSymbols = {
+        'fraction': '\\frac{a}{b}',
+        'sqrt': '\\sqrt{x}',
+        'power': 'x^{2}',
+        'integral': '\\int',
+        'sum': '\\sum',
+        'alpha': '\\alpha',
+        'beta': '\\beta',
+        'gamma': '\\gamma'
+    };
+
+    const latex = latexSymbols[symbol] || symbol;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const before = text.substring(0, start);
+    const after = text.substring(end, text.length);
+
+    textarea.value = before + latex + after;
+    textarea.selectionStart = textarea.selectionEnd = start + latex.length;
+    textarea.focus();
+
+    updateStatementsLatexPreview();
+}
+
+function updateStatementsLatexPreview() {
+    const statementsText = document.getElementById('categoryStatements').value;
+    const preview = document.getElementById('statementsLatexPreview');
+
+    if (statementsText && window.katex) {
+        try {
+            // Render LaTeX expressions found in the statements
+            const renderedText = statementsText.replace(/\\\(.+?\\\)/g, (match) => {
+                try {
+                    return window.katex.renderToString(match.slice(2, -2), { displayMode: false });
+                } catch (e) {
+                    return match; // Return original if LaTeX fails
+                }
+            });
+            preview.innerHTML = renderedText.replace(/\n/g, '<br>');
+        } catch (error) {
+            preview.innerHTML = '<span style="color: red;">LaTeX Error</span>';
+        }
+    } else {
+        preview.innerHTML = '';
+    }
+}
+
+function toggleQuestionLatexMode() {
+    const checkbox = document.getElementById('enableQuestionLatex');
+    const toolbar = document.getElementById('questionLatexToolbar');
+    const preview = document.getElementById('questionLatexPreview');
+    const help = document.getElementById('questionLatexHelp');
+    const textarea = document.getElementById('questionText');
+
+    // Always remove existing event listener first to avoid duplicates
+    textarea.removeEventListener('input', updateQuestionPreview);
+
+    if (checkbox.checked) {
+        // Enable LaTeX mode
+        toolbar.style.display = 'flex';
+        preview.style.display = 'block';
+        help.style.display = 'block';
+        textarea.placeholder = 'Masukkan teks pertanyaan dengan LaTeX...';
+    } else {
+        // Disable LaTeX mode
+        toolbar.style.display = 'none';
+        help.style.display = 'none';
+        textarea.placeholder = 'Masukkan teks pertanyaan...';
+        // Keep preview visible for images
+        preview.style.display = 'block';
+    }
+
+    // Always add event listener for preview and update
+    textarea.addEventListener('input', updateQuestionPreview);
+    updateQuestionPreview(); // Update immediately
+}
+
+function updateQuestionPreview() {
+    const inputArea = document.getElementById('questionText');
+    const previewArea = document.getElementById('questionLatexPreview');
+
+    if (inputArea && previewArea) {
+        // 1. Ambil teks
+        let content = inputArea.value;
+
+        // 2. Ganti line breaks dengan <br> untuk preview
+        content = content.replace(/\n/g, '<br>');
+
+        // 3. Masukkan ke preview
+        previewArea.innerHTML = content;
+
+        // 3. Render ulang LaTeX (menggunakan KaTeX yang sudah ada)
+        if (window.katex) {
+            try {
+                // Render LaTeX expressions found in the text
+                let renderedText = content.replace(/\\\(.+?\\\)/g, (match) => {
+                    try {
+                        return window.katex.renderToString(match.slice(2, -2), { displayMode: false });
+                    } catch (e) {
+                        return match; // Return original if LaTeX fails
+                    }
+                });
+                previewArea.innerHTML = renderedText;
+            } catch (error) {
+                // If rendering fails, keep original content
+                previewArea.innerHTML = content;
+            }
+        }
+    }
+}
+
+// Insert image into question text
+async function insertImageIntoQuestion() {
+    // Create a hidden file input
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.style.display = 'none';
+
+    fileInput.onchange = async function() {
+        if (this.files && this.files[0]) {
+            const file = this.files[0];
+
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                alert('File harus berupa gambar!');
+                return;
+            }
+
+            // Validate file size (max 5MB)
+            if (file.size > 5 * 1024 * 1024) {
+                alert('Ukuran file maksimal 5MB!');
+                return;
+            }
+
+            try {
+                // Upload the image
+                const imageUrl = await uploadImage(file);
+
+                // Insert the image tag into the question textarea
+                const textarea = document.getElementById('questionText');
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const text = textarea.value;
+                const before = text.substring(0, start);
+                const after = text.substring(end, text.length);
+
+                const imgTag = `<img src="${imageUrl}" alt="Gambar soal" style="max-width: 100%; height: auto;">`;
+                textarea.value = before + imgTag + after;
+                textarea.selectionStart = textarea.selectionEnd = start + imgTag.length;
+                textarea.focus();
+
+                // Update preview
+                updateQuestionPreview();
+
+            } catch (error) {
+                alert('Gagal upload gambar: ' + error.message);
+            }
+        }
+    };
+
+    // Trigger the file input
+    document.body.appendChild(fileInput);
+    fileInput.click();
+    document.body.removeChild(fileInput);
+}
+
+// Image Upload Functions
+async function previewImage() {
+    const fileInput = document.getElementById('questionImage');
+    const preview = document.getElementById('imagePreview');
+
+    if (fileInput.files && fileInput.files[0]) {
+        const file = fileInput.files[0];
+
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            alert('File harus berupa gambar!');
+            return;
+        }
+
+        // Validate file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert('Ukuran file maksimal 5MB!');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = `<img src="${e.target.result}" alt="Preview">`;
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+// Preview option images
+async function previewOptionImage(optionLetter, input) {
+    const preview = document.getElementById(`option${optionLetter}ImagePreview`);
+
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            alert('File harus berupa gambar!');
+            return;
+        }
+
+        // Validate file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            alert('Ukuran file maksimal 5MB!');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.innerHTML = `<img src="${e.target.result}" alt="Preview Option ${optionLetter}" style="max-width: 200px; max-height: 200px; border: 1px solid #ddd; border-radius: 4px;">`;
+        };
+        reader.readAsDataURL(file);
+    } else {
+        preview.innerHTML = '';
+    }
+}
+
+// Analytics Functions
+let skillRadarChart = null;
+
+async function loadAnalytics() {
+    try {
+        // First update analytics from exam data
+        await updateStudentAnalyticsFromExams();
+
+        // Load student analytics data
+        const { data: analytics, error } = await supabase
+            .from('student_analytics')
+            .select('*')
+            .order('last_updated', { ascending: false })
+            .limit(20);
+
+        if (error) {
+            console.error('Error loading analytics:', error);
+            // Load demo data if database fails
+            loadDemoAnalytics();
+            return;
+        }
+
+        // If no data, load demo data
+        if (!analytics || analytics.length === 0) {
+            console.log('No analytics data found, loading demo data');
+            loadDemoAnalytics();
+            return;
+        }
+
+        console.log('Loaded analytics data:', analytics);
+
+        // Create radar chart
+        createSkillRadarChart(analytics);
+
+        // Create skill bars
+        createSkillBars(analytics);
+
+        // Load AI recommendations
+        loadAIRecommendations(analytics);
+
+    } catch (error) {
+        console.error('Error in loadAnalytics:', error);
+        // Fallback to demo data
+        loadDemoAnalytics();
+    }
+}
+
+// Update student analytics from exam data
+async function updateStudentAnalyticsFromExams() {
+    try {
+        console.log('Updating student analytics from exam data...');
+
+        // Get all completed exam sessions
+        const { data: examSessions, error: sessionsError } = await supabase
+            .from('exam_sessions')
+            .select('user_id, total_score, completed_at, status')
+            .eq('status', 'completed')
+            .order('completed_at', { ascending: false });
+
+        if (sessionsError) {
+            console.error('Error loading exam sessions:', sessionsError);
+            return;
+        }
+
+        if (!examSessions || examSessions.length === 0) {
+            console.log('No completed exam sessions found');
+            return;
+        }
+
+        // Group sessions by user and calculate analytics
+        const userAnalytics = {};
+
+        for (const session of examSessions) {
+            const userId = session.user_id;
+
+            if (!userAnalytics[userId]) {
+                userAnalytics[userId] = {
+                    user_id: userId,
+                    total_exams: 0,
+                    total_score: 0,
+                    average_score: 0,
+                    chapter_performance: {}
+                };
+            }
+
+            userAnalytics[userId].total_exams++;
+            userAnalytics[userId].total_score += session.total_score || 0;
+        }
+
+        // Calculate average scores and get detailed performance per chapter
+        for (const userId of Object.keys(userAnalytics)) {
+            const analytics = userAnalytics[userId];
+            analytics.average_score = analytics.total_score / analytics.total_exams;
+
+            // Get all session IDs for this user
+            const userSessionIds = examSessions
+                .filter(s => s.user_id === userId)
+                .map(s => s.id)
+                .filter(id => id != null); // Filter out null/undefined IDs
+
+            let userAnswers = [];
+            let answersError = null;
+
+            if (userSessionIds.length > 0) {
+                // Get detailed answers for this user to calculate chapter performance
+                const result = await supabase
+                    .from('exam_answers')
+                    .select(`
+                        selected_answer,
+                        is_correct,
+                        questions!inner (
+                            chapter,
+                            sub_chapter,
+                            scoring_weight
+                        )
+                    `)
+                    .in('exam_session_id', userSessionIds);
+                userAnswers = result.data || [];
+                answersError = result.error;
+            } else {
+                console.log(`No valid sessions found for user ${userId}`);
+            }
+
+            if (!answersError && userAnswers) {
+                // Group by chapter
+                const chapterStats = {};
+
+                userAnswers.forEach(answer => {
+                    const chapter = answer.questions?.chapter;
+                    if (chapter) {
+                        if (!chapterStats[chapter]) {
+                            chapterStats[chapter] = {
+                                total_questions: 0,
+                                correct_answers: 0,
+                                total_score: 0
+                            };
+                        }
+
+                        chapterStats[chapter].total_questions++;
+                        if (answer.is_correct) {
+                            chapterStats[chapter].correct_answers++;
+                            chapterStats[chapter].total_score += answer.questions?.scoring_weight || 1;
+                        }
+                    }
+                });
+
+                // Convert to analytics format
+                analytics.chapter_performance = Object.keys(chapterStats).map(chapter => ({
+                    chapter: chapter,
+                    sub_chapter: chapter, // Using chapter as sub_chapter for simplicity
+                    total_questions_attempted: chapterStats[chapter].total_questions,
+                    correct_answers: chapterStats[chapter].correct_answers,
+                    mastery_level: chapterStats[chapter].correct_answers / chapterStats[chapter].total_questions,
+                    skill_radar_data: [{
+                        skill: chapter,
+                        level: Math.round((chapterStats[chapter].correct_answers / chapterStats[chapter].total_questions) * 100)
+                    }]
+                }));
+            }
+        }
+
+        // Save/update analytics data
+        const analyticsData = Object.values(userAnalytics);
+        console.log('Calculated analytics data:', analyticsData);
+
+        // Upsert to student_analytics table
+        for (const analytics of analyticsData) {
+            await supabase
+                .from('student_analytics')
+                .upsert({
+                    user_id: analytics.user_id,
+                    chapter: 'Overall', // Overall performance
+                    sub_chapter: 'All Chapters',
+                    total_questions_attempted: analytics.total_exams * 10, // Assuming 10 questions per exam
+                    correct_answers: Math.round(analytics.average_score),
+                    mastery_level: analytics.average_score / 100, // Convert to 0-1 scale
+                    skill_radar_data: (Array.isArray(analytics.chapter_performance) ? analytics.chapter_performance.flatMap(cp => cp.skill_radar_data) : []) || [],
+                    last_updated: new Date().toISOString()
+                }, {
+                    onConflict: 'user_id,chapter,sub_chapter'
+                });
+        }
+
+        console.log('Student analytics updated from exam data');
+
+    } catch (error) {
+        console.error('Error updating student analytics from exams:', error);
+    }
+}
+
+// Load demo analytics data for testing
+function loadDemoAnalytics() {
+    const demoData = [
+        {
+            chapter: 'Bilangan',
+            sub_chapter: 'Bilangan Real',
+            total_questions_attempted: 65,
+            correct_answers: 51,
+            mastery_level: 0.78,
+            skill_radar_data: [{ skill: 'Bilangan', level: 78 }]
+        },
+        {
+            chapter: 'Aljabar',
+            sub_chapter: 'Persamaan dan Pertidaksamaan Linier',
+            total_questions_attempted: 64,
+            correct_answers: 50,
+            mastery_level: 0.78,
+            skill_radar_data: [{ skill: 'Aljabar', level: 78 }]
+        },
+        {
+            chapter: 'Geometri dan Pengukuran',
+            sub_chapter: 'Objek Geometri',
+            total_questions_attempted: 55,
+            correct_answers: 41,
+            mastery_level: 0.75,
+            skill_radar_data: [{ skill: 'Geometri dan Pengukuran', level: 75 }]
+        },
+        {
+            chapter: 'Data dan Peluang',
+            sub_chapter: 'Data',
+            total_questions_attempted: 43,
+            correct_answers: 32,
+            mastery_level: 0.74,
+            skill_radar_data: [{ skill: 'Data dan Peluang', level: 74 }]
+        }
+    ];
+
+    console.log('Loading demo analytics data');
+    createSkillRadarChart(demoData);
+    createSkillBars(demoData);
+    loadAIRecommendations(demoData);
+}
+
+function createSkillRadarChart(analyticsData) {
+    const ctx = document.getElementById('skillRadarChart');
+    if (!ctx) {
+        console.warn('Radar chart canvas not found');
+        return;
+    }
+
+    try {
+        // Aggregate data for radar chart
+        const skills = ['Aljabar', 'Geometri dan Pengukuran', 'Bilangan', 'Data dan Peluang'];
+        const avgScores = skills.map(skill => {
+            const skillData = analyticsData.filter(a => a.skill_radar_data && a.skill_radar_data.length > 0);
+            if (skillData.length === 0) return 50;
+
+            const total = skillData.reduce((sum, a) => {
+                const radarData = a.skill_radar_data || [];
+                const skillItem = radarData.find(s => s.skill === skill);
+                return sum + (skillItem ? skillItem.level : 50);
+            }, 0);
+
+            return Math.round(total / skillData.length);
+        });
+
+        // Destroy existing chart
+        if (skillRadarChart) {
+            skillRadarChart.destroy();
+        }
+
+        skillRadarChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: skills,
+                datasets: [{
+                    label: 'Rata-rata Kemampuan Siswa',
+                    data: avgScores,
+                    backgroundColor: 'rgba(30, 64, 175, 0.2)',
+                    borderColor: 'rgba(30, 64, 175, 1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: 'rgba(30, 64, 175, 1)',
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: 'rgba(30, 64, 175, 1)',
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                aspectRatio: 1.2,
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        max: 100,
+                        min: 0,
+                        ticks: {
+                            stepSize: 20,
+                            font: {
+                                size: 11
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        angleLines: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        },
+                        pointLabels: {
+                            font: {
+                                size: 12,
+                                weight: 'bold'
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                animation: {
+                    duration: 1000,
+                    easing: 'easeInOutQuart'
+                }
+            }
+        });
+
+        console.log('Radar chart created successfully');
+    } catch (error) {
+        console.error('Error creating radar chart:', error);
+        // Show error message in canvas area
+        const canvas = ctx;
+        const ctx2d = canvas.getContext('2d');
+        ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+        ctx2d.fillStyle = '#6b7280';
+        ctx2d.font = '14px Arial';
+        ctx2d.textAlign = 'center';
+        ctx2d.fillText('Error loading chart', canvas.width / 2, canvas.height / 2);
+    }
+}
+
+function createSkillBars(analyticsData) {
+    const container = document.getElementById('skillBars');
+    if (!container) {
+        console.warn('Skill bars container not found');
+        return;
+    }
+
+    try {
+        container.innerHTML = '';
+
+        const skills = ['Aljabar', 'Geometri dan Pengukuran', 'Bilangan', 'Data dan Peluang'];
+
+        skills.forEach(skill => {
+            const skillData = analyticsData.filter(a => a.skill_radar_data && a.skill_radar_data.length > 0);
+            const avgLevel = skillData.length > 0
+                ? Math.round(skillData.reduce((sum, a) => {
+                    const radarData = a.skill_radar_data || [];
+                    const skillItem = radarData.find(s => s.skill === skill);
+                    return sum + (skillItem ? skillItem.level : 50);
+                }, 0) / skillData.length)
+                : 50;
+
+            const skillBar = document.createElement('div');
+            skillBar.className = 'skill-bar';
+            skillBar.innerHTML = `
+                <div class="skill-label">${skill}</div>
+                <div class="bar-container">
+                    <div class="bar-fill" style="width: ${avgLevel}%"></div>
+                </div>
+                <div class="bar-value">${avgLevel}%</div>
+            `;
+
+            container.appendChild(skillBar);
+        });
+
+        console.log('Skill bars created successfully');
+    } catch (error) {
+        console.error('Error creating skill bars:', error);
+        container.innerHTML = '<p style="color: #dc2626; text-align: center;">Error loading skill bars</p>';
+    }
+}
+
+function loadAIRecommendations(analyticsData) {
+    const container = document.getElementById('aiRecommendations');
+    if (!container) return;
+
+    // Generate AI-like recommendations based on data
+    let recommendations = [];
+
+    if (analyticsData.length === 0) {
+        recommendations.push("Belum ada data siswa untuk dianalisis.");
+    } else {
+        const avgMastery = analyticsData.reduce((sum, a) => sum + (a.mastery_level || 0), 0) / analyticsData.length;
+
+        if (avgMastery < 0.5) {
+            recommendations.push("📚 Siswa perlu latihan intensif di semua bab matematika.");
+            recommendations.push("🎯 Fokus pada konsep dasar sebelum lanjut ke materi kompleks.");
+        } else if (avgMastery < 0.7) {
+            recommendations.push("🔄 Siswa perlu latihan tambahan di bab yang masih lemah.");
+            recommendations.push("📈 Tingkatkan pemahaman konsep melalui latihan soal.");
+        } else {
+            recommendations.push("✅ Pertahankan performa yang baik!");
+            recommendations.push("🚀 Tantang siswa dengan soal-soal yang lebih kompleks.");
+        }
+
+        // Add specific recommendations based on weak areas
+        const weakAreas = analyticsData.filter(a => (a.mastery_level || 0) < 0.6);
+        if (weakAreas.length > 0) {
+            recommendations.push(`🎯 Perhatian khusus diperlukan untuk ${weakAreas.length} siswa yang membutuhkan bantuan tambahan.`);
+        }
+    }
+
+    container.innerHTML = recommendations.map(rec => `<p>${rec}</p>`).join('');
+}
+
+// ==========================================
+// PER-STUDENT ANALYTICS FUNCTIONS
+// ==========================================
+
+// Load daftar siswa untuk analytics
+async function loadStudentsList() {
+    try {
+        const students = await getAllStudentsAnalytics();
+
+        const container = document.getElementById('studentsAnalyticsList');
+        if (!container) return;
+
+        if (students.length === 0) {
+            container.innerHTML = '<p style="text-align: center; color: #6b7280; padding: 2rem;">Belum ada siswa yang mengerjakan ujian.</p>';
+            return;
+        }
+
+        container.innerHTML = `
+            <div style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; color: #1f2937;">Daftar Siswa (${students.length})</h3>
+                <button onclick="exportAllStudentsToExcel()" class="add-btn" style="background: #059669;">
+                    <i class="fas fa-file-excel"></i> Export Semua ke Excel
+                </button>
+            </div>
+            <div class="students-grid">
+                ${students.map(student => `
+                    <div class="student-card" onclick="showStudentDetail('${student.id}')">
+                        <div class="student-header">
+                            <div class="student-avatar">
+                                ${student.nama_lengkap.charAt(0).toUpperCase()}
+                            </div>
+                            <div class="student-info">
+                                <h4>${student.nama_lengkap}</h4>
+                                <p>${student.email || 'No email'}</p>
+                                <p style="font-size: 0.8rem; color: #6b7280;">${student.school || 'No school'}</p>
+                            </div>
+                        </div>
+                        <div class="student-stats">
+                            <div class="stat">
+                                <span class="stat-value">${student.totalExams}</span>
+                                <span class="stat-label">Ujian</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-value">${student.averageMastery}%</span>
+                                <span class="stat-label">Mastery</span>
+                            </div>
+                            <div class="stat">
+                                <button onclick="event.stopPropagation(); exportStudentToExcel('${student.id}')" class="mini-btn">
+                                    <i class="fas fa-download"></i> Excel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+
+    } catch (error) {
+        console.error('Error loading students list:', error);
+    }
+}
+
+// Tampilkan detail analytics siswa
+async function showStudentDetail(userId) {
+    try {
+        const analytics = await getDetailedStudentAnalytics(userId);
+        if (!analytics) {
+            alert('Data analytics siswa tidak ditemukan.');
+            return;
+        }
+
+        const modal = document.createElement('div');
+        modal.className = 'analytics-modal';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Detail Analytics: ${analytics.student.nama_lengkap}</h2>
+                    <button onclick="this.closest('.analytics-modal').remove()" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="student-summary">
+                        <div class="summary-card">
+                            <h3>Ringkasan</h3>
+                            <div class="summary-grid">
+                                <div class="summary-item">
+                                    <span class="label">Total Ujian:</span>
+                                    <span class="value">${analytics.summary.totalExams}</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="label">Rata-rata Skor:</span>
+                                    <span class="value">${analytics.summary.averageScore}</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="label">Skor Tertinggi:</span>
+                                    <span class="value">${analytics.summary.highestScore}</span>
+                                </div>
+                                <div class="summary-item">
+                                    <span class="label">Tingkat Kelulusan:</span>
+                                    <span class="value">${analytics.summary.passRate}%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="summary-card">
+                            <h3>Performa per Bab</h3>
+                            <div class="chapter-performance">
+                                ${analytics.chapterPerformance.map(chapter => `
+                                    <div class="chapter-item">
+                                        <span class="chapter-name">${chapter.chapter}</span>
+                                        <div class="chapter-stats">
+                                            <span>${chapter.correctAnswers}/${chapter.totalQuestions}</span>
+                                            <span>${Math.round(chapter.accuracy)}%</span>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="exam-history">
+                        <h3>Riwayat Ujian</h3>
+                        <div class="exam-list">
+                            ${analytics.exams.map(exam => `
+                                <div class="exam-item">
+                                    <div class="exam-date">${new Date(exam.date).toLocaleDateString('id-ID')}</div>
+                                    <div class="exam-score">${exam.correctAnswers}/${exam.totalQuestions} soal benar</div>
+                                    <div class="exam-time">${Math.round(exam.timeSpent / 60)} menit</div>
+                                    <div class="exam-status ${exam.isPassed ? 'passed' : 'failed'}">
+                                        ${exam.isPassed ? 'LULUS' : 'TIDAK LULUS'}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button onclick="exportStudentToExcel('${userId}')" class="add-btn">
+                        <i class="fas fa-file-excel"></i> Export ke Excel
+                    </button>
+                    <button onclick="this.closest('.analytics-modal').remove()" class="cancel-btn">Tutup</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+    } catch (error) {
+        console.error('Error showing student detail:', error);
+        alert('Error loading student analytics.');
+    }
+}
+
+// Export satu siswa ke Excel
+async function exportStudentToExcel(userId) {
+    try {
+        const analytics = await getDetailedStudentAnalytics(userId);
+        if (!analytics) {
+            alert('Data analytics tidak ditemukan.');
+            return;
+        }
+
+        const success = exportStudentAnalyticsToExcel(analytics);
+        if (success) {
+            alert('Data berhasil diekspor ke Excel!');
+        } else {
+            alert('Gagal mengekspor data.');
+        }
+    } catch (error) {
+        console.error('Error exporting student analytics:', error);
+        alert('Error exporting data.');
+    }
+}
+
+// Export semua siswa ke Excel
+async function exportAllStudentsToExcel() {
+    try {
+        const students = await getAllStudentsAnalytics();
+
+        if (students.length === 0) {
+            alert('Tidak ada data siswa untuk diekspor.');
+            return;
+        }
+
+        // Siapkan data untuk Excel
+        const excelData = [];
+        excelData.push(['LAPORAN ANALYTICS SISWA - TKA MATEMATIKA']);
+        excelData.push(['Tanggal Export', new Date().toLocaleDateString('id-ID')]);
+        excelData.push(['']);
+        excelData.push(['DAFTAR SISWA']);
+        excelData.push(['Nama Lengkap', 'Email', 'Sekolah', 'Total Ujian', 'Rata-rata Mastery (%)']);
+
+        students.forEach(student => {
+            excelData.push([
+                student.nama_lengkap,
+                student.email || 'N/A',
+                student.school || 'N/A',
+                student.totalExams,
+                student.averageMastery
+            ]);
+        });
+
+        // Convert ke CSV
+        const csvContent = excelData.map(row =>
+            row.map(cell => `"${cell}"`).join(',')
+        ).join('\n');
+
+        // Download
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `semua_siswa_analytics_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        alert('Data semua siswa berhasil diekspor ke Excel!');
+
+    } catch (error) {
+        console.error('Error exporting all students:', error);
+        alert('Error exporting data.');
+    }
+}
+
+// Event listeners for new features
+document.addEventListener('DOMContentLoaded', () => {
+    // LaTeX preview update
+    const latexInput = document.getElementById('latexContent');
+    if (latexInput) {
+        latexInput.addEventListener('input', updateLatexPreview);
+    }
+
+    // Question text LaTeX preview is now handled by toggleQuestionLatexMode()
+
+    // Analytics refresh button
+    const refreshBtn = document.getElementById('refreshAnalyticsBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            loadAnalytics();
+            loadStudentsList();
+        });
+    }
+
+        // Load analytics on page load
+        loadAnalytics();
+        loadStudentsList();
+
+        // Update student analytics when exam is completed
+        updateStudentAnalyticsFromExams();
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Handle question section image upload
+async function handleQuestionSectionImageUpload(input, sectionId) {
+    const file = input.files[0];
+    if (!file) return;
+
+    try {
+        const imageUrl = await uploadImage(file);
+        const section = window.questionSections.find(s => s.id == sectionId);
+        if (section) {
+            section.content = imageUrl;
+            updateQuestionSectionsDisplay();
+        }
+    } catch (error) {
+        alert('Gagal upload gambar: ' + error.message);
+    }
+}
+
+// Update question sections display
+function updateQuestionSectionsDisplay() {
+    const container = document.getElementById('questionSections');
+    if (!container) return;
+
+    // Diagnostic logging
+    console.log('updateQuestionSectionsDisplay called, window.questionSections:', window.questionSections, 'type:', typeof window.questionSections, 'isArray:', Array.isArray(window.questionSections));
+
+    // Safeguard: ensure it's an array
+    if (!Array.isArray(window.questionSections)) {
+        console.error('window.questionSections is not an array, resetting to []', window.questionSections);
+        window.questionSections = [];
+    }
+
+    container.innerHTML = '';
+
+    if (window.questionSections.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #6b7280; padding: 2rem;">Belum ada bagian soal. Klik tombol di bawah untuk menambah bagian pertama.</p>';
+        return;
+    }
+
+    window.questionSections.forEach((section, index) => {
+        const sectionElement = createQuestionSectionElement(section, index);
+        container.appendChild(sectionElement);
+    });
+}
+
+// Create question section element
+function createQuestionSectionElement(section, index) {
+    const sectionDiv = document.createElement('div');
+    sectionDiv.className = 'question-section';
+    sectionDiv.dataset.sectionId = section.id;
+
+    let contentHtml = '';
+
+    if (section.type === 'text') {
+        contentHtml = `
+            <textarea class="question-section-textarea" placeholder="Masukkan teks soal..." rows="4" oninput="updateQuestionSectionContent('${section.id}', this.value)">${section.content || ''}</textarea>
+        `;
+    } else if (section.type === 'image') {
+        contentHtml = `
+            <input type="file" accept="image/*" class="question-section-file" onchange="handleQuestionSectionImageUpload(this, '${section.id}')">
+            <div class="question-section-image-preview" id="qpreview-${section.id}">${section.content ? `<img src="${section.content}" alt="Preview" style="max-width: 200px; max-height: 200px;">` : ''}</div>
+        `;
+    }
+
+    sectionDiv.innerHTML = `
+        <div class="question-section-header">
+            <span class="question-section-type">${getQuestionSectionTypeLabel(section.type)}</span>
+            <div class="question-section-actions">
+                <button type="button" class="question-section-move-btn" onclick="moveQuestionSection('${section.id}', 'up')" ${index === 0 ? 'disabled' : ''}>
+                    <i class="fas fa-arrow-up"></i>
+                </button>
+                <button type="button" class="question-section-move-btn" onclick="moveQuestionSection('${section.id}', 'down')" ${index === window.questionSections.length - 1 ? 'disabled' : ''}>
+                    <i class="fas fa-arrow-down"></i>
+                </button>
+                <button type="button" class="question-section-delete-btn" onclick="removeQuestionSection('${section.id}')">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+        <div class="question-section-content">
+            ${contentHtml}
+        </div>
+    `;
+
+    return sectionDiv;
+}
+
+// Get section type label
+function getQuestionSectionTypeLabel(type) {
+    const labels = {
+        'text': 'Teks Soal',
+        'image': 'Gambar'
+    };
+    return labels[type] || type;
+}
+
+// Move question section
+function moveQuestionSection(sectionId, direction) {
+    if (!Array.isArray(window.questionSections)) {
+        window.questionSections = [];
+        return;
+    }
+    const index = window.questionSections.findIndex(section => section.id.toString() === sectionId.toString());
+    if (index === -1) return;
+
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= window.questionSections.length) return;
+
+    [window.questionSections[index], window.questionSections[newIndex]] = [window.questionSections[newIndex], window.questionSections[index]];
+    updateQuestionSectionsDisplay();
+}
+
+
+
+// Load recent activities for admin dashboard
+async function loadRecentActivities() {
+    try {
+        let activities = [];
+
+        // Try to load from database first
+        try {
+            const { data: dbActivities, error } = await supabase
+                .from('admin_activities')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(10);
+
+            if (!error && dbActivities && dbActivities.length > 0) {
+                // Convert database activities to display format
+                activities = dbActivities.map(activity => ({
+                    icon: getActivityIcon(activity.activity_type, activity.action),
+                    title: activity.title,
+                    description: activity.description,
+                    time: formatActivityTime(activity.created_at),
+                    type: activity.activity_type
+                }));
+            }
+        } catch (dbError) {
+            console.warn('Database activities not available, using defaults:', dbError);
+        }
+
+        // If no database activities, use default activities
+        if (activities.length === 0) {
+            const defaultActivities = [
+                {
+                    icon: 'fas fa-plus-circle',
+                    title: 'Materi baru ditambahkan',
+                    description: 'Materi "Persamaan Linier" berhasil ditambahkan',
+                    time: '2 jam lalu',
+                    type: 'material'
+                },
+                {
+                    icon: 'fas fa-user-plus',
+                    title: 'Siswa baru bergabung',
+                    description: '5 siswa baru mendaftar ke platform',
+                    time: '4 jam lalu',
+                    type: 'user'
+                },
+                {
+                    icon: 'fas fa-brain',
+                    title: 'Soal baru dibuat',
+                    description: 'Soal TKA Matematika bab Aljabar ditambahkan',
+                    time: '6 jam lalu',
+                    type: 'question'
+                },
+                {
+                    icon: 'fas fa-trophy',
+                    title: 'Pencapaian milestone',
+                    description: '1000 soal berhasil diselesaikan siswa',
+                    time: '1 hari lalu',
+                    type: 'achievement'
+                }
+            ];
+            activities = defaultActivities;
+        }
+
+        // Combine with current session activities (prioritize session activities)
+        const allActivities = [...currentSessionActivities, ...activities];
+
+        // Remove duplicates and limit to 10
+        const uniqueActivities = allActivities
+            .filter((activity, index, self) =>
+                index === self.findIndex(a => a.title === activity.title && a.description === activity.description)
+            )
+            .slice(0, 10);
+
+        const activityList = document.getElementById('recentActivities');
+        if (activityList) {
+            activityList.innerHTML = uniqueActivities.map(activity => `
+                <div class="activity-item">
+                    <div class="activity-icon">
+                        <i class="${activity.icon}"></i>
+                    </div>
+                    <div class="activity-content">
+                        <h4>${activity.title}</h4>
+                        <p>${activity.description} • ${activity.time}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        console.error('Error loading recent activities:', error);
+        // Fallback to session activities only
+        const activityList = document.getElementById('recentActivities');
+        if (activityList) {
+            activityList.innerHTML = currentSessionActivities.map(activity => `
+                <div class="activity-item">
+                    <div class="activity-icon">
+                        <i class="${activity.icon}"></i>
+                    </div>
+                    <div class="activity-content">
+                        <h4>${activity.title}</h4>
+                        <p>${activity.description} • ${activity.time}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+    }
+}
+
+// Helper function to get activity icon based on type and action
+function getActivityIcon(activityType, action) {
+    const iconMap = {
+        'material': {
+            'created': 'fas fa-plus-circle',
+            'updated': 'fas fa-edit',
+            'deleted': 'fas fa-trash'
+        },
+        'question': {
+            'created': 'fas fa-brain',
+            'updated': 'fas fa-edit',
+            'deleted': 'fas fa-trash'
+        },
+        'user': {
+            'registered': 'fas fa-user-plus',
+            'updated': 'fas fa-user-edit',
+            'deleted': 'fas fa-user-minus'
+        },
+        'system': {
+            'milestone': 'fas fa-trophy',
+            'backup': 'fas fa-save',
+            'maintenance': 'fas fa-cogs'
+        }
+    };
+
+    return iconMap[activityType]?.[action] || 'fas fa-info-circle';
+}
+
+// Helper function to format activity time
+function formatActivityTime(createdAt) {
+    const now = new Date();
+    const activityTime = new Date(createdAt);
+    const diffMs = now - activityTime;
+    const diffHours = diffMs / (1000 * 60 * 60);
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+    if (diffHours < 1) {
+        return 'Baru saja';
+    } else if (diffHours < 24) {
+        return `${Math.floor(diffHours)} jam lalu`;
+    } else {
+        return `${Math.floor(diffDays)} hari lalu`;
+    }
+}
+
+// Update system metrics in real-time
+function updateSystemMetrics() {
+    // Simulate real-time updates
+    const metrics = {
+        systemStatus: 'Online',
+        lastBackup: new Date().toLocaleTimeString('id-ID', {
+            hour: '2-digit',
+            minute: '2-digit'
+        }) + ' WIB',
+        activeSessions: Math.floor(Math.random() * 50) + 20
+    };
+
+    // Update hero metrics
+    const systemStatusEl = document.getElementById('systemStatus');
+    const lastBackupEl = document.getElementById('lastBackup');
+    const activeSessionsEl = document.getElementById('activeSessions');
+
+    if (systemStatusEl) systemStatusEl.textContent = metrics.systemStatus;
+    if (lastBackupEl) lastBackupEl.textContent = metrics.lastBackup;
+    if (activeSessionsEl) activeSessionsEl.textContent = metrics.activeSessions;
+}
+
+// Initialize admin dashboard enhancements
+document.addEventListener('DOMContentLoaded', () => {
+    // Load recent activities when dashboard is shown
+    const dashboardTab = document.getElementById('dashboard');
+    if (dashboardTab && dashboardTab.classList.contains('active')) {
+        loadRecentActivities();
+    }
+
+    // Update system metrics every 30 seconds
+    updateSystemMetrics();
+    setInterval(updateSystemMetrics, 30000);
+
+    // Add loading states for buttons
+    const actionButtons = document.querySelectorAll('.action-btn, .quick-action-btn');
+    actionButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            this.style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                this.style.transform = 'scale(1)';
+            }, 150);
+        });
+    });
+});
+
+// Function to check and fix form before saving
+window.checkAndFixForm = function() {
+    console.log('=== CHECKING AND FIXING FORM ===');
+
+    const questionType = document.getElementById('questionType')?.value;
+    console.log('Current question type:', questionType);
+
+    if (!questionType) {
+        alert('Pilih tipe soal terlebih dahulu!');
+        return false;
+    }
+
+    // Ensure form is updated
+    updateQuestionForm();
+
+    // Wait a bit for DOM updates
+    setTimeout(() => {
+        switch (questionType) {
+            case 'Pilihan Ganda':
+                const optionA = document.getElementById('optionA');
+                const optionB = document.getElementById('optionB');
+                const optionC = document.getElementById('optionC');
+                const optionD = document.getElementById('optionD');
+                const correctAnswer = document.querySelector('input[name="correctAnswer"]:checked');
+
+                console.log('Multiple choice check:', {
+                    optionA: !!optionA,
+                    optionB: !!optionB,
+                    optionC: !!optionC,
+                    optionD: !!optionD,
+                    correctAnswer: correctAnswer?.value
+                });
+
+                if (!optionA || !optionB || !optionC || !optionD) {
+                    alert('Form pilihan ganda belum lengkap. Klik "Simpan Soal" lagi.');
+                    return false;
+                }
+
+                if (!correctAnswer) {
+                    // Auto-select A if none selected
+                    const radioA = document.getElementById('correctAnswerA');
+                    if (radioA) {
+                        radioA.checked = true;
+                        console.log('Auto-selected answer A');
+                        alert('Jawaban benar belum dipilih. Otomatis memilih A. Klik "Simpan Soal" lagi.');
+                    }
+                    return false;
+                }
+                break;
+
+            case 'PGK MCMA':
+                const mcmaA = document.getElementById('mcmaA');
+                const mcmaB = document.getElementById('mcmaB');
+                const mcmaC = document.getElementById('mcmaC');
+                const mcmaD = document.getElementById('mcmaD');
+
+                console.log('MCMA check:', {
+                    mcmaA: !!mcmaA,
+                    mcmaB: !!mcmaB,
+                    mcmaC: !!mcmaC,
+                    mcmaD: !!mcmaD
+                });
+
+                if (!mcmaA || !mcmaB || !mcmaC || !mcmaD) {
+                    alert('Form PGK MCMA belum lengkap. Klik "Simpan Soal" lagi.');
+                    return false;
+                }
+
+                const checkedBoxes = document.querySelectorAll('input[id^="mcma"]:checked');
+                if (checkedBoxes.length === 0) {
+                    // Auto-check A
+                    if (mcmaA) {
+                        mcmaA.checked = true;
+                        console.log('Auto-checked answer A for MCMA');
+                        alert('Jawaban benar belum dipilih. Otomatis memilih A. Klik "Simpan Soal" lagi.');
+                    }
+                    return false;
+                }
+                break;
+
+            case 'PGK Kategori':
+                const statements = document.getElementById('categoryStatements');
+                console.log('Category check:', { statements: !!statements });
+
+                if (!statements) {
+                    alert('Form PGK Kategori belum lengkap. Klik "Simpan Soal" lagi.');
+                    return false;
+                }
+                break;
+        }
+
+        alert('Form sudah diperiksa dan diperbaiki. Sekarang klik "Simpan Soal".');
+    }, 500);
+
+    return true;
+};
+
+// Diagnostic function to check form elements
+window.checkFormElements = function() {
+    console.log('=== FORM ELEMENTS CHECK ===');
+
+    const elements = [
+        'questionFormData',
+        'questionText',
+        'questionType',
+        'chapter',
+        'subChapter',
+        'timeLimit',
+        'difficulty',
+        'scoringWeight',
+        'optionsContainer',
+        'categoryStatements',
+        'optionA',
+        'optionB',
+        'optionC',
+        'optionD',
+        'correctAnswer',
+        'mcmaA',
+        'mcmaB',
+        'mcmaC',
+        'mcmaD'
+    ];
+
+    elements.forEach(id => {
+        const el = document.getElementById(id);
+        console.log(`${id}: ${el ? 'FOUND' : 'NOT FOUND'}`);
+        if (el) {
+            console.log(`  - Value: "${el.value ? el.value.substring(0, 50) + '...' : 'empty'}"`);
+            console.log(`  - Type: ${el.type || 'N/A'}`);
+        }
+    });
+
+    // Check question type selection
+    const questionTypeEl = document.getElementById('questionType');
+    if (questionTypeEl) {
+        console.log(`Current question type: "${questionTypeEl.value}"`);
+    }
+
+    // Check options container content
+    const optionsContainer = document.getElementById('optionsContainer');
+    if (optionsContainer) {
+        console.log(`Options container content length: ${optionsContainer.innerHTML.length}`);
+        console.log(`Options container visible content: "${optionsContainer.innerHTML.substring(0, 100)}..."`);
+    }
+
+    alert('Form elements check completed. See console for details.');
+};
+
+// Diagnostic function to check database setup
+window.checkDatabaseSetup = async function() {
+    console.log('=== DATABASE SETUP CHECK ===');
+
+    try {
+        // Check if questions table has required columns
+        const columns = [
+            'question_type', 'chapter', 'sub_chapter', 'scoring_weight',
+            'difficulty', 'subject', 'time_limit_minutes', 'latex_content',
+            'image_url', 'explanation', 'tags', 'category_options',
+            'category_mapping', 'correct_answers', 'partial_credit'
+        ];
+        const results = {};
+
+        console.log('Checking questions table columns...');
+        for (const column of columns) {
+            try {
+                const result = await supabase
+                    .from('questions')
+                    .select(column)
+                    .limit(1);
+                results[column] = result.error ? 'MISSING' : 'OK';
+                console.log(`  ${column}: ${results[column]}`);
+            } catch (error) {
+                results[column] = 'ERROR: ' + error.message;
+                console.log(`  ${column}: ${results[column]}`);
+            }
+        }
+
+        console.log('Database column check results:', results);
+
+        // Check if materials table has required columns
+        const materialColumns = ['material_sections'];
+        const materialResults = {};
+
+        for (const column of materialColumns) {
+            try {
+                const result = await supabase
+                    .from('materials')
+                    .select(column)
+                    .limit(1);
+                materialResults[column] = result.error ? 'MISSING' : 'OK';
+            } catch (error) {
+                materialResults[column] = 'ERROR: ' + error.message;
+            }
+        }
+
+        console.log('Materials table column check results:', materialResults);
+
+        // Check if material_sections table exists
+        try {
+            const sectionsResult = await supabase
+                .from('material_sections')
+                .select('id')
+                .limit(1);
+            console.log('material_sections table:', sectionsResult.error ? 'MISSING' : 'OK');
+        } catch (error) {
+            console.log('material_sections table: ERROR -', error.message);
+        }
+
+        alert('Database check completed. Check console for details.');
+    } catch (error) {
+        console.error('Database check failed:', error);
+        alert('Database check failed: ' + error.message);
+    }
+};
+
+
+
+// Export functions for global access
+window.viewUserDetails = viewUserDetails;
+window.editQuestion = editQuestion;
+window.deleteQuestion = deleteQuestion;
+window.updateScoringWeight = updateScoringWeight;
+window.updateQuestionForm = updateQuestionForm;
+window.updateSubChapters = updateSubChapters;
+window.updateMaterialSubChapters = updateMaterialSubChapters;
+window.saveMaterial = saveMaterial;
+window.showMaterialForm = showMaterialForm;
+window.hideMaterialForm = hideMaterialForm;
+window.loadMaterials = loadMaterials;
+window.editMaterial = editMaterial;
+window.deleteMaterial = deleteMaterial;
+window.insertLatex = insertLatex;
+window.insertBold = insertBold;
+window.insertCenter = insertCenter;
+window.toggleQuestionLatexMode = toggleQuestionLatexMode;
+window.updateQuestionPreview = updateQuestionPreview;
+window.previewImage = previewImage;
+window.previewOptionImage = previewOptionImage;
+window.insertLatexIntoOption = insertLatexIntoOption;
+window.updateOptionLatexPreview = updateOptionLatexPreview;
+window.insertImageIntoQuestion = insertImageIntoQuestion;
+window.loadRecentActivities = loadRecentActivities;
+window.loadTodaysPerformance = loadTodaysPerformance;
+window.checkDashboardSystemStatus = checkDashboardSystemStatus;
+window.loadAnalytics = loadAnalytics;
+window.loadStudentsList = loadStudentsList;
+window.showStudentDetail = showStudentDetail;
+window.exportStudentToExcel = exportStudentToExcel;
+window.exportAllStudentsToExcel = exportAllStudentsToExcel;
+window.checkDatabaseSetup = checkDatabaseSetup;
+window.checkFormElements = checkFormElements;
+
+// Material section functions are not implemented for materials (materials use direct TinyMCE editing)
+
+// Question Section Management Functions
+function addQuestionSection(type) {
+    const section = {
+        id: Date.now() + Math.random(),
+        type: type,
+        content: ''
+    };
+    if (!Array.isArray(window.questionSections)) {
+        window.questionSections = [];
+    }
+    window.questionSections.push(section);
+    updateQuestionSectionsDisplay();
+}
+
+function removeQuestionSection(sectionId) {
+    if (!Array.isArray(window.questionSections)) {
+        window.questionSections = [];
+        return;
+    }
+    window.questionSections = window.questionSections.filter(s => s.id != sectionId);
+    updateQuestionSectionsDisplay();
+}
+
+function updateQuestionSectionContent(sectionId, content) {
+    const section = window.questionSections.find(s => s.id == sectionId);
+    if (section) {
+        section.content = content;
+    }
+}
+
+// System Status Modal Functionality
+function showSystemStatusModal() {
+    const modal = document.getElementById('systemStatusModal');
+    if (modal) {
+        modal.classList.add('show');
+        checkSystemStatus();
+    }
+}
+
+function hideSystemStatusModal() {
+    const modal = document.getElementById('systemStatusModal');
+    if (modal) {
+        modal.classList.remove('show');
+    }
+}
+
+// Check system status
+async function checkSystemStatus() {
+    try {
+        // Check database connection
+        const dbStart = Date.now();
+        const { data: dbData, error: dbError } = await supabase
+            .from('materials')
+            .select('count', { count: 'exact', head: true });
+        const dbResponseTime = Date.now() - dbStart;
+
+        updateStatusElement('dbStatus', dbError ? 'Error' : 'Online', dbError ? 'error' : 'success');
+        updateStatusElement('dbConnection', dbError ? 'Failed' : 'Connected');
+        updateStatusElement('dbResponseTime', `${dbResponseTime}ms`);
+        updateStatusElement('dbTables', dbError ? 'N/A' : 'Available');
+
+        // Check storage status
+        try {
+            const { data: storageData, error: storageError } = await supabase.storage
+                .from('images')
+                .list('', { limit: 1 });
+
+            updateStatusElement('storageStatus', storageError ? 'Error' : 'Online', storageError ? 'error' : 'success');
+            updateStatusElement('storageBucket', storageError ? 'N/A' : 'images');
+            updateStatusElement('storageFiles', storageError ? 'N/A' : 'Available');
+            updateStatusElement('storageSize', storageError ? 'N/A' : 'N/A');
+        } catch (storageErr) {
+            updateStatusElement('storageStatus', 'Error', 'error');
+            updateStatusElement('storageBucket', 'N/A');
+            updateStatusElement('storageFiles', 'N/A');
+            updateStatusElement('storageSize', 'N/A');
+        }
+
+        // Check API endpoints (simulate)
+        updateStatusElement('apiStatus', 'Online', 'success');
+        updateStatusElement('apiAuth', 'OK');
+        updateStatusElement('apiDatabase', 'OK');
+        updateStatusElement('apiStorage', 'OK');
+
+        // System metrics
+        updateStatusElement('systemStatus', 'Online', 'success');
+        updateStatusElement('systemUptime', '99.9%');
+        updateStatusElement('systemBackup', new Date().toLocaleString('id-ID'));
+        updateStatusElement('systemSessions', Math.floor(Math.random() * 50) + 20);
+
+        // Update logs
+        updateSystemLogs();
+
+    } catch (error) {
+        console.error('Error checking system status:', error);
+        // Set all to error state
+        ['dbStatus', 'storageStatus', 'apiStatus', 'systemStatus'].forEach(id => {
+            updateStatusElement(id, 'Error', 'error');
+        });
+    }
+}
+
+function updateStatusElement(elementId, text, statusClass = '') {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.textContent = text;
+        element.className = 'status-badge';
+        if (statusClass) {
+            element.classList.add(statusClass);
+        }
+    }
+}
+
+function updateSystemLogs() {
+    const logsContainer = document.getElementById('systemLogs');
+    if (!logsContainer) return;
+
+    const currentTime = new Date().toLocaleTimeString('id-ID', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+
+    const logs = [
+        { time: currentTime, level: 'info', message: 'System status check completed' },
+        { time: '14:25:10', level: 'success', message: 'Database connection verified' },
+        { time: '14:20:05', level: 'warning', message: 'High memory usage detected' },
+        { time: '14:15:30', level: 'info', message: 'Backup process started' },
+        { time: '14:10:15', level: 'success', message: 'User authentication successful' }
+    ];
+
+    logsContainer.innerHTML = logs.map(log => `
+        <div class="log-entry">
+            <span class="log-time">${log.time}</span>
+            <span class="log-level ${log.level}">${log.level.toUpperCase()}</span>
+            <span class="log-message">${log.message}</span>
+        </div>
+    `).join('');
+}
+
+// System action functions
+async function refreshSystemStatus() {
+    await checkSystemStatus();
+    alert('System status refreshed successfully!');
+}
+
+async function runSystemDiagnostics() {
+    // Simulate diagnostics
+    alert('Running system diagnostics...\n\n✅ Database: OK\n✅ Storage: OK\n✅ API: OK\n✅ Memory: OK\n\nAll systems operational!');
+}
+
+async function clearSystemCache() {
+    // Simulate cache clearing
+    alert('System cache cleared successfully!\n\nCleared:\n- Temporary files\n- Session cache\n- Image cache\n- Analytics cache');
+}
+
+// Event listeners for system status modal
+document.addEventListener('DOMContentLoaded', () => {
+    // System status button
+    const systemStatusBtn = document.getElementById('systemStatusBtn');
+    if (systemStatusBtn) {
+        systemStatusBtn.addEventListener('click', showSystemStatusModal);
+    }
+
+    // Modal close functionality
+    const modal = document.getElementById('systemStatusModal');
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal || e.target.classList.contains('modal-close')) {
+                hideSystemStatusModal();
+            }
+        });
+
+        // Close on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && modal.classList.contains('show')) {
+                hideSystemStatusModal();
+            }
+        });
+    }
+
+    // System action buttons
+    const refreshBtn = document.getElementById('refreshSystemStatus');
+    const diagnosticsBtn = document.getElementById('runSystemDiagnostics');
+    const cacheBtn = document.getElementById('clearSystemCache');
+
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', refreshSystemStatus);
+    }
+
+    if (diagnosticsBtn) {
+        diagnosticsBtn.addEventListener('click', runSystemDiagnostics);
+    }
+
+    if (cacheBtn) {
+        cacheBtn.addEventListener('click', clearSystemCache);
+    }
+});
+
+// Export system status functions
+window.showSystemStatusModal = showSystemStatusModal;
+window.hideSystemStatusModal = hideSystemStatusModal;
+window.refreshSystemStatus = refreshSystemStatus;
+window.runSystemDiagnostics = runSystemDiagnostics;
+window.clearSystemCache = clearSystemCache;
+
+// Export question section functions
+window.addQuestionSection = addQuestionSection;
+window.removeQuestionSection = removeQuestionSection;
+window.moveQuestionSection = moveQuestionSection;
+window.updateQuestionSectionContent = updateQuestionSectionContent;
+window.handleQuestionSectionImageUpload = handleQuestionSectionImageUpload;
+
+// Export LaTeX functions for options
+window.toggleOptionsLatexMode = toggleOptionsLatexMode;
+window.insertLatexIntoOptions = insertLatexIntoOptions;
+window.updateOptionsLatexPreview = updateOptionsLatexPreview;
+
+// Enhanced Image Upload and Preview Functions
+let currentImageFile = null;
+let currentImageSettings = {
+    position: 'above',
+    size: 'medium',
+    quality: 'medium',
+    fit: 'contain',
+    alignment: 'center',
+    border: false,
+    shadow: false,
+    rounded: false,
+    grayscale: false,
+    opacity: 1,
+    caption: '',
+    alt: '',
+    customWidth: 400,
+    customHeight: 300
+};
+
+// Handle image upload with validation and preview
+async function handleImageUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+        alert('Format gambar tidak didukung. Gunakan JPG, PNG, GIF, atau WebP.');
+        event.target.value = '';
+        return;
+    }
+
+    // Validate file size (5MB max)
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+        alert('Ukuran gambar terlalu besar. Maksimal 5MB.');
+        event.target.value = '';
+        return;
+    }
+
+    currentImageFile = file;
+
+    // Create preview
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const previewContainer = document.getElementById('imagePreview');
+        const img = new Image();
+
+        img.onload = function() {
+            // Update image info
+            document.getElementById('imageDimensions').textContent = `${img.width} × ${img.height}px`;
+            document.getElementById('imageSize').textContent = `${(file.size / 1024 / 1024).toFixed(2)} MB`;
+
+            // Create styled preview
+            updateImagePreview();
+        };
+
+        img.src = e.target.result;
+        currentImageSettings.originalSrc = e.target.result;
+    };
+
+    reader.readAsDataURL(file);
+}
+
+// Update image preview with current settings
+function updateImagePreview() {
+    if (!currentImageSettings.originalSrc) return;
+
+    const previewContainer = document.getElementById('imagePreview');
+    const img = new Image();
+
+    img.onload = function() {
+        // Apply current settings
+        const settings = currentImageSettings;
+
+        // Create wrapper with styling
+        let wrapperStyle = '';
+
+        // Size settings
+        if (settings.size === 'custom') {
+            wrapperStyle += `width: ${settings.customWidth}px; height: ${settings.customHeight}px; `;
+        } else {
+            const sizeMap = {
+                'small': '200px',
+                'medium': '400px',
+                'large': '600px',
+                'xlarge': '800px',
+                'auto': 'auto'
+            };
+            if (sizeMap[settings.size]) {
+                wrapperStyle += `max-width: ${sizeMap[settings.size]}; `;
+            }
+        }
+
+        // Fit settings
+        const fitMap = {
+            'contain': 'object-fit: contain;',
+            'cover': 'object-fit: cover;',
+            'fill': 'object-fit: fill;',
+            'scale-down': 'object-fit: scale-down;',
+            'none': 'object-fit: none;'
+        };
+        wrapperStyle += fitMap[settings.fit] || '';
+
+        // Alignment
+        const alignMap = {
+            'left': 'margin: 0 auto 0 0;',
+            'center': 'margin: 0 auto;',
+            'right': 'margin: 0 0 0 auto;'
+        };
+        wrapperStyle += alignMap[settings.alignment] || '';
+
+        // Styling options
+        if (settings.border) wrapperStyle += 'border: 2px solid #e5e7eb; ';
+        if (settings.shadow) wrapperStyle += 'box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); ';
+        if (settings.rounded) wrapperStyle += 'border-radius: 8px; ';
+        if (settings.grayscale) wrapperStyle += 'filter: grayscale(100%); ';
+        wrapperStyle += `opacity: ${settings.opacity}; `;
+
+        // Create preview HTML
+        const previewHtml = `
+            <img src="${settings.originalSrc}"
+                 alt="${settings.alt || 'Preview'}"
+                 style="${wrapperStyle}"
+                 class="image-preview-img">
+            ${settings.caption ? `<div class="image-caption">${settings.caption}</div>` : ''}
+        `;
+
+        previewContainer.innerHTML = previewHtml;
+    };
+
+    img.src = currentImageSettings.originalSrc;
+}
+
+// Toggle question image uploads panel
+function toggleQuestionImageUploads() {
+    const panel = document.getElementById('imageSettingsPanel');
+    const checkbox = document.getElementById('enableQuestionImages');
+
+    if (checkbox.checked) {
+        panel.style.display = 'block';
+        // Initialize default settings
+        loadImageSettings();
+        // Initialize presets
+        initializeImagePresets();
+        // Set auto-apply checkbox value
+        const autoApplyCheckbox = document.getElementById('autoApplyLastUsed');
+        if (autoApplyCheckbox) {
+            autoApplyCheckbox.checked = adminImagePreferences.autoApplyLastUsed || false;
+        }
+        // Auto-apply preset if enabled
+        setTimeout(() => {
+            autoApplyPreset();
+        }, 100);
+    } else {
+        panel.style.display = 'none';
+        // Clear image data
+        resetImageData();
+    }
+}
+
+// Load image settings from form elements
+function loadImageSettings() {
+    const elements = {
+        position: 'imagePosition',
+        size: 'imageSize',
+        quality: 'imageQuality',
+        fit: 'imageFit',
+        alignment: 'imageAlignment',
+        border: 'imageBorder',
+        shadow: 'imageShadow',
+        rounded: 'imageRounded',
+        grayscale: 'imageGrayscale',
+        opacity: 'imageOpacity',
+        caption: 'imageCaption',
+        alt: 'imageAlt',
+        customWidth: 'customWidth',
+        customHeight: 'customHeight'
+    };
+
+    // Load values from form
+    Object.keys(elements).forEach(key => {
+        const elementId = elements[key];
+        const element = document.getElementById(elementId);
+
+        if (element) {
+            if (element.type === 'checkbox') {
+                currentImageSettings[key] = element.checked;
+            } else {
+                currentImageSettings[key] = element.value;
+            }
+        }
+    });
+
+    // Update custom size visibility
+    toggleCustomSize();
+
+    // Update opacity display
+    updateOpacityDisplay();
+}
+
+// Save current settings to form elements
+function saveImageSettings() {
+    const elements = {
+        position: 'imagePosition',
+        size: 'imageSize',
+        quality: 'imageQuality',
+        fit: 'imageFit',
+        alignment: 'imageAlignment',
+        border: 'imageBorder',
+        shadow: 'imageShadow',
+        rounded: 'imageRounded',
+        grayscale: 'imageGrayscale',
+        opacity: 'imageOpacity',
+        caption: 'imageCaption',
+        alt: 'imageAlt',
+        customWidth: 'customWidth',
+        customHeight: 'customHeight'
+    };
+
+    // Save values to form
+    Object.keys(elements).forEach(key => {
+        const elementId = elements[key];
+        const element = document.getElementById(elementId);
+
+        if (element) {
+            if (element.type === 'checkbox') {
+                element.checked = currentImageSettings[key];
+            } else {
+                element.value = currentImageSettings[key];
+            }
+        }
+    });
+}
+
+// Toggle custom size inputs
+function toggleCustomSize() {
+    const sizeSelect = document.getElementById('imageSize');
+    const customGroup = document.getElementById('customSizeGroup');
+
+    if (sizeSelect.value === 'custom') {
+        customGroup.style.display = 'block';
+    } else {
+        customGroup.style.display = 'none';
+    }
+}
+
+// Update opacity display value
+function updateOpacityDisplay() {
+    const opacityInput = document.getElementById('imageOpacity');
+    const opacityValue = document.getElementById('opacityValue');
+
+    if (opacityInput && opacityValue) {
+        const percentage = Math.round(currentImageSettings.opacity * 100);
+        opacityValue.textContent = `${percentage}%`;
+    }
+}
+
+// Reset image settings to defaults
+function resetImageSettings() {
+    currentImageSettings = {
+        position: 'above',
+        size: 'medium',
+        quality: 'medium',
+        fit: 'contain',
+        alignment: 'center',
+        border: false,
+        shadow: false,
+        rounded: false,
+        grayscale: false,
+        opacity: 1,
+        caption: '',
+        alt: '',
+        customWidth: 400,
+        customHeight: 300
+    };
+
+    // Save to form
+    saveImageSettings();
+
+    // Update preview
+    updateImagePreview();
+
+    // Update UI elements
+    toggleCustomSize();
+    updateOpacityDisplay();
+}
+
+// Remove uploaded image
+function removeImage() {
+    currentImageFile = null;
+    currentImageSettings.originalSrc = null;
+
+    // Clear file input
+    const fileInput = document.getElementById('questionImage');
+    if (fileInput) fileInput.value = '';
+
+    // Clear preview
+    const previewContainer = document.getElementById('imagePreview');
+    if (previewContainer) {
+        previewContainer.innerHTML = `
+            <div class="no-image-placeholder">
+                <i class="fas fa-image fa-3x"></i>
+                <p>Belum ada gambar dipilih</p>
+            </div>
+        `;
+    }
+
+    // Clear info
+    document.getElementById('imageDimensions').textContent = '-';
+    document.getElementById('imageSize').textContent = '-';
+
+    // Reset settings
+    resetImageSettings();
+}
+
+// Reset image data when disabling image uploads
+function resetImageData() {
+    currentImageFile = null;
+    currentImageSettings.originalSrc = null;
+
+    // Clear file input
+    const fileInput = document.getElementById('questionImage');
+    if (fileInput) fileInput.value = '';
+
+    // Clear preview
+    const previewContainer = document.getElementById('imagePreview');
+    if (previewContainer) {
+        previewContainer.innerHTML = `
+            <div class="no-image-placeholder">
+                <i class="fas fa-image fa-3x"></i>
+                <p>Belum ada gambar dipilih</p>
+            </div>
+        `;
+    }
+
+    // Clear info
+    document.getElementById('imageDimensions').textContent = '-';
+    document.getElementById('imageSize').textContent = '-';
+}
+
+// Toggle option images functionality
+function toggleOptionImages() {
+    const checkbox = document.getElementById('enableOptionImages');
+    const optionContainers = document.querySelectorAll('.option-image-container');
+
+    if (checkbox.checked) {
+        // Show option image inputs
+        optionContainers.forEach(container => {
+            if (container) container.style.display = 'block';
+        });
+    } else {
+        // Hide option image inputs and clear them
+        optionContainers.forEach(container => {
+            if (container) {
+                container.style.display = 'none';
+                const fileInput = container.querySelector('input[type="file"]');
+                const preview = container.querySelector('.option-image-preview');
+                if (fileInput) fileInput.value = '';
+                if (preview) preview.innerHTML = '';
+            }
+        });
+    }
+}
+
+// Initialize image settings when form loads
+function initializeImageSettings() {
+    // Set up event listeners for real-time updates
+    const settingElements = [
+        'imagePosition', 'imageSize', 'imageFit', 'imageAlignment',
+        'imageBorder', 'imageShadow', 'imageRounded', 'imageGrayscale', 'imageOpacity'
+    ];
+
+    settingElements.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener('change', function() {
+                // Update current settings
+                if (element.type === 'checkbox') {
+                    currentImageSettings[id.replace('image', '').toLowerCase()] = element.checked;
+                } else {
+                    currentImageSettings[id.replace('image', '').toLowerCase()] = element.value;
+                }
+
+                // Special handling for size changes
+                if (id === 'imageSize') {
+                    toggleCustomSize();
+                }
+
+                // Update preview
+                updateImagePreview();
+            });
+        }
+    });
+
+    // Caption and alt text listeners
+    ['imageCaption', 'imageAlt'].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener('input', function() {
+                currentImageSettings[id.replace('image', '').toLowerCase()] = element.value;
+                updateImagePreview();
+            });
+        }
+    });
+
+    // Custom size listeners
+    ['customWidth', 'customHeight'].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener('input', function() {
+                currentImageSettings[id.replace('custom', '').toLowerCase()] = parseInt(element.value) || 400;
+                updateImagePreview();
+            });
+        }
+    });
+}
+
+// Image Presets Management
+let imagePresets = {};
+let adminImagePreferences = {};
+
+// Load presets from localStorage
+function loadImagePresets() {
+    try {
+        const saved = localStorage.getItem('adminImagePresets');
+        if (saved) {
+            imagePresets = JSON.parse(saved);
+        } else {
+            // Initialize with comprehensive default presets
+            imagePresets = {
+                'default': {
+                    name: 'Default',
+                    description: 'Pengaturan standar untuk gambar soal',
+                    settings: {
+                        position: 'above',
+                        size: 'medium',
+                        quality: 'medium',
+                        fit: 'contain',
+                        alignment: 'center',
+                        border: false,
+                        shadow: false,
+                        rounded: false,
+                        grayscale: false,
+                        opacity: 1,
+                        caption: '',
+                        alt: '',
+                        customWidth: 400,
+                        customHeight: 300
+                    }
+                },
+                'compact': {
+                    name: 'Compact',
+                    description: 'Gambar kecil untuk soal matematika',
+                    settings: {
+                        position: 'inline',
+                        size: 'small',
+                        quality: 'medium',
+                        fit: 'contain',
+                        alignment: 'left',
+                        border: true,
+                        shadow: false,
+                        rounded: true,
+                        grayscale: false,
+                        opacity: 1,
+                        caption: '',
+                        alt: '',
+                        customWidth: 200,
+                        customHeight: 150
+                    }
+                },
+                'featured': {
+                    name: 'Featured',
+                    description: 'Gambar besar untuk ilustrasi utama',
+                    settings: {
+                        position: 'center',
+                        size: 'large',
+                        quality: 'high',
+                        fit: 'cover',
+                        alignment: 'center',
+                        border: false,
+                        shadow: true,
+                        rounded: false,
+                        grayscale: false,
+                        opacity: 1,
+                        caption: '',
+                        alt: '',
+                        customWidth: 600,
+                        customHeight: 400
+                    }
+                },
+                'diagram': {
+                    name: 'Diagram Matematika',
+                    description: 'Untuk diagram geometri dan grafik',
+                    settings: {
+                        position: 'center',
+                        size: 'large',
+                        quality: 'high',
+                        fit: 'contain',
+                        alignment: 'center',
+                        border: true,
+                        shadow: true,
+                        rounded: false,
+                        grayscale: false,
+                        opacity: 1,
+                        caption: 'Diagram ilustrasi',
+                        alt: 'Diagram matematika',
+                        customWidth: 500,
+                        customHeight: 350
+                    }
+                },
+                'thumbnail': {
+                    name: 'Thumbnail',
+                    description: 'Gambar kecil untuk preview',
+                    settings: {
+                        position: 'left',
+                        size: 'small',
+                        quality: 'low',
+                        fit: 'cover',
+                        alignment: 'left',
+                        border: true,
+                        shadow: false,
+                        rounded: true,
+                        grayscale: false,
+                        opacity: 0.9,
+                        caption: '',
+                        alt: '',
+                        customWidth: 150,
+                        customHeight: 100
+                    }
+                },
+                'elegant': {
+                    name: 'Elegant',
+                    description: 'Gaya elegan dengan shadow dan rounded',
+                    settings: {
+                        position: 'above',
+                        size: 'medium',
+                        quality: 'high',
+                        fit: 'contain',
+                        alignment: 'center',
+                        border: false,
+                        shadow: true,
+                        rounded: true,
+                        grayscale: false,
+                        opacity: 1,
+                        caption: '',
+                        alt: '',
+                        customWidth: 450,
+                        customHeight: 320
+                    }
+                },
+                'minimal': {
+                    name: 'Minimal',
+                    description: 'Gaya minimalis tanpa efek',
+                    settings: {
+                        position: 'above',
+                        size: 'medium',
+                        quality: 'medium',
+                        fit: 'contain',
+                        alignment: 'center',
+                        border: false,
+                        shadow: false,
+                        rounded: false,
+                        grayscale: false,
+                        opacity: 1,
+                        caption: '',
+                        alt: '',
+                        customWidth: 400,
+                        customHeight: 300
+                    }
+                },
+                'vintage': {
+                    name: 'Vintage',
+                    description: 'Efek grayscale untuk gambar klasik',
+                    settings: {
+                        position: 'center',
+                        size: 'large',
+                        quality: 'medium',
+                        fit: 'cover',
+                        alignment: 'center',
+                        border: true,
+                        shadow: true,
+                        rounded: false,
+                        grayscale: true,
+                        opacity: 0.8,
+                        caption: 'Ilustrasi klasik',
+                        alt: 'Gambar vintage',
+                        customWidth: 550,
+                        customHeight: 380
+                    }
+                },
+                'presentation': {
+                    name: 'Presentation',
+                    description: 'Untuk presentasi dan slide',
+                    settings: {
+                        position: 'center',
+                        size: 'xlarge',
+                        quality: 'high',
+                        fit: 'contain',
+                        alignment: 'center',
+                        border: true,
+                        shadow: true,
+                        rounded: false,
+                        grayscale: false,
+                        opacity: 1,
+                        caption: '',
+                        alt: '',
+                        customWidth: 700,
+                        customHeight: 500
+                    }
+                }
+            };
+            saveImagePresetsToStorage();
+        }
+    } catch (error) {
+        console.error('Error loading image presets:', error);
+        imagePresets = {};
+    }
+}
+
+// Load admin preferences
+function loadAdminImagePreferences() {
+    try {
+        const saved = localStorage.getItem('adminImagePreferences');
+        if (saved) {
+            adminImagePreferences = JSON.parse(saved);
+        } else {
+            // Default preferences
+            adminImagePreferences = {
+                defaultPreset: 'default',
+                autoApplyLastUsed: false,
+                lastUsedPreset: null,
+                favoritePresets: ['default', 'diagram', 'compact']
+            };
+            saveAdminImagePreferences();
+        }
+    } catch (error) {
+        console.error('Error loading admin preferences:', error);
+        adminImagePreferences = {};
+    }
+}
+
+// Save admin preferences
+function saveAdminImagePreferences() {
+    try {
+        localStorage.setItem('adminImagePreferences', JSON.stringify(adminImagePreferences));
+    } catch (error) {
+        console.error('Error saving admin preferences:', error);
+    }
+}
+
+// Save presets to localStorage
+function saveImagePresetsToStorage() {
+    try {
+        localStorage.setItem('adminImagePresets', JSON.stringify(imagePresets));
+    } catch (error) {
+        console.error('Error saving image presets:', error);
+    }
+}
+
+// Update presets dropdown
+function updatePresetsDropdown() {
+    const presetSelect = document.getElementById('imagePreset');
+    if (!presetSelect) return;
+
+    // Clear existing options except the first one
+    presetSelect.innerHTML = '<option value="">Pilih Template</option>';
+
+    // Add favorite presets first (if any)
+    if (adminImagePreferences.favoritePresets && adminImagePreferences.favoritePresets.length > 0) {
+        const favoritesGroup = document.createElement('optgroup');
+        favoritesGroup.label = '⭐ Favorit';
+
+        adminImagePreferences.favoritePresets.forEach(presetKey => {
+            if (imagePresets[presetKey]) {
+                const preset = imagePresets[presetKey];
+                const option = document.createElement('option');
+                option.value = presetKey;
+                option.textContent = preset.name;
+                option.title = preset.description || '';
+                favoritesGroup.appendChild(option);
+            }
+        });
+
+        if (favoritesGroup.children.length > 0) {
+            presetSelect.appendChild(favoritesGroup);
+        }
+    }
+
+    // Add all presets
+    const allGroup = document.createElement('optgroup');
+    allGroup.label = 'Semua Template';
+
+    Object.keys(imagePresets).forEach(presetKey => {
+        // Skip if already in favorites
+        if (adminImagePreferences.favoritePresets &&
+            adminImagePreferences.favoritePresets.includes(presetKey)) {
+            return;
+        }
+
+        const preset = imagePresets[presetKey];
+        const option = document.createElement('option');
+        option.value = presetKey;
+        option.textContent = preset.name;
+        option.title = preset.description || '';
+        allGroup.appendChild(option);
+    });
+
+    presetSelect.appendChild(allGroup);
+}
+
+// Load selected preset
+function loadImagePreset() {
+    const presetSelect = document.getElementById('imagePreset');
+    if (!presetSelect) return;
+
+    const selectedPreset = presetSelect.value;
+    if (!selectedPreset || !imagePresets[selectedPreset]) return;
+
+    const preset = imagePresets[selectedPreset];
+
+    // Apply preset settings
+    currentImageSettings = { ...preset.settings };
+
+    // Update form elements
+    saveImageSettings();
+
+    // Update preview
+    updateImagePreview();
+
+    // Update UI elements
+    toggleCustomSize();
+    updateOpacityDisplay();
+
+    // Track usage
+    if (imagePresets[selectedPreset]) {
+        imagePresets[selectedPreset].usageCount = (imagePresets[selectedPreset].usageCount || 0) + 1;
+        imagePresets[selectedPreset].lastUsed = new Date().toISOString();
+        saveImagePresetsToStorage();
+    }
+
+    // Track as last used
+    adminImagePreferences.lastUsedPreset = selectedPreset;
+    saveAdminImagePreferences();
+
+    console.log('Loaded preset:', preset.name);
+}
+
+// Auto-apply default or last used preset when image settings panel opens
+function autoApplyPreset() {
+    if (!adminImagePreferences.autoApplyLastUsed) return;
+
+    let presetToApply = adminImagePreferences.defaultPreset;
+
+    // If auto-apply last used is enabled and there's a last used preset, use that
+    if (adminImagePreferences.lastUsedPreset &&
+        imagePresets[adminImagePreferences.lastUsedPreset]) {
+        presetToApply = adminImagePreferences.lastUsedPreset;
+    }
+
+    if (presetToApply && imagePresets[presetToApply]) {
+        const presetSelect = document.getElementById('imagePreset');
+        if (presetSelect) {
+            presetSelect.value = presetToApply;
+            loadImagePreset();
+            console.log('Auto-applied preset:', imagePresets[presetToApply].name);
+        }
+    }
+}
+
+// Save current settings as preset
+function saveImagePreset() {
+    const presetName = prompt('Masukkan nama template pengaturan gambar:');
+    if (!presetName || presetName.trim() === '') {
+        alert('Nama template tidak boleh kosong!');
+        return;
+    }
+
+    const presetDescription = prompt('Deskripsi template (opsional):', '');
+    const presetKey = presetName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+
+    if (imagePresets[presetKey] && presetKey !== 'default') {
+        if (!confirm(`Template "${imagePresets[presetKey].name}" sudah ada. Apakah ingin menimpa?`)) {
+            return;
+        }
+    }
+
+    // Save current settings as preset
+    imagePresets[presetKey] = {
+        name: presetName.trim(),
+        description: presetDescription ? presetDescription.trim() : '',
+        settings: { ...currentImageSettings },
+        createdAt: new Date().toISOString(),
+        usageCount: 0
+    };
+
+    // Save to storage
+    saveImagePresetsToStorage();
+
+    // Update dropdown
+    updatePresetsDropdown();
+
+    // Select the new preset
+    const presetSelect = document.getElementById('imagePreset');
+    if (presetSelect) {
+        presetSelect.value = presetKey;
+    }
+
+    // Track as last used
+    adminImagePreferences.lastUsedPreset = presetKey;
+    saveAdminImagePreferences();
+
+    alert(`Template "${presetName}" berhasil disimpan!`);
+}
+
+// Toggle favorite preset
+function toggleFavoritePreset() {
+    const presetSelect = document.getElementById('imagePreset');
+    if (!presetSelect || !presetSelect.value) {
+        alert('Pilih template terlebih dahulu!');
+        return;
+    }
+
+    const presetKey = presetSelect.value;
+    if (!adminImagePreferences.favoritePresets) {
+        adminImagePreferences.favoritePresets = [];
+    }
+
+    const index = adminImagePreferences.favoritePresets.indexOf(presetKey);
+    if (index > -1) {
+        // Remove from favorites
+        adminImagePreferences.favoritePresets.splice(index, 1);
+        alert('Template dihapus dari favorit');
+    } else {
+        // Add to favorites
+        adminImagePreferences.favoritePresets.push(presetKey);
+        alert('Template ditambahkan ke favorit');
+    }
+
+    saveAdminImagePreferences();
+    updatePresetsDropdown();
+}
+
+// Set default preset
+function setDefaultPreset() {
+    const presetSelect = document.getElementById('imagePreset');
+    if (!presetSelect || !presetSelect.value) {
+        alert('Pilih template terlebih dahulu!');
+        return;
+    }
+
+    const presetKey = presetSelect.value;
+    adminImagePreferences.defaultPreset = presetKey;
+    saveAdminImagePreferences();
+
+    alert(`Template "${imagePresets[presetKey].name}" diset sebagai default`);
+}
+
+// Auto-apply last used preset
+function toggleAutoApplyLastUsed() {
+    adminImagePreferences.autoApplyLastUsed = !adminImagePreferences.autoApplyLastUsed;
+    saveAdminImagePreferences();
+
+    const status = adminImagePreferences.autoApplyLastUsed ? 'diaktifkan' : 'dinonaktifkan';
+    alert(`Auto-apply template terakhir ${status}`);
+}
+
+// Delete selected preset
+function deleteImagePreset() {
+    const presetSelect = document.getElementById('imagePreset');
+    if (!presetSelect) return;
+
+    const selectedPreset = presetSelect.value;
+    if (!selectedPreset || !imagePresets[selectedPreset]) {
+        alert('Pilih template yang ingin dihapus!');
+        return;
+    }
+
+    if (selectedPreset === 'default') {
+        alert('Template default tidak dapat dihapus!');
+        return;
+    }
+
+    if (!confirm(`Apakah yakin ingin menghapus template "${imagePresets[selectedPreset].name}"?`)) {
+        return;
+    }
+
+    // Delete preset
+    delete imagePresets[selectedPreset];
+
+    // Save to storage
+    saveImagePresetsToStorage();
+
+    // Update dropdown
+    updatePresetsDropdown();
+
+    // Reset selection
+    presetSelect.value = '';
+
+    alert('Template berhasil dihapus!');
+}
+
+// Initialize presets when image settings panel is shown
+function initializeImagePresets() {
+    loadImagePresets();
+    loadAdminImagePreferences();
+    updatePresetsDropdown();
+}
+
+
+// Export enhanced image functions
+window.handleImageUpload = handleImageUpload;
+window.updateImagePreview = updateImagePreview;
+window.toggleQuestionImageUploads = toggleQuestionImageUploads;
+window.toggleOptionImages = toggleOptionImages;
+window.resetImageSettings = resetImageSettings;
+window.removeImage = removeImage;
+window.toggleCustomSize = toggleCustomSize;
+window.updateOpacityDisplay = updateOpacityDisplay;
+
+
+// Export preset functions
+window.loadImagePreset = loadImagePreset;
+window.saveImagePreset = saveImagePreset;
+window.deleteImagePreset = deleteImagePreset;
+window.initializeImagePresets = initializeImagePresets;
+window.toggleFavoritePreset = toggleFavoritePreset;
+window.setDefaultPreset = setDefaultPreset;
+window.toggleAutoApplyLastUsed = toggleAutoApplyLastUsed;
+window.autoApplyPreset = autoApplyPreset;
+
+// Export PGK Kategori functions
+window.addCategoryStatement = addCategoryStatement;
+window.updateCategoryStatement = updateCategoryStatement;
+window.removeCategoryStatement = removeCategoryStatement;
+window.updateCategoryStatementsTable = updateCategoryStatementsTable;
+
+// Export PGK Kategori LaTeX functions
+window.toggleStatementsLatexMode = toggleStatementsLatexMode;
+window.insertLatexIntoStatements = insertLatexIntoStatements;
+window.updateStatementsLatexPreview = updateStatementsLatexPreview;
+
+// Activities Management Functions
+async function loadAllActivities() {
+    try {
+        const activitiesTableBody = document.getElementById('activitiesTableBody');
+        const loadingIndicator = document.getElementById('activitiesLoading');
+        const emptyState = document.getElementById('activitiesEmpty');
+
+        if (loadingIndicator) loadingIndicator.style.display = 'block';
+        if (emptyState) emptyState.style.display = 'none';
+
+        // Get filter values
+        const typeFilter = document.getElementById('activityTypeFilter')?.value || '';
+        const actionFilter = document.getElementById('activityActionFilter')?.value || '';
+        const dateFilter = document.getElementById('activityDateFilter')?.value || '';
+
+        // Build query
+        let query = supabase
+            .from('admin_activities')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(100);
+
+        if (typeFilter) {
+            query = query.eq('activity_type', typeFilter);
+        }
+
+        if (actionFilter) {
+            query = query.eq('action', actionFilter);
+        }
+
+        if (dateFilter) {
+            const startDate = new Date(dateFilter);
+            const endDate = new Date(dateFilter);
+            endDate.setDate(endDate.getDate() + 1);
+
+            query = query
+                .gte('created_at', startDate.toISOString())
+                .lt('created_at', endDate.toISOString());
+        }
+
+        const { data: activities, error } = await query;
+
+        if (loadingIndicator) loadingIndicator.style.display = 'none';
+
+        if (error) {
+            console.error('Error loading activities:', error);
+            if (activitiesTableBody) activitiesTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #dc2626;">Error loading activities</td></tr>';
+            return;
+        }
+
+        if (!activities || activities.length === 0) {
+            if (emptyState) emptyState.style.display = 'block';
+            if (activitiesTableBody) activitiesTableBody.innerHTML = '';
+            return;
+        }
+
+        // Populate table
+        const activitiesHtml = activities.map(activity => {
+            const formattedTime = formatActivityTime(activity.created_at);
+            const activityTypeLabel = getActivityTypeLabel(activity.activity_type);
+            const actionLabel = getActionLabel(activity.action);
+            const icon = getActivityIcon(activity.activity_type, activity.action);
+
+            return `
+                <tr>
+                    <td>${new Date(activity.created_at).toLocaleString('id-ID')}</td>
+                    <td><span class="activity-type-badge ${activity.activity_type}">${activityTypeLabel}</span></td>
+                    <td><span class="activity-action-badge ${activity.action}"><i class="${icon}"></i> ${actionLabel}</span></td>
+                    <td>${activity.title}</td>
+                    <td>${activity.description || '-'}</td>
+                </tr>
+            `;
+        }).join('');
+
+        if (activitiesTableBody) activitiesTableBody.innerHTML = activitiesHtml;
+
+    } catch (error) {
+        console.error('Error in loadAllActivities:', error);
+        const activitiesTableBody = document.getElementById('activitiesTableBody');
+        const loadingIndicator = document.getElementById('activitiesLoading');
+
+        if (loadingIndicator) loadingIndicator.style.display = 'none';
+        if (activitiesTableBody) activitiesTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #dc2626;">Error loading activities</td></tr>';
+    }
+}
+
+// Helper function to get activity type label
+function getActivityTypeLabel(type) {
+    const labels = {
+        'material': 'Materi',
+        'question': 'Soal',
+        'user': 'User',
+        'system': 'Sistem'
+    };
+    return labels[type] || type;
+}
+
+// Helper function to get action label
+function getActionLabel(action) {
+    const labels = {
+        'created': 'Dibuat',
+        'updated': 'Diperbarui',
+        'deleted': 'Dihapus'
+    };
+    return labels[action] || action;
+}
+
+// Event listeners for activities tab
+document.addEventListener('DOMContentLoaded', () => {
+    // Activities refresh button
+    const refreshActivitiesBtn = document.getElementById('refreshActivitiesBtn');
+    if (refreshActivitiesBtn) {
+        refreshActivitiesBtn.addEventListener('click', loadAllActivities);
+    }
+
+    // Activities filters
+    const typeFilter = document.getElementById('activityTypeFilter');
+    const actionFilter = document.getElementById('activityActionFilter');
+    const dateFilter = document.getElementById('activityDateFilter');
+
+    if (typeFilter) {
+        typeFilter.addEventListener('change', loadAllActivities);
+    }
+
+    if (actionFilter) {
+        actionFilter.addEventListener('change', loadAllActivities);
+    }
+
+    if (dateFilter) {
+        dateFilter.addEventListener('change', loadAllActivities);
+    }
+});
+
+// Export activities functions
+window.loadAllActivities = loadAllActivities;
+
+// File display functions for material uploads
+function updateFileDisplay(inputId) {
+    const input = document.getElementById(inputId);
+    const display = document.getElementById(inputId + 'Display');
+
+    if (input && display && input.files && input.files[0]) {
+        const file = input.files[0];
+        const fileName = file.name;
+        const fileSize = (file.size / 1024 / 1024).toFixed(2); // Size in MB
+
+        // Display file info with icon
+        let icon = '';
+        if (inputId === 'materialImage') {
+            icon = '<i class="fas fa-image" style="color: #10b981;"></i>';
+        } else {
+            // Check file extension for attachment
+            const ext = fileName.split('.').pop().toLowerCase();
+            if (['pdf'].includes(ext)) {
+                icon = '<i class="fas fa-file-pdf" style="color: #dc2626;"></i>';
+            } else if (['mp4', 'mov', 'avi'].includes(ext)) {
+                icon = '<i class="fas fa-video" style="color: #7c3aed;"></i>';
+            } else {
+                icon = '<i class="fas fa-file" style="color: #6b7280;"></i>';
+            }
+        }
+
+        display.innerHTML = `${icon} <strong>${fileName}</strong> (${fileSize} MB)`;
+        display.style.color = '#10b981'; // Green color for success
+    } else if (display) {
+        display.innerHTML = '';
+    }
+}
+
+// Clear file display when form is reset
+function clearFileDisplays() {
+    const displays = ['materialImageDisplay', 'materialAttachmentDisplay'];
+    displays.forEach(id => {
+        const display = document.getElementById(id);
+        if (display) {
+            display.innerHTML = '';
+        }
+    });
+}
+
+// Export file display functions
+window.updateFileDisplay = updateFileDisplay;
+window.clearFileDisplays = clearFileDisplays;

@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - EduLearn TKA</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script type="importmap">
+    {
+      "imports": {
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+    </script>
+    <link rel="stylesheet" href="admin.css">
+    <!-- Chart.js for analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- KaTeX for LaTeX rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <script type="module" src="admin.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <section class="admin-hero">
+        <div class="hero-content">
+            <div class="hero-text">
+                <h1><i class="fas fa-cogs"></i> Admin Dashboard</h1>
+                <p>Kelola Platform EduLearn TKA dengan Efisien</p>
+                <div class="hero-metrics">
+                    <div class="metric">
+                        <span class="metric-value" id="systemStatus">Online</span>
+                        <span class="metric-label">Status Sistem</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-value" id="lastBackup">2 jam lalu</span>
+                        <span class="metric-label">Backup Terakhir</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-value" id="activeSessions">24</span>
+                        <span class="metric-label">Sesi Aktif</span>
+                    </div>
+                </div>
+            </div>
+            <div class="hero-actions">
+                <button class="quick-action-btn" onclick="showTab('materials')">
+                    <i class="fas fa-plus-circle"></i>
+                    <span>Tambah Materi</span>
+                </button>
+                <button class="quick-action-btn" onclick="showTab('questions')">
+                    <i class="fas fa-question-circle"></i>
+                    <span>Tambah Soal</span>
+                </button>
+                <a href="analytics.html" class="quick-action-btn">
+                    <i class="fas fa-chart-bar"></i>
+                    <span>Lihat Analytics</span>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <div class="admin-container">
+        <!-- Enhanced Navigation -->
+        <nav class="admin-navigation">
+            <div class="nav-tabs">
+                <button class="nav-tab active" onclick="showTab('dashboard')">
+                    <i class="fas fa-tachometer-alt"></i>
+                    <span>Dashboard</span>
+                </button>
+                <button class="nav-tab" onclick="showTab('materials')">
+                    <i class="fas fa-book"></i>
+                    <span>Materi</span>
+                </button>
+                <button class="nav-tab" onclick="showTab('questions')">
+                    <i class="fas fa-brain"></i>
+                    <span>Soal</span>
+                </button>
+                <button class="nav-tab" onclick="showTab('users')">
+                    <i class="fas fa-users"></i>
+                    <span>Users</span>
+                </button>
+                <a href="analytics.html" class="nav-tab">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Analytics</span>
+                </a>
+                <button class="nav-tab" onclick="showTab('activities')">
+                    <i class="fas fa-history"></i>
+                    <span>Aktivitas</span>
+                </button>
+            </div>
+            <div class="nav-actions">
+                <a href="system-status.html" class="system-status-btn" id="systemStatusBtn">
+                    <i class="fas fa-server"></i>
+                    <span class="status-indicator online"></span>
+                </a>
+                <button id="adminLogoutBtn" class="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Logout</span>
+                </button>
+            </div>
+        </nav>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboard" class="tab-content active">
+            <!-- System Overview -->
+            <div class="system-overview">
+                <h2><i class="fas fa-chart-pie"></i> Ringkasan Sistem</h2>
+                <div class="overview-grid">
+                    <div class="overview-card">
+                        <div class="card-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="card-content">
+                            <div class="card-value" id="totalUsers">0</div>
+                            <div class="card-label">Total Siswa</div>
+                            <div class="card-change positive">+12% bulan ini</div>
+                        </div>
+                    </div>
+                    <div class="overview-card">
+                        <div class="card-icon">
+                            <i class="fas fa-user-check"></i>
+                        </div>
+                        <div class="card-content">
+                            <div class="card-value" id="activeUsers">0</div>
+                            <div class="card-label">Siswa Aktif</div>
+                            <div class="card-change positive">+8% bulan ini</div>
+                        </div>
+                    </div>
+                    <div class="overview-card">
+                        <div class="card-icon">
+                            <i class="fas fa-brain"></i>
+                        </div>
+                        <div class="card-content">
+                            <div class="card-value" id="totalQuestions">0</div>
+                            <div class="card-label">Total Soal</div>
+                            <div class="card-change neutral">+2 hari ini</div>
+                        </div>
+                    </div>
+                    <div class="overview-card">
+                        <div class="card-icon">
+                            <i class="fas fa-book"></i>
+                        </div>
+                        <div class="card-content">
+                            <div class="card-value" id="totalMaterials">0</div>
+                            <div class="card-label">Total Materi</div>
+                            <div class="card-change positive">+5 hari ini</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Stats & Actions -->
+            <div class="dashboard-grid">
+                <!-- Recent Activities -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-history"></i> Aktivitas Terbaru</h3>
+                        <button class="refresh-btn" onclick="loadRecentActivities()">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    <div class="activity-list" id="recentActivities">
+                        <div class="activity-item">
+                            <div class="activity-icon">
+                                <i class="fas fa-plus-circle"></i>
+                            </div>
+                            <div class="activity-content">
+                                <h4>Materi baru ditambahkan</h4>
+                                <p>"Persamaan Linier" oleh Admin • 2 jam lalu</p>
+                            </div>
+                        </div>
+                        <div class="activity-item">
+                            <div class="activity-icon">
+                                <i class="fas fa-user-plus"></i>
+                            </div>
+                            <div class="activity-content">
+                                <h4>Siswa baru bergabung</h4>
+                                <p>5 siswa mendaftar hari ini • 4 jam lalu</p>
+                            </div>
+                        </div>
+                        <div class="activity-item">
+                            <div class="activity-icon">
+                                <i class="fas fa-trophy"></i>
+                            </div>
+                            <div class="activity-content">
+                                <h4>Pencapaian milestone</h4>
+                                <p>1000 soal terselesaikan • 6 jam lalu</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Health -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-server"></i> Status Sistem</h3>
+                        <button class="refresh-btn" onclick="checkDashboardSystemStatus()">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    <div class="system-status">
+                        <div class="status-item">
+                            <div class="status-label">
+                                <i class="fas fa-database"></i>
+                                Database
+                            </div>
+                            <div class="status-indicator" id="databaseStatus">
+                                <span id="databaseStatusText">Memeriksa...</span>
+                            </div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-label">
+                                <i class="fas fa-cloud"></i>
+                                Storage
+                            </div>
+                            <div class="status-indicator" id="storageStatus">
+                                <span id="storageStatusText">Memeriksa...</span>
+                            </div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-label">
+                                <i class="fas fa-shield-alt"></i>
+                                Security
+                            </div>
+                            <div class="status-indicator" id="securityStatus">
+                                <span id="securityStatusText">Memeriksa...</span>
+                            </div>
+                        </div>
+                        <div class="status-item">
+                            <div class="status-label">
+                                <i class="fas fa-clock"></i>
+                                Uptime
+                            </div>
+                            <div class="status-indicator" id="uptimeStatus">
+                                <span id="uptimeStatusText">Memeriksa...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-bolt"></i> Aksi Cepat</h3>
+                    </div>
+                    <div class="quick-actions-grid">
+                        <button class="action-btn secondary" onclick="showTab('questions')">
+                            <i class="fas fa-question"></i>
+                            <span>Tambah Soal</span>
+                        </button>
+                        <button class="action-btn info" onclick="showTab('users')">
+                            <i class="fas fa-users-cog"></i>
+                            <span>Kelola User</span>
+                        </button>
+                        <a href="analytics.html" class="action-btn warning">
+                            <i class="fas fa-chart-bar"></i>
+                            <span>View Analytics</span>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Performance Metrics -->
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <h3><i class="fas fa-chart-line"></i> Performa Hari Ini</h3>
+                        <button class="refresh-btn" onclick="loadTodaysPerformance()">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    <div class="performance-metrics">
+                        <div class="metric-item">
+                            <div class="metric-icon">
+                                <i class="fas fa-eye"></i>
+                            </div>
+                            <div class="metric-data">
+                                <div class="metric-value" id="totalViewsToday">0</div>
+                                <div class="metric-label">Total Views</div>
+                            </div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-icon">
+                                <i class="fas fa-play-circle"></i>
+                            </div>
+                            <div class="metric-data">
+                                <div class="metric-value" id="examsStartedToday">0</div>
+                                <div class="metric-label">Ujian Dimulai</div>
+                            </div>
+                        </div>
+                        <div class="metric-item">
+                            <div class="metric-icon">
+                                <i class="fas fa-check-circle"></i>
+                            </div>
+                            <div class="metric-data">
+                                <div class="metric-value" id="examsCompletedToday">0</div>
+                                <div class="metric-label">Ujian Selesai</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Materials Tab -->
+        <div id="materials" class="tab-content">
+            <!-- Material Form -->
+            <div id="materialForm" class="form-container">
+                <div class="form-header">
+                    <h3 id="materialFormTitle" class="form-title">Tambah Materi Baru</h3>
+                    <button id="cancelMaterialBtn" class="cancel-btn">Batal</button>
+                </div>
+                <form id="materialFormData">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="materialTitle">Judul Materi:</label>
+                            <input type="text" id="materialTitle" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="materialType">Tipe Materi:</label>
+                            <select id="materialType">
+                                <option value="Artikel">Artikel</option>
+                                <option value="Video">Video</option>
+                                <option value="Infografis">Infografis</option>
+                                <option value="Latihan">Latihan</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="materialChapter">Bab:</label>
+                            <select id="materialChapter">
+                                <option value="">Pilih Bab</option>
+                                <option value="Bilangan">Bilangan</option>
+                                <option value="Aljabar">Aljabar</option>
+                                <option value="Geometri dan pengukuran">Geometri dan pengukuran</option>
+                                <option value="Data dan peluang">Data dan peluang</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="materialSubChapter">Sub Bab:</label>
+                            <select id="materialSubChapter">
+                                <option value="">Pilih Sub Bab</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="materialDifficulty">Tingkat Kesulitan:</label>
+                            <select id="materialDifficulty">
+                                <option value="Mudah">Mudah</option>
+                                <option value="Sedang">Sedang</option>
+                                <option value="Sulit">Sulit</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="materialSummary">Ringkasan Materi:</label>
+                            <textarea id="materialSummary" rows="3" placeholder="Ringkasan singkat materi..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="materialObjectives">Tujuan Pembelajaran:</label>
+                            <textarea id="materialObjectives" rows="3" placeholder="Tujuan pembelajaran yang ingin dicapai..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="materialImage">Upload Gambar Cover (Opsional):</label>
+                            <input type="file" id="materialImage" accept="image/*" onchange="updateFileDisplay('materialImage')">
+                            <div id="materialImageDisplay" class="file-display" style="margin-top: 0.5rem; font-size: 0.9rem; color: #6b7280;"></div>
+                        </div>
+                        <div class="form-group">
+                            <label for="materialAttachment">Upload Lampiran (PDF/Video):</label>
+                            <input type="file" id="materialAttachment" accept=".pdf,.mp4,.mov,.avi" onchange="updateFileDisplay('materialAttachment')">
+                            <div id="materialAttachmentDisplay" class="file-display" style="margin-top: 0.5rem; font-size: 0.9rem; color: #6b7280;"></div>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="materialPublished">
+                            <label for="materialPublished">Publish Materi</label>
+                        </div>
+                    </div>
+                    <button type="submit" class="submit-btn">Simpan Materi</button>
+                </form>
+            </div>
+
+            <!-- Materials Table -->
+            <div class="content-section">
+                <div class="section-header">
+                    <h3 class="section-title">Daftar Materi</h3>
+                    <button id="addMaterialBtn" class="add-btn">
+                        <i class="fas fa-plus"></i> Tambah Materi
+                    </button>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Judul</th>
+                            <th>Tipe</th>
+                            <th>Bab</th>
+                            <th>Mata Pelajaran</th>
+                            <th>Status</th>
+                            <th>Dilihat</th>
+                            <th>Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="materialsTableBody">
+                        <!-- Materials will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Questions Tab -->
+        <div id="questions" class="tab-content">
+            <!-- Question Form -->
+            <div id="questionForm" class="form-container">
+                <div class="form-header">
+                    <h3 id="formTitle" class="form-title">Tambah Soal Baru</h3>
+                    <button id="cancelQuestionBtn" class="cancel-btn">Batal</button>
+                </div>
+                <form id="questionFormData">
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label for="questionText">Pertanyaan:</label>
+                            <div class="question-input-controls">
+                                <div class="latex-toggle">
+                                    <input type="checkbox" id="enableQuestionLatex" onchange="toggleQuestionLatexMode()">
+                                    <label for="enableQuestionLatex">Aktifkan mode LaTeX</label>
+                                </div>
+                                <button type="button" class="image-insert-btn" onclick="insertImageIntoQuestion()" title="Tambah Gambar">
+                                    <i class="fas fa-image"></i> Tambah Gambar
+                                </button>
+                            </div>
+                            <div class="text-toolbar">
+                                <button type="button" onclick="insertBold()" title="Bold"><b>B</b></button>
+                                <button type="button" onclick="insertCenter()" title="Center">Center</button>
+                            </div>
+                            <textarea id="questionText" required placeholder="Masukkan teks pertanyaan..."></textarea>
+                            <div class="latex-toolbar" id="questionLatexToolbar" style="display: none;">
+                                <button type="button" onclick="insertLatex('fraction')" title="Fraction">½</button>
+                                <button type="button" onclick="insertLatex('sqrt')" title="Square Root">√</button>
+                                <button type="button" onclick="insertLatex('power')" title="Power">x²</button>
+                                <button type="button" onclick="insertLatex('integral')" title="Integral">∫</button>
+                                <button type="button" onclick="insertLatex('sum')" title="Sum">Σ</button>
+                                <button type="button" onclick="insertLatex('alpha')" title="Alpha">α</button>
+                                <button type="button" onclick="insertLatex('beta')" title="Beta">β</button>
+                                <button type="button" onclick="insertLatex('gamma')" title="Gamma">γ</button>
+                            </div>
+                            <div id="questionLatexPreview" class="latex-preview" style="display: none;"></div>
+                            <small class="latex-help" id="questionLatexHelp" style="display: none; color: #6b7280;">
+                                Gunakan \( rumus \) untuk menampilkan persamaan matematika inline
+                            </small>
+                        </div>
+                        <div class="form-group">
+                            <label for="questionType">Tipe Soal:</label>
+                            <select id="questionType" onchange="updateQuestionForm()" required>
+                                <option value="Pilihan Ganda">Pilihan Ganda</option>
+                                <option value="PGK Kategori">PGK Kategori</option>
+                                <option value="PGK MCMA">PGK MCMA</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="chapter">Bab:</label>
+                            <select id="chapter">
+                                <option value="">Pilih Bab</option>
+                                <option value="Bilangan">Bilangan</option>
+                                <option value="Aljabar">Aljabar</option>
+                                <option value="Geometri dan pengukuran">Geometri dan pengukuran</option>
+                                <option value="Data dan peluang">Data dan peluang</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="subChapter">Sub Bab:</label>
+                            <select id="subChapter">
+                                <option value="">Pilih Sub Bab</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="competence">Kompetensi Dasar (Opsional):</label>
+                            <textarea id="competence" rows="2" placeholder="Deskripsikan kompetensi dasar yang diuji dalam soal ini..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="difficulty">Tingkat Kesulitan:</label>
+                            <select id="difficulty" onchange="updateScoringWeight()">
+                                <option value="Mudah">Mudah</option>
+                                <option value="Sedang">Sedang</option>
+                                <option value="Sulit">Sulit</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="scoringWeight">Bobot Nilai:</label>
+                            <input type="number" id="scoringWeight" min="1" max="10" value="1" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label for="timeLimit">Batas Waktu (menit):</label>
+                            <input type="number" id="timeLimit" min="1" max="120" value="30">
+                        </div>
+                        <div class="form-group">
+                            <label>Pengaturan Gambar:</label>
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="enableQuestionImages" onchange="toggleQuestionImageUploads()">
+                                <label for="enableQuestionImages">Aktifkan upload gambar untuk soal ini</label>
+                            </div>
+                        </div>
+                        <div id="imageSettingsPanel" style="display: none;">
+                            <div class="image-settings-container">
+                                <!-- Image Upload Section -->
+                                <div class="image-upload-section">
+                                    <div class="form-group">
+                                        <label for="questionImage">Upload Gambar Soal:</label>
+                                        <input type="file" id="questionImage" accept="image/*" onchange="handleImageUpload(event)">
+                                        <small class="help-text">Format: JPG, PNG, GIF. Maksimal 5MB</small>
+                                    </div>
+                                </div>
+
+                                <!-- Image Preview Section -->
+                                <div class="image-preview-section">
+                                    <div class="image-preview-container">
+                                        <div id="imagePreview" class="image-preview-box">
+                                            <div class="no-image-placeholder">
+                                                <i class="fas fa-image fa-3x"></i>
+                                                <p>Belum ada gambar dipilih</p>
+                                            </div>
+                                        </div>
+                                        <div class="image-info">
+                                            <span id="imageDimensions">-</span>
+                                            <span id="imageSize">-</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Image Presets -->
+                                <div class="image-presets-section">
+                                    <div class="form-group">
+                                        <label for="imagePreset">Template Pengaturan:</label>
+                                        <div class="preset-controls">
+                                            <select id="imagePreset" onchange="loadImagePreset()">
+                                                <option value="">Pilih Template</option>
+                                            </select>
+                                            <div class="preset-buttons">
+                                                <button type="button" class="preset-btn" onclick="saveImagePreset()" title="Simpan Template Baru">
+                                                    <i class="fas fa-save"></i>
+                                                </button>
+                                                <button type="button" class="preset-btn" onclick="toggleFavoritePreset()" title="Toggle Favorit">
+                                                    <i class="fas fa-star"></i>
+                                                </button>
+                                                <button type="button" class="preset-btn" onclick="setDefaultPreset()" title="Set sebagai Default">
+                                                    <i class="fas fa-home"></i>
+                                                </button>
+                                                <button type="button" class="preset-btn" onclick="deleteImagePreset()" title="Hapus Template">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="preset-options">
+                                            <div class="checkbox-group">
+                                                <input type="checkbox" id="autoApplyLastUsed" onchange="toggleAutoApplyLastUsed()">
+                                                <label for="autoApplyLastUsed">Otomatis gunakan template terakhir</label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Basic Settings -->
+                                <div class="image-settings-grid">
+                                    <div class="form-group">
+                                        <label for="imagePosition">Posisi Gambar:</label>
+                                        <select id="imagePosition" onchange="updateImagePreview()">
+                                            <option value="above">Di atas pertanyaan</option>
+                                            <option value="below">Di bawah pertanyaan</option>
+                                            <option value="left">Di samping kiri</option>
+                                            <option value="right">Di samping kanan</option>
+                                            <option value="inline">Inline dengan teks</option>
+                                            <option value="center">Di tengah</option>
+                                            <option value="background">Sebagai background</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="imageSize">Ukuran Gambar:</label>
+                                        <select id="imageSize" onchange="updateImagePreview()">
+                                            <option value="small">Kecil (200px)</option>
+                                            <option value="medium">Sedang (400px)</option>
+                                            <option value="large">Besar (600px)</option>
+                                            <option value="xlarge">Extra Besar (800px)</option>
+                                            <option value="auto">Otomatis</option>
+                                            <option value="custom">Custom</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group" id="customSizeGroup" style="display: none;">
+                                        <label for="customWidth">Lebar (px):</label>
+                                        <input type="number" id="customWidth" min="50" max="1200" value="400" onchange="updateImagePreview()">
+                                        <label for="customHeight">Tinggi (px):</label>
+                                        <input type="number" id="customHeight" min="50" max="800" value="300" onchange="updateImagePreview()">
+                                    </div>
+                                </div>
+
+                                <!-- Advanced Settings -->
+                                <div class="advanced-image-settings">
+                                    <h4>Pengaturan Lanjutan</h4>
+                                    <div class="image-settings-grid">
+                                        <div class="form-group">
+                                            <label for="imageQuality">Kualitas Gambar:</label>
+                                            <select id="imageQuality">
+                                                <option value="low">Rendah (lebih cepat)</option>
+                                                <option value="medium">Sedang</option>
+                                                <option value="high">Tinggi (lebih baik)</option>
+                                                <option value="original">Asli</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="imageFit">Mode Tampilan:</label>
+                                            <select id="imageFit" onchange="updateImagePreview()">
+                                                <option value="contain">Sesuai Kontainer</option>
+                                                <option value="cover">Cover Kontainer</option>
+                                                <option value="fill">Isi Penuh</option>
+                                                <option value="scale-down">Scale Down</option>
+                                                <option value="none">Asli</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="imageAlignment">Perataan:</label>
+                                            <select id="imageAlignment" onchange="updateImagePreview()">
+                                                <option value="left">Kiri</option>
+                                                <option value="center">Tengah</option>
+                                                <option value="right">Kanan</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <!-- Styling Options -->
+                                    <div class="styling-options">
+                                        <h5>Opsi Styling</h5>
+                                        <div class="checkbox-grid">
+                                            <div class="checkbox-group">
+                                                <input type="checkbox" id="imageBorder" onchange="updateImagePreview()">
+                                                <label for="imageBorder">Tambah Border</label>
+                                            </div>
+                                            <div class="checkbox-group">
+                                                <input type="checkbox" id="imageShadow" onchange="updateImagePreview()">
+                                                <label for="imageShadow">Tambah Shadow</label>
+                                            </div>
+                                            <div class="checkbox-group">
+                                                <input type="checkbox" id="imageRounded" onchange="updateImagePreview()">
+                                                <label for="imageRounded">Rounded Corners</label>
+                                            </div>
+                                            <div class="checkbox-group">
+                                                <input type="checkbox" id="imageGrayscale" onchange="updateImagePreview()">
+                                                <label for="imageGrayscale">Grayscale</label>
+                                            </div>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="imageOpacity">Transparansi:</label>
+                                            <input type="range" id="imageOpacity" min="0.1" max="1" step="0.1" value="1" onchange="updateImagePreview()">
+                                            <span id="opacityValue">100%</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Caption and Alt Text -->
+                                    <div class="caption-settings">
+                                        <div class="form-group">
+                                            <label for="imageCaption">Caption Gambar:</label>
+                                            <input type="text" id="imageCaption" placeholder="Deskripsi gambar..." maxlength="200">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="imageAlt">Alt Text (SEO):</label>
+                                            <input type="text" id="imageAlt" placeholder="Deskripsi untuk screen reader..." maxlength="150">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Option Images Toggle -->
+                                <div class="option-images-section">
+                                    <div class="checkbox-group">
+                                        <input type="checkbox" id="enableOptionImages" onchange="toggleOptionImages()">
+                                        <label for="enableOptionImages">Aktifkan gambar untuk pilihan jawaban</label>
+                                    </div>
+                                    <small class="help-text">Izinkan upload gambar terpisah untuk setiap pilihan A, B, C, D</small>
+                                </div>
+
+                                <!-- Quick Actions -->
+                                <div class="image-actions">
+                                    <button type="button" class="action-btn" onclick="resetImageSettings()">
+                                        <i class="fas fa-undo"></i> Reset Pengaturan
+                                    </button>
+                                    <button type="button" class="action-btn" onclick="removeImage()">
+                                        <i class="fas fa-trash"></i> Hapus Gambar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="optionsContainer"></div>
+                    <div class="form-group">
+                        <label for="explanation">Pembahasan (Opsional):</label>
+                        <textarea id="explanation"></textarea>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="check-btn" onclick="checkAndFixForm()">Periksa Form</button>
+                        <button type="submit" class="submit-btn">Simpan Soal</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Questions Table -->
+            <div class="content-section">
+                <div class="section-header">
+                    <h3 class="section-title">Daftar Soal</h3>
+                    <div class="section-actions">
+                        <a href="analytics.html#questions" class="action-link">
+                            <i class="fas fa-chart-bar"></i> Lihat Analytics Soal
+                        </a>
+                        <button id="addQuestionBtn" class="add-btn">
+                            <i class="fas fa-plus"></i> Tambah Soal
+                        </button>
+                    </div>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Pertanyaan</th>
+                            <th>Tingkat</th>
+                            <th>Bobot</th>
+                            <th>Waktu</th>
+                            <th>Status</th>
+                            <th>Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="questionsTableBody">
+                        <!-- Questions will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Users Tab -->
+        <div id="users" class="tab-content">
+            <div class="content-section">
+                <div class="section-header">
+                    <h3 class="section-title">Kelola Pengguna</h3>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Avatar</th>
+                            <th>Nama Lengkap</th>
+                            <th>Email</th>
+                            <th>Telepon</th>
+                            <th>Sekolah</th>
+                            <th>Bio</th>
+                            <th>Status</th>
+                            <th>Tanggal Daftar</th>
+                            <th>Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <!-- Users will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Analytics Tab -->
+        <div id="analytics" class="tab-content">
+            <div class="content-section">
+                <div class="section-header">
+                    <h3 class="section-title">Analytics Siswa</h3>
+                    <button id="refreshAnalyticsBtn" class="add-btn">
+                        <i class="fas fa-refresh"></i> Refresh
+                    </button>
+                </div>
+
+                <div class="analytics-charts-grid">
+                    <div class="chart-container">
+                        <h4>Radar Kemampuan</h4>
+                        <div class="chart-wrapper">
+                            <canvas id="skillRadarChart" width="400" height="300"></canvas>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <h4>Progress per Bab</h4>
+                        <div id="skillBars" class="skill-bars-container"></div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 2rem;">
+                    <h4>Rekomendasi AI</h4>
+                    <div id="aiRecommendations"></div>
+                </div>
+
+                <!-- Per-Student Analytics Section -->
+                <div style="margin-top: 3rem; border-top: 1px solid #e5e7eb; padding-top: 2rem;">
+                    <h4 style="margin-bottom: 1rem;"><i class="fas fa-user-graduate"></i> Analytics Per Siswa</h4>
+                    <div id="studentsAnalyticsList">
+                        <!-- Student analytics will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activities Tab -->
+        <div id="activities" class="tab-content">
+            <div class="content-section">
+                <div class="section-header">
+                    <h3 class="section-title">Riwayat Aktivitas Admin</h3>
+                    <button id="refreshActivitiesBtn" class="add-btn">
+                        <i class="fas fa-refresh"></i> Refresh
+                    </button>
+                </div>
+
+                <!-- Filters -->
+                <div class="filters-section" style="margin-bottom: 1rem; display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <div class="form-group" style="margin: 0;">
+                        <label for="activityTypeFilter">Tipe Aktivitas:</label>
+                        <select id="activityTypeFilter">
+                            <option value="">Semua Tipe</option>
+                            <option value="material">Materi</option>
+                            <option value="question">Soal</option>
+                            <option value="user">User</option>
+                            <option value="system">Sistem</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label for="activityActionFilter">Aksi:</label>
+                        <select id="activityActionFilter">
+                            <option value="">Semua Aksi</option>
+                            <option value="created">Dibuat</option>
+                            <option value="updated">Diperbarui</option>
+                            <option value="deleted">Dihapus</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label for="activityDateFilter">Tanggal:</label>
+                        <input type="date" id="activityDateFilter">
+                    </div>
+                </div>
+
+                <!-- Loading indicator -->
+                <div id="activitiesLoading" style="text-align: center; padding: 2rem; display: none;">
+                    <i class="fas fa-spinner fa-spin"></i> Memuat aktivitas...
+                </div>
+
+                <!-- Empty state -->
+                <div id="activitiesEmpty" style="text-align: center; padding: 2rem; color: #6b7280; display: none;">
+                    <i class="fas fa-history fa-3x" style="margin-bottom: 1rem; opacity: 0.5;"></i>
+                    <p>Belum ada aktivitas yang tercatat.</p>
+                </div>
+
+                <!-- Activities Table -->
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Waktu</th>
+                            <th>Tipe</th>
+                            <th>Aksi</th>
+                            <th>Judul</th>
+                            <th>Deskripsi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activitiesTableBody">
+                        <!-- Activities will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Section -->
+    <div id="adminLoginSection" class="admin-container">
+        <div class="form-container" style="max-width: 400px; margin: 5rem auto;">
+            <h2 style="text-align: center; margin-bottom: 2rem;">Admin Login</h2>
+            <form id="adminLoginForm">
+                <div class="form-group">
+                    <label for="adminUsername">Username:</label>
+                    <input type="text" id="adminUsername" required>
+                </div>
+                <div class="form-group">
+                    <label for="adminPassword">Password:</label>
+                    <input type="password" id="adminPassword" required>
+                </div>
+                <button type="submit" class="submit-btn" style="width: 100%;">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Dashboard (hidden by default) -->
+    <div id="adminDashboard" style="display: none;"></div>
+
+
+    <script>
+        // Tab navigation functionality
+        function showTab(tabName) {
+            // Hide all tabs
+            const tabs = document.querySelectorAll('.tab-content');
+            tabs.forEach(tab => tab.classList.remove('active'));
+
+            // Remove active class from nav buttons
+            const navButtons = document.querySelectorAll('.nav-tab');
+            navButtons.forEach(btn => btn.classList.remove('active'));
+
+            // Show selected tab
+            const selectedTab = document.getElementById(tabName);
+            if (selectedTab) {
+                selectedTab.classList.add('active');
+
+                // Load analytics when analytics tab is activated
+                if (tabName === 'analytics') {
+                    loadAnalytics();
+                    loadStudentsList();
+                }
+        
+                // Load activities when activities tab is activated
+                if (tabName === 'activities') {
+                    loadAllActivities();
+                }
+        
+                // Load materials when materials tab is activated
+                if (tabName === 'materials') {
+                    loadMaterials();
+                }
+            }
+
+            // Add active class to clicked button
+            event.target.classList.add('active');
+        }
+
+        // Password toggle for admin login
+        document.addEventListener('DOMContentLoaded', () => {
+            const toggleBtn = document.getElementById('toggleAdminPassword');
+            const passwordInput = document.getElementById('adminPassword');
+
+            if (toggleBtn && passwordInput) {
+                toggleBtn.addEventListener('click', () => {
+                    const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+                    passwordInput.setAttribute('type', type);
+                    toggleBtn.classList.toggle('fa-eye-slash');
+                });
+            }
+        });
+    </script>
+
+    <script>
+        // Handle URL hash for direct tab navigation
+        document.addEventListener('DOMContentLoaded', () => {
+            const hash = window.location.hash.substring(1);
+            if (hash && typeof showTab === 'function') {
+                showTab(hash);
+            }
+        });
+    </script>
+
+    <script>
+        // Initialize event listeners for chapter selects after admin.js loads
+        document.addEventListener('DOMContentLoaded', () => {
+            // Wait for admin.js to load, then attach event listeners
+            const checkFunctions = () => {
+                if (typeof updateSubChapters === 'function' && typeof updateMaterialSubChapters === 'function') {
+                    // Attach event listeners to chapter selects
+                    const chapterSelect = document.getElementById('chapter');
+                    const materialChapterSelect = document.getElementById('materialChapter');
+
+                    if (chapterSelect) {
+                        chapterSelect.addEventListener('change', updateSubChapters);
+                    }
+                    if (materialChapterSelect) {
+                        materialChapterSelect.addEventListener('change', updateMaterialSubChapters);
+                    }
+                } else {
+                    // Retry after a short delay
+                    setTimeout(checkFunctions, 100);
+                }
+            };
+            checkFunctions();
+        });
+    </script>
+</body>
+</html>

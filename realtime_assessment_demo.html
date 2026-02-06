@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Assessment System Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+        }
+
+        .section h2 {
+            color: #34495e;
+            margin-top: 0;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+
+        .btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+
+        .btn:hover {
+            background: #2980b9;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .btn-success {
+            background: #27ae60;
+        }
+
+        .btn-success:hover {
+            background: #229954;
+        }
+
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .metric {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #3498db;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            text-transform: uppercase;
+        }
+
+        .question-card {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+        }
+
+        .question-text {
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+
+        .options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .option {
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .option:hover {
+            background: #e9ecef;
+        }
+
+        .option.selected {
+            background: #d4edda;
+            border-color: #c3e6cb;
+        }
+
+        .feedback {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 5px;
+        }
+
+        .feedback.correct {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .feedback.incorrect {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .code-example {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+        }
+
+        .interaction-log {
+            max-height: 200px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎯 Real-time Assessment System Demo</h1>
+
+    <div class="container">
+        <div class="section">
+            <h2>System Overview</h2>
+            <p>This demo showcases the Real-time Assessment System with the following features:</p>
+            <ul>
+                <li><strong>Bayesian Knowledge Tracing</strong> - Real-time assessment of understanding</li>
+                <li><strong>Interaction Tracking</strong> - Monitor clicks, scrolls, and user engagement</li>
+                <li><strong>Adaptive Questioning</strong> - Dynamic question selection based on knowledge state</li>
+                <li><strong>Engagement Analysis</strong> - Detect attention levels and learning engagement</li>
+                <li><strong>Immediate Feedback</strong> - Provide instant feedback and hints</li>
+            </ul>
+        </div>
+
+        <div class="section">
+            <h2>Session Control</h2>
+            <div id="sessionStatus" class="status info">No active session</div>
+            <button class="btn btn-success" onclick="startDemoSession()">Start Assessment Session</button>
+            <button class="btn btn-danger" onclick="endDemoSession()">End Session</button>
+            <button class="btn" onclick="simulateInteractions()">Simulate User Interactions</button>
+            <button class="btn" onclick="getNextQuestion()">Get Next Question</button>
+        </div>
+
+        <div class="section">
+            <h2>Real-time Metrics</h2>
+            <div class="metrics">
+                <div class="metric">
+                    <div class="metric-value" id="knowledgeState">0.00</div>
+                    <div class="metric-label">Knowledge State</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value" id="engagementScore">0.00</div>
+                    <div class="metric-label">Engagement Score</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value" id="questionsAnswered">0</div>
+                    <div class="metric-label">Questions Answered</div>
+                </div>
+                <div class="metric">
+                    <div class="metric-value" id="sessionDuration">0s</div>
+                    <div class="metric-label">Session Duration</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Question Display</h2>
+            <div id="questionContainer">
+                <p class="status info">Click "Get Next Question" to load a question</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Interaction Log</h2>
+            <div id="interactionLog" class="interaction-log">
+                <div class="log-entry">System ready...</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Code Examples</h2>
+            <div class="code-example">
+// Start an assessment session
+const sessionId = await startAssessmentSession(userId, conceptId);
+
+// Track user interactions
+trackInteraction(userId, 'click', { x: 100, y: 200 });
+
+// Assess understanding after answering
+const assessment = await assessUnderstanding(userId, conceptId, {
+    questionId: 'q123',
+    selectedAnswer: 'A',
+    timeSpent: 30000
+});
+
+// Get adaptive next question
+const nextQuestion = await getNextAdaptiveQuestion(userId, conceptId);
+
+// Provide immediate feedback
+const feedback = provideImmediateFeedback(userId, questionId, response);
+
+// Calculate engagement score
+const engagement = calculateEngagementScore(userId);
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import {
+            startAssessmentSession,
+            trackInteraction,
+            assessUnderstanding,
+            getNextAdaptiveQuestion,
+            provideImmediateFeedback,
+            calculateEngagementScore,
+            endAssessmentSession,
+            getSessionSummary
+        } from './realtime_assessment.js';
+
+        // Demo state
+        let currentSessionId = null;
+        let currentQuestion = null;
+        let sessionStartTime = null;
+        let questionCount = 0;
+
+        // DOM elements
+        const sessionStatus = document.getElementById('sessionStatus');
+        const knowledgeState = document.getElementById('knowledgeState');
+        const engagementScore = document.getElementById('engagementScore');
+        const questionsAnswered = document.getElementById('questionsAnswered');
+        const sessionDuration = document.getElementById('sessionDuration');
+        const questionContainer = document.getElementById('questionContainer');
+        const interactionLog = document.getElementById('interactionLog');
+
+        // Demo user and concept
+        const DEMO_USER_ID = 'demo-user-123';
+        const DEMO_CONCEPT_ID = 'aritmatika_dasar';
+
+        // Logging function
+        function addLogEntry(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            interactionLog.appendChild(entry);
+            interactionLog.scrollTop = interactionLog.scrollHeight;
+        }
+
+        // Update metrics display
+        function updateMetrics() {
+            if (!currentSessionId) return;
+
+            const summary = getSessionSummary(currentSessionId);
+            if (summary) {
+                knowledgeState.textContent = summary.currentKnowledge.toFixed(3);
+                questionsAnswered.textContent = summary.questionsAnswered;
+
+                const duration = Math.floor((Date.now() - sessionStartTime) / 1000);
+                sessionDuration.textContent = `${duration}s`;
+
+                // Calculate engagement
+                const engagement = calculateEngagementScore(DEMO_USER_ID);
+                if (engagement) {
+                    engagementScore.textContent = engagement.score.toFixed(3);
+                }
+            }
+        }
+
+        // Start demo session
+        window.startDemoSession = async function() {
+            try {
+                addLogEntry('Starting assessment session...');
+                currentSessionId = await startAssessmentSession(DEMO_USER_ID, DEMO_CONCEPT_ID);
+                sessionStartTime = Date.now();
+
+                if (currentSessionId) {
+                    sessionStatus.className = 'status success';
+                    sessionStatus.textContent = `Session active: ${currentSessionId}`;
+                    addLogEntry(`Session started: ${currentSessionId}`);
+
+                    // Start metrics update interval
+                    setInterval(updateMetrics, 1000);
+                } else {
+                    sessionStatus.className = 'status error';
+                    sessionStatus.textContent = 'Failed to start session';
+                    addLogEntry('Failed to start session', 'error');
+                }
+            } catch (error) {
+                console.error('Error starting session:', error);
+                addLogEntry(`Error: ${error.message}`, 'error');
+            }
+        };
+
+        // End demo session
+        window.endDemoSession = async function() {
+            if (!currentSessionId) {
+                addLogEntry('No active session to end', 'error');
+                return;
+            }
+
+            try {
+                addLogEntry('Ending assessment session...');
+                const result = await endAssessmentSession(currentSessionId);
+
+                if (result) {
+                    sessionStatus.className = 'status success';
+                    sessionStatus.textContent = 'Session completed successfully';
+                    addLogEntry(`Session ended. Final knowledge: ${result.finalKnowledge.toFixed(3)}`);
+                    currentSessionId = null;
+                    currentQuestion = null;
+                    questionCount = 0;
+                } else {
+                    addLogEntry('Failed to end session', 'error');
+                }
+            } catch (error) {
+                console.error('Error ending session:', error);
+                addLogEntry(`Error: ${error.message}`, 'error');
+            }
+        };
+
+        // Simulate user interactions
+        window.simulateInteractions = function() {
+            if (!currentSessionId) {
+                addLogEntry('No active session', 'error');
+                return;
+            }
+
+            const interactions = [
+                { type: 'click', data: { target: 'question-option', x: 100, y: 150 } },
+                { type: 'scroll', data: { scrollTop: 200, scrollHeight: 1000 } },
+                { type: 'keypress', data: { key: 'Enter' } },
+                { type: 'mouse_move', data: { x: 200, y: 250 } },
+                { type: 'focus', data: {} }
+            ];
+
+            interactions.forEach((interaction, index) => {
+                setTimeout(() => {
+                    trackInteraction(DEMO_USER_ID, interaction.type, interaction.data);
+                    addLogEntry(`Simulated ${interaction.type}`);
+                }, index * 200);
+            });
+        };
+
+        // Get next question
+        window.getNextQuestion = async function() {
+            if (!currentSessionId) {
+                addLogEntry('No active session', 'error');
+                return;
+            }
+
+            try {
+                addLogEntry('Getting next question...');
+                const questionData = await getNextAdaptiveQuestion(DEMO_USER_ID, DEMO_CONCEPT_ID);
+
+                if (questionData) {
+                    currentQuestion = questionData;
+                    displayQuestion(questionData);
+                    addLogEntry(`Question loaded: ${questionData.questionId}`);
+                } else {
+                    questionContainer.innerHTML = '<p class="status info">No more questions available for this concept.</p>';
+                    addLogEntry('No more questions available');
+                }
+            } catch (error) {
+                console.error('Error getting question:', error);
+                addLogEntry(`Error: ${error.message}`, 'error');
+            }
+        };
+
+        // Display question
+        function displayQuestion(questionData) {
+            const question = questionData.question;
+
+            questionContainer.innerHTML = `
+                <div class="question-card">
+                    <div class="question-text">${question.question_text || 'Sample question text'}</div>
+                    <div class="options">
+                        <div class="option" onclick="selectAnswer('A')">
+                            <strong>A.</strong> ${question.option_a || 'Option A'}
+                        </div>
+                        <div class="option" onclick="selectAnswer('B')">
+                            <strong>B.</strong> ${question.option_b || 'Option B'}
+                        </div>
+                        <div class="option" onclick="selectAnswer('C')">
+                            <strong>C.</strong> ${question.option_c || 'Option C'}
+                        </div>
+                        <div class="option" onclick="selectAnswer('D')">
+                            <strong>D.</strong> ${question.option_d || 'Option D'}
+                        </div>
+                    </div>
+                    <div id="feedbackContainer"></div>
+                </div>
+            `;
+        }
+
+        // Select answer
+        window.selectAnswer = async function(answer) {
+            if (!currentQuestion) return;
+
+            try {
+                addLogEntry(`User selected answer: ${answer}`);
+
+                // Assess understanding
+                const assessment = await assessUnderstanding(DEMO_USER_ID, DEMO_CONCEPT_ID, {
+                    questionId: currentQuestion.questionId,
+                    selectedAnswer: answer,
+                    timeSpent: 15000 // 15 seconds
+                });
+
+                if (assessment) {
+                    addLogEntry(`Assessment: ${assessment.isCorrect ? 'Correct' : 'Incorrect'}, Knowledge: ${assessment.knowledgeState.pLearned.toFixed(3)}`);
+                    questionCount++;
+
+                    // Get feedback
+                    const feedback = provideImmediateFeedback(DEMO_USER_ID, currentQuestion.questionId, answer);
+                    displayFeedback(feedback);
+
+                    // Update metrics
+                    updateMetrics();
+                }
+
+            } catch (error) {
+                console.error('Error assessing answer:', error);
+                addLogEntry(`Error: ${error.message}`, 'error');
+            }
+        };
+
+        // Display feedback
+        function displayFeedback(feedback) {
+            const feedbackContainer = document.getElementById('feedbackContainer');
+
+            feedbackContainer.innerHTML = `
+                <div class="feedback ${feedback.isCorrect ? 'correct' : 'incorrect'}">
+                    <h4>${feedback.isCorrect ? '✅ Correct!' : '❌ Incorrect'}</h4>
+                    <p>${feedback.message}</p>
+                    ${feedback.hint ? `<p><strong>Hint:</strong> ${feedback.hint}</p>` : ''}
+                    ${feedback.nextSteps.length > 0 ? `
+                        <p><strong>Next Steps:</strong></p>
+                        <ul>
+                            ${feedback.nextSteps.map(step => `<li>${step}</li>`).join('')}
+                        </ul>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        // Initialize demo
+        addLogEntry('Real-time Assessment Demo initialized');
+        addLogEntry('Click "Start Assessment Session" to begin');
+
+        // Auto-update metrics every second
+        setInterval(() => {
+            if (currentSessionId) {
+                updateMetrics();
+            }
+        }, 1000);
+
+    </script>
+</body>
+</html>

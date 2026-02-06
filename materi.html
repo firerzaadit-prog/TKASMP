@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Materi Pembelajaran - EduLearn TKA</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="halamanpertama.css">
+    <link rel="stylesheet" href="materi.css">
+    <script type="importmap">
+    {
+      "imports": {
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+    </script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="dashboard-header">
+        <div class="header-left">
+            <h1 class="logo">EduLearn</h1>
+            <nav class="main-nav">
+                <a href="halamanpertama.html" class="nav-link">Dashboard</a>
+                <a href="#" class="nav-link active">Materi</a>
+                <a href="#" onclick="startExam(); return false;" class="nav-link">Simulasi</a>
+                <a href="#" class="nav-link">Progress</a>
+            </nav>
+        </div>
+        <div class="header-right">
+            <div class="user-profile">
+                <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBmaWxsPSIjNEY0NkU1Ii8+PHRleHQgeD0iMjAiIHk9IjI1IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTYiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5VPC90ZXh0Pjwvc3ZnPg==" alt="Profile" class="profile-avatar">
+                <span class="profile-name">Nama Siswa</span>
+                <i class="fas fa-chevron-down profile-dropdown-icon"></i>
+                <div class="profile-dropdown">
+                    <a href="#" class="dropdown-item" onclick="showRecentActivities()">
+                        <i class="fas fa-clock dropdown-icon"></i>
+                        Aktivitas terakhir
+                    </a>
+                    <a href="#" class="dropdown-item" onclick="showProfileModal()">
+                        <i class="fas fa-user-cog dropdown-icon"></i>
+                        Atur profil
+                    </a>
+                    <a href="#" class="dropdown-item" onclick="logout()">
+                        <i class="fas fa-sign-out-alt dropdown-icon"></i>
+                        logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="materials-container">
+        <!-- Header -->
+        <div class="materials-header">
+            <h1><i class="fas fa-book-open"></i> Materi Pembelajaran</h1>
+            <p>Pelajari konsep matematika TKA dengan materi yang lengkap dan interaktif</p>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+            <div class="filter-group">
+                <label for="subjectFilter">Mata Pelajaran:</label>
+                <select id="subjectFilter" onchange="filterMaterials()">
+                    <option value="">Semua</option>
+                    <option value="Matematika">Matematika</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="chapterFilter">Bab:</label>
+                <select id="chapterFilter" onchange="filterMaterials()">
+                    <option value="">Semua Bab</option>
+                    <option value="Bilangan">Bilangan</option>
+                    <option value="Aljabar">Aljabar</option>
+                    <option value="Geometri dan Pengukuran">Geometri dan Pengukuran</option>
+                    <option value="Data dan Peluang">Data dan Peluang</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="typeFilter">Tipe Materi:</label>
+                <select id="typeFilter" onchange="filterMaterials()">
+                    <option value="">Semua Tipe</option>
+                    <option value="Artikel">Artikel</option>
+                    <option value="Video">Video</option>
+                    <option value="Infografis">Infografis</option>
+                    <option value="Latihan">Latihan</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="difficultyFilter">Tingkat Kesulitan:</label>
+                <select id="difficultyFilter" onchange="filterMaterials()">
+                    <option value="">Semua Tingkat</option>
+                    <option value="Mudah">Mudah</option>
+                    <option value="Sedang">Sedang</option>
+                    <option value="Sulit">Sulit</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Materials Grid -->
+        <div id="materialsGrid" class="materials-grid">
+            <div class="loading">
+                <i class="fas fa-book-open"></i>
+                <p>Memuat materi...</p>
+                <div class="loading-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Material Detail View -->
+        <div id="materialDetail" class="material-detail">
+            <button class="back-btn" onclick="showMaterialsList()">
+                <i class="fas fa-arrow-left"></i> Kembali ke Daftar Materi
+            </button>
+
+            <div id="materialDetailContent">
+                <!-- Material detail content will be loaded here -->
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Profile Modal (same as halamanpertama.html) -->
+    <div id="profileModal" class="modal">
+        <div class="modal-content large-modal">
+            <div class="modal-header">
+                <h2><i class="fas fa-user-cog"></i> Pengaturan Profil</h2>
+                <span class="modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="profile-modal-content">
+                    <!-- Profile Picture Section -->
+                    <div class="profile-section">
+                        <h3><i class="fas fa-camera"></i> Foto Profil</h3>
+                        <div class="profile-picture-section">
+                            <div class="current-profile-picture">
+                                <img id="currentProfileImage" src="" alt="Foto Profil" class="profile-large-avatar">
+                            </div>
+                            <div class="profile-picture-actions">
+                                <input type="file" id="avatarUpload" accept="image/*" style="display: none;">
+                                <button class="btn-secondary" onclick="document.getElementById('avatarUpload').click()">
+                                    <i class="fas fa-upload"></i> Ubah Foto
+                                </button>
+                                <small class="form-help">Maksimal 5MB, format JPG/PNG</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Personal Information -->
+                    <div class="profile-section">
+                        <h3><i class="fas fa-id-card"></i> Informasi Pribadi</h3>
+                        <form id="profileForm" class="profile-form">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="profileFullName">Nama Lengkap</label>
+                                    <input type="text" id="profileFullName" placeholder="Masukkan nama lengkap">
+                                </div>
+                                <div class="form-group">
+                                    <label for="profileEmail">Email</label>
+                                    <input type="email" id="profileEmail" placeholder="Masukkan email" readonly>
+                                    <small class="form-help">Email tidak dapat diubah</small>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="profilePhone">Nomor Telepon (Opsional)</label>
+                                    <input type="tel" id="profilePhone" placeholder="Masukkan nomor telepon">
+                                </div>
+                                <div class="form-group">
+                                    <label for="profileSchool">Asal Sekolah</label>
+                                    <input type="text" id="profileSchool" placeholder="Masukkan nama sekolah">
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="profileBio">Bio Singkat (Opsional)</label>
+                                <textarea id="profileBio" rows="3" placeholder="Ceritakan sedikit tentang diri Anda..."></textarea>
+                            </div>
+
+                            <div class="form-actions">
+                                <button type="submit" class="btn-primary">
+                                    <i class="fas fa-save"></i> Simpan Perubahan
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Account Settings -->
+                    <div class="profile-section">
+                        <h3><i class="fas fa-shield-alt"></i> Pengaturan Akun</h3>
+                        <div class="account-settings">
+                            <div class="setting-item">
+                                <div class="setting-info">
+                                    <h4>Notifikasi Email</h4>
+                                    <p>Terima pembaruan tentang materi baru dan hasil ujian</p>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="emailNotifications" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <div class="setting-item">
+                                <div class="setting-info">
+                                    <h4>Mode Gelap</h4>
+                                    <p>Aktifkan tampilan gelap untuk kenyamanan mata</p>
+                                </div>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="darkMode">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Account Statistics -->
+                    <div class="profile-section">
+                        <h3><i class="fas fa-chart-bar"></i> Statistik Akun</h3>
+                        <div class="account-stats">
+                            <div class="stat-row">
+                                <span class="stat-label">Bergabung Sejak:</span>
+                                <span class="stat-value" id="joinDate">-</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Total Waktu Belajar:</span>
+                                <span class="stat-value" id="totalStudyTimeStat">0 jam</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Materi Diselesaikan:</span>
+                                <span class="stat-value" id="materialsCompletedStat">0</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Ujian Dikerjakan:</span>
+                                <span class="stat-value" id="examsTakenStat">0</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">Rata-rata Nilai:</span>
+                                <span class="stat-value" id="averageScoreStat">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="hideProfileModal()" class="btn-secondary">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="materi.js"></script>
+
+    <!-- Footer -->
+    <footer>
+        <div class="footer-content">
+            <div class="footer-col">
+                <div class="footer-logo">
+                    <i class="fas fa-graduation-cap"></i>
+                    <h4>EduLearn</h4>
+                </div>
+                <p>Website untuk melatih Peserta didik Jenjang SMP Untuk Menghadapi Tes Kemampuan Akademik Matematika </p>
+                <p class="address">
+                    <i class="fas fa-map-marker-alt"></i>
+                    Jl. Semarang No. 5, Sumbersari, Kec. Lowokwaru <br>
+                    <span style="padding-left: 22px;">Kota Malang, Jawa Timur 65145</span>
+                </p>
+                <div class="social-links">
+                    <a href="#"><i class="fab fa-facebook"></i></a>
+                    <a href="#"><i class="fab fa-twitter"></i></a>
+                    <a href="#"><i class="fab fa-instagram"></i></a>
+                    <a href="#"><i class="fab fa-youtube"></i></a>
+                </div>
+            </div>
+            <div class="footer-col">
+                <h4>Link Cepat</h4>
+                <ul>
+                    <li><a href="index.html"><i class="fas fa-chevron-right"></i> Tentang TKA</a></li>
+                    <li><a href="kerangkaasesmen.html"><i class="fas fa-chevron-right"></i> Panduan Asesmen</a></li>
+                    <li><a href="#"><i class="fas fa-chevron-right"></i> FAQ</a></li>
+                    <li><a href="#"><i class="fas fa-chevron-right"></i> Download Materi</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>Link Terkait</h4>
+                <ul>
+                    <li><a href="#"><i class="fas fa-chevron-right"></i> ANBK</a></li>
+                    <li><a href="https://tka.kemendikdasmen.go.id/hasiltka/"><i class="fas fa-chevron-right"></i> Rapor Pendidikan</a></li>
+                    <li><a href="#"><i class="fas fa-chevron-right"></i> Asesmen Nasional</a></li>
+                    <li><a href="https://pusmendik.kemdikbud.go.id/"><i class="fas fa-chevron-right"></i> Platform Pusmendik kemdikbud TKA</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h4>Hubungi Kami</h4>
+                <ul class="contact-info">
+                    <li>
+                        <i class="fas fa-phone"></i>
+                        <span>(0341) 551312</span>
+                    </li>
+                    <li>
+                        <i class="fas fa-envelope"></i>
+                        <span>helpdesk@um.ac.id</span>
+                    </li>
+                    <li>
+                        <i class="fas fa-clock"></i>
+                        <span>Senin - Jumat: 08.00 - 16.00 WIB</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 <strong>Universitas Negeri Malang</strong>. All Rights Reserved</p>
+            <div class="footer-links">
+                <a href="#">Kebijakan Privasi</a>
+                <a href="#">Syarat & Ketentuan</a>
+                <a href="#">Sitemap</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
