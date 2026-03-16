@@ -14,7 +14,7 @@ export async function signInWithGoogle() {
         const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: redirectUrl
+                redirectTo: window.location.origin + '/index.html' 
             }
         });
 
@@ -42,14 +42,11 @@ supabase.auth.onAuthStateChange(async (event, session) => {
         
         // Only redirect if user is on login/register pages AND not already on halamanpertama
         // This acts as a fallback if OAuth redirectTo doesn't work
-        if ((currentPath === '/' || 
-            currentPath === '/app/' || 
-            currentPath === '/app/index.html' || 
-            currentPath.includes('daftarsekarang.html')) &&
-            !currentPath.includes('halamanpertama')) {
+        if (currentPath === '/' || 
+            currentPath === '/index.html' || 
+            currentPath.includes('daftarsekarang.html')) {
             
-            console.log('Fallback redirect to halamanpertama.html');
-            window.location.href = window.location.origin + '/app/halamanpertama.html';
+            window.location.href = window.location.origin + '/halamanpertama.html';
         }
     }
 });
