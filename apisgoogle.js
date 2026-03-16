@@ -1,19 +1,12 @@
 import { supabase } from './clientSupabase.js';
 
-// DIAGNOSTIC: Debug log to verify the issue
-console.log('=== DIAGNOSTIC: Google OAuth Config Check ===');
-console.log('Current origin:', window.location.origin);
-console.log('Current pathname:', window.location.pathname);
-
 // Fungsi untuk sign in dengan Google
 export async function signInWithGoogle() {
     try {
-        const redirectUrl = window.location.origin + '/app/halamanpertama.html';
-        console.log('OAuth redirectTo URL:', redirectUrl);
-        
         const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
+                // Diubah: Menghapus /app/ agar mengarah ke root Vercel
                 redirectTo: window.location.origin + '/index.html' 
             }
         });
@@ -33,19 +26,19 @@ export function initGoogleSignIn() {
     }
 }
 
-// Handle auth state changes - only for fallback redirect if OAuth redirectTo fails
+// Handle auth state changes
 supabase.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN' && session) {
         console.log('User signed in with Google:', session.user);
 
         const currentPath = window.location.pathname;
         
-        // Only redirect if user is on login/register pages AND not already on halamanpertama
-        // This acts as a fallback if OAuth redirectTo doesn't work
+        // Diubah: Menghapus pengecekan folder /app/
         if (currentPath === '/' || 
             currentPath === '/index.html' || 
             currentPath.includes('daftarsekarang.html')) {
             
+            // Diubah: Mengarahkan langsung ke halamanpertama.html tanpa /app/
             window.location.href = window.location.origin + '/halamanpertama.html';
         }
     }
