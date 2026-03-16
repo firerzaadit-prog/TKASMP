@@ -1,14 +1,20 @@
 import { supabase } from './clientSupabase.js';
 
+// DIAGNOSTIC: Debug log to verify the issue
+console.log('=== DIAGNOSTIC: Google OAuth Config Check ===');
+console.log('Current origin:', window.location.origin);
+console.log('Current pathname:', window.location.pathname);
+
 // Fungsi untuk sign in dengan Google
 export async function signInWithGoogle() {
     try {
+        const redirectUrl = window.location.origin + '/app/halamanpertama.html';
+        console.log('OAuth redirectTo URL:', redirectUrl);
+        
         const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                // INI YANG KURANG: Memaksa kembali ke folder /app/ setelah login Google
-                // window.location.origin akan otomatis mengambil http://127.0.0.1:5500
-                redirectTo: window.location.origin + '/app/index.html' 
+                redirectTo: redirectUrl
             }
         });
 
@@ -27,20 +33,22 @@ export function initGoogleSignIn() {
     }
 }
 
-// Handle auth state changes
+// Handle auth state changes - only for fallback redirect if OAuth redirectTo fails
 supabase.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN' && session) {
         console.log('User signed in with Google:', session.user);
 
         const currentPath = window.location.pathname;
         
-        // Perbaikan logika: Cek apakah user ada di root (/), atau di halaman login app (/app/index.html)
-        if (currentPath === '/' || 
+        // Only redirect if user is on login/register pages AND not already on halamanpertama
+        // This acts as a fallback if OAuth redirectTo doesn't work
+        if ((currentPath === '/' || 
             currentPath === '/app/' || 
             currentPath === '/app/index.html' || 
-            currentPath.includes('daftarsekarang.html')) {
+            currentPath.includes('daftarsekarang.html')) &&
+            !currentPath.includes('halamanpertama')) {
             
-            // Redirect secara spesifik ke dalam folder /app/
+            console.log('Fallback redirect to halamanpertama.html');
             window.location.href = window.location.origin + '/app/halamanpertama.html';
         }
     }

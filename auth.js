@@ -12,6 +12,18 @@ export function validatePassword(password) {
     if (password.length < minLength) {
         return { valid: false, message: 'Password harus minimal 8 karakter' };
     }
+    if (!hasUpperCase) {
+        return { valid: false, message: 'Password harus memiliki huruf besar' };
+    }
+    if (!hasLowerCase) {
+        return { valid: false, message: 'Password harus memiliki huruf kecil' };
+    }
+    if (!hasNumbers) {
+        return { valid: false, message: 'Password harus memiliki angka' };
+    }
+    if (!hasSpecialChar) {
+        return { valid: false, message: 'Password harus memiliki karakter khusus' };
+    }
     return { valid: true, message: 'Password valid' };
 }
 
