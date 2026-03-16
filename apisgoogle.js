@@ -39,7 +39,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
             currentPath.includes('daftarsekarang.html')) {
             
             // Diubah: Mengarahkan langsung ke halamanpertama.html tanpa /app/
-            window.location.href = window.location.origin + '/halamanpertama.html';
+            window.location.href = window.location.origin + '/halamanpertama';
         }
     }
 });
