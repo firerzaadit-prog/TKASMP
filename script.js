@@ -119,7 +119,7 @@ if (loginForm) {
 
             if (result.success) {
                 alert('Login Berhasil! Mengarahkan ke Dashboard...');
-                window.location.href = 'halamanpertama.html';
+                window.location.href = '/halamanpertama.html';
             } else {
                 alert('Login Gagal: email atau password salah ' + result.error);
             }
