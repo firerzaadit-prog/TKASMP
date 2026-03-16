@@ -1,5 +1,5 @@
 // admin.js - Admin panel functionality
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 import {
     getDetailedStudentAnalytics,
     exportStudentAnalyticsToExcel,

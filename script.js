@@ -2,7 +2,7 @@
 // Import functions langsung
 import { loginUser, registerUser, validatePassword, resetPassword, updatePassword } from './auth.js';
 import { initGoogleSignIn } from './apisgoogle.js';
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 
 
 // Fungsi untuk hash password menggunakan SHA-256

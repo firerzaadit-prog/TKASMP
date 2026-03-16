@@ -2,7 +2,7 @@
 // Implementasi penuh IRT berdasarkan data empiris siswa
 // Menghitung Item Difficulty dan Item Discrimination dari data aktual
 
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 
 // ==========================================
 // ITEM RESPONSE THEORY (IRT) ANALYZER

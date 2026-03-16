@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 
 // Fungsi untuk sign in dengan Google
 export async function signInWithGoogle() {

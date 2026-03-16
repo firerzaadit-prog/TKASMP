@@ -1,7 +1,7 @@
 // test_realtime_assessment.js - Test suite for Real-time Assessment System
 
 import { realtimeAssessmentEngine, startAssessmentSession, trackInteraction, assessUnderstanding, getNextAdaptiveQuestion, provideImmediateFeedback, calculateEngagementScore, endAssessmentSession } from './realtime_assessment.js';
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 
 // Mock user and concept for testing
 const TEST_USER_ID = 'test-user-123';

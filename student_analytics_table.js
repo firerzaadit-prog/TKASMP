@@ -1,5 +1,5 @@
 // student_analytics_table.js - Manajer tabel detail siswa untuk dashboard analytics
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 
 /**
  * Class untuk mengelola tabel detail siswa di dashboard analytics

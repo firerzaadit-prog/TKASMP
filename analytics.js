@@ -1,5 +1,5 @@
 // analytics.js - AI Analytics Dashboard
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 import { getCurrentUser, logoutUser } from './auth.js';
 import {
     initializePredictiveModels,

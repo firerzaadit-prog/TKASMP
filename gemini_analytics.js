@@ -1,5 +1,5 @@
 // gemini_analytics.js - Menggunakan GROQ AI (Llama 3)
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 
 // KONFIGURASI
 const FUNCTION_URL = 'https://tsgldkyuktqpsbeuevsn.supabase.co/functions/v1/gemini-chat';

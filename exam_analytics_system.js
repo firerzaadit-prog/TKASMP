@@ -1,7 +1,7 @@
 // exam_analytics_system.js - Sistem Analytics Lengkap untuk Ujian TKA
 // File ini berisi semua fungsi untuk menyimpan jawaban ujian dan mengirim ke analytics admin
 
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 import { getCurrentUser } from './auth.js';
 
 // Import adaptive learning components

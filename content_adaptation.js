@@ -1,7 +1,7 @@
 // content_adaptation.js - Content Adaptation Logic Module
 // Handles dynamic content adaptation based on student performance and needs
 
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 import { learningPathEngine, getStudentTracker } from './adaptive_learning_engine.js';
 import { predictNextExamPerformance, identifySkillGaps } from './predictive_models.js';
 

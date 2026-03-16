@@ -2,7 +2,7 @@
 // ENHANCEMENT: TAMPILKAN ANALISIS AI DI ADMIN PANEL (VERSI DESIGN PREMIUM V4)
 // ============================================================================
 
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 
 let activeRadarChart = null;
 

@@ -1,5 +1,5 @@
 // habisujian.js - Exam completion page with results and answer review
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 import { getCurrentUser } from './auth.js';
 import { geminiAnalytics } from './gemini_analytics.js';
 import { getItemParameters } from './irt_analysis.js';

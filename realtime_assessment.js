@@ -1,7 +1,7 @@
 // realtime_assessment.js - Real-time Assessment System for Continuous Learning Evaluation
 // Integrates with adaptive_learning_engine.js, analytics.js, and question system
 
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 import { learningPathEngine } from './adaptive_learning_engine.js';
 import { irtAnalyzer, calibrateAllItems, getItemParameters } from './irt_analysis.js';
 

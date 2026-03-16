@@ -1,7 +1,7 @@
 // progress_tracking.js - Detailed Progress Tracking per Concept
 // Integrates with analytics.js, adaptive_learning_engine.js, and database schemas
 
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 import { getStudentTracker, updatePathBasedOnPerformance } from './adaptive_learning_engine.js';
 import { analyzeLearningTrends, identifySkillGaps as predictSkillGaps } from './predictive_models.js';
 

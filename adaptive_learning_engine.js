@@ -1,7 +1,7 @@
 // adaptive_learning_engine.js - Adaptive Learning Path Engine
 // Integrates with analytics.js and predictive_models.js for personalized learning paths
 
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 import { predictNextExamPerformance, identifySkillGaps, analyzeLearningTrends } from './predictive_models.js';
 
 // ==========================================

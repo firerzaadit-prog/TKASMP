@@ -1,5 +1,5 @@
 // ujian.js - Exam interface with 4 question types (A, B, C, D) and randomization
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 import { getCurrentUser } from './auth.js';
 
 // ============================================================

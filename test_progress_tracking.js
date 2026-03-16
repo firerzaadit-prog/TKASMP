@@ -10,7 +10,7 @@ import {
     calculateLearningVelocity
 } from './progress_tracking.js';
 
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 
 // Test data
 const testUserId = 'test-user-123';

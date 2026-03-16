@@ -1,5 +1,5 @@
 // save_gemini_analyses.js - Utility untuk menyimpan analisis Grok AI ke Supabase
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 import { geminiAnalytics } from './gemini_analytics.js';
 
 /**

@@ -1,5 +1,5 @@
 // test_save_gemini_analyses.js - Test script untuk utility penyimpanan analisis Grok AI
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 import {
     saveGrokAnalysis,
     batchSaveGrokAnalyses,

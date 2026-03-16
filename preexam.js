@@ -1,5 +1,5 @@
 // preexam.js - Pre-Exam Page Logic
-import { supabase } from './supabaseClient.js';
+import { supabase } from './clientSupabase.js';
 import { getCurrentUser } from './auth.js';
 
 // DOM Elements
