@@ -65,8 +65,14 @@
                         material.sections = sections || [];
                     }
 
-                    // Generate HTML content from sections for display
-                    material.content = renderSectionsToHTML(material.sections);
+                    // Prioritize saved content (ringkasan materi) over sections
+                    if (material.content && material.content.trim() && material.content.trim() !== '<p><br></p>') {
+                        // Keep the saved content, don't overwrite
+                    } else if (material.sections && material.sections.length > 0) {
+                        material.content = renderSectionsToHTML(material.sections);
+                    } else {
+                        material.content = 'Klik untuk melihat materi lengkap.';
+                    }
                 }
 
                 allMaterials = materials;
@@ -249,6 +255,53 @@
             }
         }
 
+        // Cek apakah string adalah teks mentah (bukan HTML)
+        // ============================================================
+        // LATEX RENDERING - String-based (identik dengan admin preview)
+        // Render dilakukan pada STRING sebelum dimasukkan ke innerHTML
+        // ============================================================
+
+        // Render LaTeX \(...\) dan \[...\] pada string HTML/teks
+        // Identik dengan cara admin preview: renderToString langsung di string
+        function renderLatexString(content) {
+            if (!window.katex || !content) return content;
+            let result = content;
+
+            // Inline \(...\) - render dulu sebelum display agar tidak konflik
+            result = result.replace(/\\\(([^]*?)\\\)/g, (match, latex) => {
+                try {
+                    return window.katex.renderToString(latex, { displayMode: false, throwOnError: false });
+                } catch (e) { return match; }
+            });
+
+            // Display mode \[...\]
+            result = result.replace(/\\\[([^]*?)\\\]/g, (match, latex) => {
+                try {
+                    return window.katex.renderToString(latex, { displayMode: true, throwOnError: false });
+                } catch (e) { return match; }
+            });
+
+            return result;
+        }
+
+        // Proses konten dari database menjadi HTML siap tampil
+        // 1. Ubah newline ke <br>
+        // 2. Render LaTeX pada string
+        // 3. Hasilnya langsung di-set ke innerHTML (tidak perlu DOM traversal)
+        function processContent(rawContent) {
+            if (!rawContent) return '';
+
+            // Langkah 1: ubah newline ke <br> untuk format tampilan
+            let content = rawContent.replace(/\n/g, '<br>');
+
+            // Langkah 2: render LaTeX pada string (sama persis dengan admin preview)
+            if (window.katex) {
+                content = renderLatexString(content);
+            }
+
+            return content;
+        }
+
         // Render material detail with adaptive content
         function renderMaterialDetail(material) {
             const detailContent = document.getElementById('materialDetailContent');
@@ -266,8 +319,18 @@
                    </div>`
                 : '';
 
-            // Render sections for detail view
-            const sectionsHtml = renderSectionsForDetail(material.sections);
+            // Proses konten: render LaTeX pada string sebelum masuk DOM
+            let contentHtml = '';
+            let rawContent = material.content;
+
+            if (rawContent && rawContent.trim() && rawContent.trim() !== '<p><br></p>') {
+                // Proses konten (newline → <br>, LaTeX → KaTeX HTML) sebelum di-set ke innerHTML
+                contentHtml = processContent(rawContent);
+            } else if (material.sections && material.sections.length > 0) {
+                contentHtml = renderSectionsForDetail(material.sections);
+            } else {
+                contentHtml = '<p class="text-gray-500">Belum ada konten materi.</p>';
+            }
 
             // Show objectives if they exist
             const objectivesHtml = material.objectives ? `
@@ -277,7 +340,8 @@
                 </div>
             ` : '';
 
-
+            // Set innerHTML SEKALI dengan konten yang sudah termasuk KaTeX HTML
+            // Tidak perlu post-processing DOM traversal
             detailContent.innerHTML = `
                 <div class="detail-header">
                     <div>
@@ -295,8 +359,8 @@
 
                 ${objectivesHtml}
 
-                <div class="detail-content">
-                    ${sectionsHtml}
+                <div class="detail-content materi-content" id="materiDetailBody">
+                    ${contentHtml}
                 </div>
 
                 ${attachmentHtml}
@@ -830,7 +894,7 @@
         // Start exam function
         function startExam() {
             if (confirm('Apakah Anda yakin ingin memulai ujian TKA Matematika? Pastikan koneksi internet stabil dan waktu cukup.')) {
-                window.location.href = 'ujian.html';
+                window.location.href = 'preexam.html';
             }
         }
 

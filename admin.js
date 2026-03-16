@@ -14,7 +14,7 @@ const ADMIN_CREDENTIALS = {
 
 // DOM Elements - will be initialized after DOM load
 let adminLoginSection, adminDashboard, adminLoginForm, adminLogoutBtn, usersTableBody;
-let totalUsersEl, activeUsersEl, totalQuestionsEl;
+let totalUsersEl, activeUsersEl, totalQuestionsEl, totalMaterialsEl;
 
 // Current session activities
 let currentSessionActivities = [];
@@ -94,6 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
     totalUsersEl = document.getElementById('totalUsers');
     activeUsersEl = document.getElementById('activeUsers');
     totalQuestionsEl = document.getElementById('totalQuestions');
+    totalMaterialsEl = document.getElementById('totalMaterials');
 
     // For indexadmin.html (login page), always show login form
     // For other admin pages, check login status
@@ -194,9 +195,25 @@ async function loadAdminStats() {
                 );
 
                 totalUsersCount = regularUsers.length;
-                activeUsersCount = regularUsers.filter(user =>
-                    user.email_confirmed_at !== null
-                ).length;
+                
+                // Calculate active users based on exam sessions in the last 30 days
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                
+                const { data: recentSessions, error: sessionsError } = await supabase
+                    .from('exam_sessions')
+                    .select('user_id')
+                    .gte('created_at', thirtyDaysAgo.toISOString());
+                
+                if (!sessionsError && recentSessions) {
+                    const uniqueActiveUsers = new Set(recentSessions.map(s => s.user_id));
+                    activeUsersCount = uniqueActiveUsers.size;
+                } else {
+                    // Fallback: users with confirmed email
+                    activeUsersCount = regularUsers.filter(user =>
+                        user.email_confirmed_at !== null
+                    ).length;
+                }
 
                 console.log(`Found ${totalUsersCount} total users, ${activeUsersCount} active users from auth`);
             } else {
@@ -212,7 +229,22 @@ async function loadAdminStats() {
                     activeUsersCount = 0;
                 } else {
                     totalUsersCount = profilesCount || 0;
-                    activeUsersCount = profilesCount || 0;
+                    
+                    // Calculate active users based on exam sessions in the last 30 days
+                    const thirtyDaysAgo = new Date();
+                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                    
+                    const { data: recentSessions, error: sessionsError } = await supabase
+                        .from('exam_sessions')
+                        .select('user_id')
+                        .gte('created_at', thirtyDaysAgo.toISOString());
+                    
+                    if (!sessionsError && recentSessions) {
+                        const uniqueActiveUsers = new Set(recentSessions.map(s => s.user_id));
+                        activeUsersCount = uniqueActiveUsers.size;
+                    } else {
+                        activeUsersCount = profilesCount || 0;
+                    }
                 }
             }
         } catch (authError) {
@@ -228,7 +260,22 @@ async function loadAdminStats() {
                 activeUsersCount = 0;
             } else {
                 totalUsersCount = profilesCount || 0;
-                activeUsersCount = profilesCount || 0;
+                
+                // Calculate active users based on exam sessions in the last 30 days
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                
+                const { data: recentSessions, error: sessionsError } = await supabase
+                    .from('exam_sessions')
+                    .select('user_id')
+                    .gte('created_at', thirtyDaysAgo.toISOString());
+                
+                if (!sessionsError && recentSessions) {
+                    const uniqueActiveUsers = new Set(recentSessions.map(s => s.user_id));
+                    activeUsersCount = uniqueActiveUsers.size;
+                } else {
+                    activeUsersCount = profilesCount || 0;
+                }
             }
         }
 
@@ -247,10 +294,23 @@ async function loadAdminStats() {
             if (totalQuestionsEl) totalQuestionsEl.textContent = questionsCount || 0;
         }
 
+        // Load materials count
+        const { count: materialsCount, error: materialsError } = await supabase
+            .from('materials')
+            .select('*', { count: 'exact', head: true });
+
+        if (materialsError) {
+            console.error('Error loading materials count:', materialsError);
+            if (totalMaterialsEl) totalMaterialsEl.textContent = '0';
+        } else {
+            if (totalMaterialsEl) totalMaterialsEl.textContent = materialsCount || 0;
+        }
+
         console.log('Admin stats loaded successfully:', {
             totalUsers: totalUsersCount,
-            activeUsers: totalUsersCount,
-            totalQuestions: questionsCount
+            activeUsers: activeUsersCount,
+            totalQuestions: questionsCount,
+            totalMaterials: materialsCount
         });
 
     } catch (error) {
@@ -259,6 +319,7 @@ async function loadAdminStats() {
         if (totalUsersEl) totalUsersEl.textContent = '0';
         if (activeUsersEl) activeUsersEl.textContent = '0';
         if (totalQuestionsEl) totalQuestionsEl.textContent = '0';
+        if (totalMaterialsEl) totalMaterialsEl.textContent = '0';
     }
 }
 
@@ -523,13 +584,38 @@ async function loadUsersData() {
             }
 
             // Populate table with user data from auth + profiles
-            regularUsers.forEach(user => {
-                const profile = profilesMap[user.id];
-                const row = createUserTableRowFromAuth(user, profile);
-                if (usersTableBody) usersTableBody.appendChild(row);
-            });
+            if (regularUsers.length === 0) {
+                if (usersTableBody) {
+                    usersTableBody.innerHTML = `
+                        <tr>
+                            <td colspan="9" style="text-align: center; padding: 2rem; color: #666;">
+                                <i class="fas fa-users" style="font-size: 2rem; margin-bottom: 1rem; color: #999;"></i><br>
+                                <p>Belum ada siswa yang terdaftar.</p>
+                            </td>
+                        </tr>
+                    `;
+                }
+            } else {
+                regularUsers.forEach(user => {
+                    const profile = profilesMap[user.id];
+                    const row = createUserTableRowFromAuth(user, profile);
+                    if (usersTableBody) usersTableBody.appendChild(row);
+                });
+            }
 
             console.log(`Loaded ${regularUsers.length} users from Supabase Auth`);
+        } else if (authUsers && authUsers.users && authUsers.users.length === 0) {
+            // No users found
+            if (usersTableBody) {
+                usersTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="7" style="text-align: center; padding: 2rem; color: #666;">
+                            <i class="fas fa-users" style="font-size: 2rem; margin-bottom: 1rem; color: #999;"></i><br>
+                            <p>Belum ada siswa yang terdaftar.</p>
+                        </td>
+                    </tr>
+                `;
+            }
         } else {
             // Fallback to profiles table if auth access fails
             console.log('Auth access failed, falling back to profiles table...');
@@ -560,9 +646,27 @@ async function loadUsersFromProfiles() {
         // Clear existing table rows
         if (usersTableBody) usersTableBody.innerHTML = '';
 
+        // Show message if no users found
+        if (!profiles || profiles.length === 0) {
+            if (usersTableBody) {
+                usersTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="7" style="text-align: center; padding: 2rem; color: #666;">
+                            <i class="fas fa-users" style="font-size: 2rem; margin-bottom: 1rem; color: #999;"></i><br>
+                            <p>Belum ada siswa yang terdaftar.</p>
+                            <button class="delete-history-btn" onclick="alert('Fitur untuk testing - tidak ada user untuk dihapus')">
+                                <i class="fas fa-redo"></i> Test
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }
+            return;
+        }
+
         // Populate table with user data
         profiles.forEach(profile => {
-            const row = createUserTableRow(profile);
+            const row = createUserTableRowFromProfiles(profile);
             if (usersTableBody) usersTableBody.appendChild(row);
         });
 
@@ -580,24 +684,16 @@ function createUserTableRowFromProfiles(profile) {
         return date.toLocaleDateString('id-ID');
     };
 
-    // Get avatar from profile or generate from name
-    const avatarUrl = profile.avatar_url;
-    const avatarHtml = avatarUrl
-        ? `<img src="${avatarUrl}" alt="Avatar" class="user-avatar-small">`
-        : `<div class="user-avatar-placeholder">${profile.nama_lengkap ? profile.nama_lengkap.charAt(0).toUpperCase() : '?'}</div>`;
-
     row.innerHTML = `
-        <td>${avatarHtml}</td>
         <td>${profile.nama_lengkap || 'N/A'}</td>
         <td>${profile.email || 'N/A'}</td>
         <td>${profile.phone || '-'}</td>
         <td>${profile.school || '-'}</td>
-        <td title="${profile.bio || ''}">${profile.bio ? (profile.bio.length > 30 ? profile.bio.substring(0, 30) + '...' : profile.bio) : '-'}</td>
         <td><span class="status-badge status-active">Aktif</span></td>
         <td>${formatDate(profile.created_at)}</td>
         <td>
-            <button class="logout-btn" onclick="viewUserDetails('${profile.id}')">
-                <i class="fas fa-eye"></i> Lihat
+            <button class="delete-history-btn" onclick="deleteStudentExamHistory('${profile.id}', '${(profile.nama_lengkap || 'Siswa').replace(/'/g, "\\'")}')" title="Hapus Riwayat Ujian">
+                <i class="fas fa-redo"></i> Reset
             </button>
         </td>
     `;
@@ -621,29 +717,21 @@ function createUserTableRowFromAuth(user, profile = null) {
                        user.email?.split('@')[0] ||
                        'N/A';
 
-    // Get avatar from profile or generate from name
-    const avatarUrl = profile?.avatar_url;
-    const avatarHtml = avatarUrl
-        ? `<img src="${avatarUrl}" alt="Avatar" class="user-avatar-small">`
-        : `<div class="user-avatar-placeholder">${displayName.charAt(0).toUpperCase()}</div>`;
-
     // Determine status based on email confirmation
     const isConfirmed = user.email_confirmed_at !== null;
     const statusClass = isConfirmed ? 'status-active' : 'status-inactive';
     const statusText = isConfirmed ? 'Aktif' : 'Belum Konfirmasi';
 
     row.innerHTML = `
-        <td>${avatarHtml}</td>
         <td>${displayName}</td>
         <td>${user.email || 'N/A'}</td>
         <td>${profile?.phone || '-'}</td>
         <td>${profile?.school || '-'}</td>
-        <td title="${profile?.bio || ''}">${profile?.bio ? (profile.bio.length > 30 ? profile.bio.substring(0, 30) + '...' : profile.bio) : '-'}</td>
         <td><span class="status-badge ${statusClass}">${statusText}</span></td>
         <td>${formatDate(user.created_at)}</td>
         <td>
-            <button class="logout-btn" onclick="viewUserDetails('${user.id}')">
-                <i class="fas fa-eye"></i> Lihat
+            <button class="delete-history-btn" onclick="deleteStudentExamHistory('${user.id}', '${displayName.replace(/'/g, "\\'")}')" title="Hapus Riwayat Ujian">
+                <i class="fas fa-redo"></i> Reset
             </button>
         </td>
     `;
@@ -655,6 +743,202 @@ function createUserTableRowFromAuth(user, profile = null) {
 function viewUserDetails(userId) {
     alert(`Fitur detail user untuk ID: ${userId} akan ditambahkan di versi mendatang.`);
 }
+
+// Delete exam history for a specific student
+async function deleteStudentExamHistory(userId, userName) {
+    // Handle test button click
+    if (userId === 'test-id') {
+        alert('Test button works! But this is just a test - cannot delete history for test user.');
+        return;
+    }
+
+    // First confirm
+    const confirmDelete = confirm(`Apakah Anda yakin ingin menghapus riwayat ujian untuk siswa "${userName}"?\n\nSemua riwayat ujian dan jawaban akan dihapus. Siswa ini akan bisa mengerjakan simulasi lagi dari awal.`);
+    
+    if (!confirmDelete) return;
+
+    // Second confirmation
+    const confirmAgain = confirm(`PERINGATAN: Data yang dihapus tidak dapat dikembalikan!\n\nYakin ingin menghapus riwayat ujian untuk "${userName}"?`);
+    
+    if (!confirmAgain) return;
+
+    try {
+        // Delete exam sessions for this user
+        const { error: sessionsError } = await supabase
+            .from('exam_sessions')
+            .delete()
+            .eq('user_id', userId);
+
+        if (sessionsError) {
+            console.error('Error deleting exam sessions:', sessionsError);
+            alert('Gagal menghapus riwayat ujian: ' + sessionsError.message);
+            return;
+        }
+
+        // Also delete exam answers for this user (if exam_answers table exists)
+        try {
+            await supabase
+                .from('exam_answers')
+                .delete()
+                .eq('user_id', userId);
+        } catch (e) {
+            // Table might not exist or no answers to delete, continue
+            console.log('No exam_answers to delete or table does not exist');
+        }
+
+        alert(`Riwayat ujian untuk "${userName}" berhasil dihapus!\n\nSiswa ini sekarang bisa mengerjakan simulasi lagi.`);
+        
+        // Refresh the users table
+        await loadUsersData();
+        
+    } catch (error) {
+        console.error('Error in deleteStudentExamHistory:', error);
+        alert('Terjadi kesalahan saat menghapus riwayat ujian.');
+    }
+}
+
+// Delete exam data completely for a specific student (hard delete)
+async function deleteStudentExamData(userId, userName) {
+    // Handle test button click
+    if (userId === 'test-id') {
+        alert('Test button works! But this is just a test - cannot delete data for test user.');
+        return;
+    }
+
+    // First confirm
+    const confirmDelete = confirm(`Apakah Anda yakin ingin MengHAPUS PERMANEN data ujian untuk siswa "${userName}"?\n\nSemua data jawaban dan riwayat ujian akan dihapus secara permanen!`);
+    
+    if (!confirmDelete) return;
+
+    // Second confirmation
+    const confirmAgain = confirm(`PERINGATAN: Data yang dihapus tidak dapat dikembalikan!\n\nYakin ingin menghapus permanen data ujian untuk "${userName}"?`);
+    
+    if (!confirmAgain) return;
+
+    try {
+        console.log('Starting deletion for user:', userId);
+        
+        // 1. First get exam session IDs for this user (all statuses including completed)
+        const { data: sessions, error: fetchError } = await supabase
+            .from('exam_sessions')
+            .select('id')
+            .eq('user_id', userId);
+
+        if (fetchError) {
+            console.error('Error fetching sessions:', fetchError);
+            alert('Error: ' + fetchError.message);
+            return;
+        }
+        
+        const sessionIds = sessions?.map(s => s.id) || [];
+        console.log('Found sessions:', sessionIds.length);
+        
+        // 2. Delete exam answers using exam_session_id
+        if (sessionIds.length > 0) {
+            try {
+                const { error: answersError, count: answersCount } = await supabase
+                    .from('exam_answers')
+                    .delete()
+                    .in('exam_session_id', sessionIds);
+                
+                if (answersError) {
+                    console.log('exam_answers delete:', answersError.message);
+                } else {
+                    console.log('exam_answers deleted:', answersCount, 'records');
+                    
+                    // Verify exam_answers deletion
+                    const { data: verifyAnswers } = await supabase
+                        .from('exam_answers')
+                        .select('id')
+                        .in('exam_session_id', sessionIds);
+                    console.log('Verification - remaining answers:', verifyAnswers?.length || 0);
+                }
+            } catch (e) {
+                console.log('exam_answers table might not exist');
+            }
+        }
+
+        // 3. Delete exam sessions for this user - using a workaround for RLS issue
+        console.log('Attempting to delete exam_sessions for user:', userId);
+        
+        // Try using filter with neq (not equal) approach or get the IDs first
+        const { data: allUserSessions, error: fetchAllError } = await supabase
+            .from('exam_sessions')
+            .select('id')
+            .eq('user_id', userId);
+            
+        console.log('All user sessions:', allUserSessions);
+        
+        if (fetchAllError) {
+            console.error('Error fetching sessions:', fetchAllError);
+        }
+        
+        // Try deleting each session individually
+        let deletedCount = 0;
+        if (allUserSessions && allUserSessions.length > 0) {
+            for (const session of allUserSessions) {
+                const { error: singleDeleteError } = await supabase
+                    .from('exam_sessions')
+                    .delete()
+                    .eq('id', session.id);
+                    
+                if (singleDeleteError) {
+                    console.error('Error deleting session', session.id, ':', singleDeleteError);
+                } else {
+                    deletedCount++;
+                }
+            }
+        }
+        
+        console.log('Individual delete - deleted count:', deletedCount);
+        
+        // Verify deletion
+        const { data: verifyData } = await supabase
+            .from('exam_sessions')
+            .select('id')
+            .eq('user_id', userId);
+        
+        console.log('Verification - remaining sessions:', verifyData?.length || 0);
+        
+        if (verifyData && verifyData.length > 0) {
+            alert('Gagal menghapus data! Kemungkinan ada kebijakan keamanan (RLS) yang memblokir penghapusan.\n\nSisa sesi: ' + verifyData.length);
+            return;
+        }
+
+        // 4. Delete student analytics for this user
+        try {
+            const { error: analyticsError } = await supabase
+                .from('student_analytics')
+                .delete()
+                .eq('user_id', userId);
+            
+            if (analyticsError) {
+                console.log('student_analytics:', analyticsError.message);
+            }
+        } catch (e) {
+            console.log('student_analytics table might not exist');
+        }
+
+        alert(`Data ujian untuk "${userName}" berhasil dihapus permanen!\n\nSiswa sekarang bisa mengerjakan ujian lagi.`);
+        
+        // Refresh the table - remove the deleted row from display immediately
+        if (window.studentExamData) {
+            window.studentExamData = window.studentExamData.filter(exam => exam.user_id !== userId);
+            renderStudentExamRows(window.studentExamData);
+        }
+        
+        // Also reload from database to ensure consistency
+        loadStudentExamTable();
+        
+    } catch (error) {
+        console.error('Error in deleteStudentExamData:', error);
+        alert('Terjadi kesalahan saat menghapus data ujian: ' + error.message);
+    }
+}
+
+// Export function to global scope
+window.deleteStudentExamData = deleteStudentExamData;
+window.deleteStudentExamHistory = deleteStudentExamHistory;
 
 // Setup password toggle for admin login
 function setupPasswordToggle() {
@@ -714,9 +998,22 @@ function createQuestionTableRow(question) {
         ? '<span class="status-badge status-active">Aktif</span>'
         : '<span class="status-badge status-inactive">Nonaktif</span>';
 
+    // Display question type with variant badge
+    const questionTypeDisplay = question.question_type 
+        ? `${question.question_type}`
+        : 'Pilihan Ganda';
+
+    // Display variant badge
+    const variantDisplay = question.question_type_variant 
+        ? `<span class="question-variant-badge">${question.question_type_variant}</span>`
+        : '<span style="color: #9ca3af;">-</span>';
+
     row.innerHTML = `
         <td title="${question.question_text}">${shortQuestion}</td>
-        <td>${question.difficulty} (${question.scoring_weight} poin)</td>
+        <td>${questionTypeDisplay}</td>
+        <td>${variantDisplay}</td>
+        <td>${question.chapter || '-'}</td>
+        <td>${question.difficulty}</td>
         <td>${question.scoring_weight}</td>
         <td>${question.time_limit_minutes} menit</td>
         <td>${statusBadge}</td>
@@ -950,6 +1247,7 @@ console.log('Saving question, currentEditingQuestionId:', currentEditingQuestion
 // Get form elements with null checks
 const questionTextEl = document.getElementById('questionText');
 const questionTypeEl = document.getElementById('questionType');
+const questionTypeVariantEl = document.getElementById('questionTypeVariant');
 const chapterEl = document.getElementById('chapter');
 const subChapterEl = document.getElementById('subChapter');
 const timeLimitEl = document.getElementById('timeLimit');
@@ -977,6 +1275,7 @@ if (!questionTextEl || !questionTypeEl || !chapterEl || !subChapterEl ||
 }
 
 const questionType = questionTypeEl.value;
+const questionTypeVariant = questionTypeVariantEl ? questionTypeVariantEl.value : null;
 
 // Ensure the form is properly loaded for the current question type
 const currentOptionsContainer = document.getElementById('optionsContainer');
@@ -1011,6 +1310,7 @@ console.log('optionsContainer exists:', !!document.getElementById('optionsContai
 const baseFormData = {
         question_text: questionTextEl.value.trim(),
         question_type: questionType,
+        question_type_variant: questionTypeVariant || null,
         chapter: chapterEl.value,
         sub_chapter: subChapterEl.value,
         competence: document.getElementById('competence')?.value.trim() || null,
@@ -1028,7 +1328,8 @@ const baseFormData = {
         chapter: chapterEl.value,
         subChapter: subChapterEl.value,
         questionText: questionTextEl.value.substring(0, 50) + '...',
-        questionType: questionType
+        questionType: questionType,
+        questionTypeVariant: questionTypeVariant
     });
 
     // Validate chapter and sub-chapter are not empty
@@ -1117,6 +1418,7 @@ const baseFormData = {
 
         case 'PGK Kategori':
             console.log('Processing PGK Kategori data...');
+            console.log('Current categoryStatements:', window.categoryStatements);
 
             // Get statements from the table
             if (!window.categoryStatements || window.categoryStatements.length === 0) {
@@ -1129,12 +1431,28 @@ const baseFormData = {
                 item.statement && item.statement.trim() && item.isTrue !== null
             );
 
+            console.log('Valid statements count:', validStatements.length);
+            console.log('Valid statements:', validStatements);
+
             if (validStatements.length === 0) {
                 alert('Minimal satu pernyataan harus diisi dan jawabannya dipilih (Benar/Salah)!');
                 return;
             }
 
-            console.log('Valid statements:', validStatements);
+            // Check validation requirements
+            const trueCount = validStatements.filter(item => item.isTrue === true).length;
+            const falseCount = validStatements.filter(item => item.isTrue === false).length;
+            console.log('True count:', trueCount, 'False count:', falseCount);
+
+            if (trueCount === 0) {
+                alert('Minimal satu pernyataan harus ditandai sebagai Benar (True).');
+                return;
+            }
+
+            if (falseCount === 0) {
+                alert('Minimal satu pernyataan harus ditandai sebagai Salah (False).');
+                return;
+            }
 
             // Create arrays for statements and answers
             const statements = validStatements.map(item => item.statement.trim());
@@ -1146,6 +1464,8 @@ const baseFormData = {
             console.log('Statements array:', statements);
             console.log('Answers object:', answers);
 
+            // For Supabase JSONB columns, we can pass JavaScript objects/arrays directly
+            // Supabase client will handle the serialization
             formData = {
                 ...baseFormData,
                 // For PGK Kategori, we still need to provide dummy values for required fields
@@ -1483,7 +1803,7 @@ const baseFormData = {
         console.log('Checking database schema before save...');
         try {
             // Test basic columns that are always needed
-            const basicColumns = ['question_type', 'chapter', 'sub_chapter', 'competence', 'scoring_weight', 'difficulty', 'subject', 'time_limit_minutes', 'explanation'];
+            const basicColumns = ['question_type', 'question_type_variant', 'chapter', 'sub_chapter', 'competence', 'scoring_weight', 'difficulty', 'subject', 'time_limit_minutes', 'explanation'];
             const missingColumns = [];
 
             for (const col of basicColumns) {
@@ -1508,7 +1828,7 @@ const baseFormData = {
 
             // Additional check for advanced question types
             if (questionType === 'PGK Kategori') {
-                const advancedColumns = ['category_options', 'category_mapping'];
+                const advancedColumns = ['category_options', 'category_mapping', 'question_type_variant'];
                 for (const col of advancedColumns) {
                     try {
                         const testQuery = await supabase
@@ -1590,9 +1910,10 @@ const baseFormData = {
             correctAnswerDisplay = formData.correct_answers.join(', ');
         }
 
+        const variantInfo = formData.question_type_variant ? ` (Varian ${formData.question_type_variant})` : '';
         const successMessage = currentEditingQuestionId
-            ? `Soal berhasil diperbarui!\n\nJawaban benar: ${correctAnswerDisplay}\nTipe: ${formData.question_type}`
-            : `Soal berhasil ditambahkan!\n\nJawaban benar: ${correctAnswerDisplay}\nTipe: ${formData.question_type}`;
+            ? `Soal berhasil diperbarui!\n\nJawaban benar: ${correctAnswerDisplay}\nTipe: ${formData.question_type}${variantInfo}`
+            : `Soal berhasil ditambahkan!\n\nJawaban benar: ${correctAnswerDisplay}\nTipe: ${formData.question_type}${variantInfo}`;
 
         alert(successMessage);
         console.log('Question saved successfully:', successMessage);
@@ -1664,6 +1985,9 @@ function generateTags(questionData) {
 
     // Add question type
     if (questionData.question_type) tags.add(questionData.question_type.toLowerCase());
+    
+    // Add question type variant
+    if (questionData.question_type_variant) tags.add(`varian-${questionData.question_type_variant.toLowerCase()}`);
 
     // Analyze content for keywords
     const content = (questionData.question_text + ' ' + (questionData.latex_content || '')).toLowerCase();
@@ -1711,6 +2035,11 @@ async function editQuestion(questionId) {
         // Set basic form fields first
         document.getElementById('questionText').value = question.question_text;
         document.getElementById('questionType').value = question.question_type;
+        
+        // Set question type variant (A/B/C/D) if available
+        if (question.question_type_variant) {
+            document.getElementById('questionTypeVariant').value = question.question_type_variant;
+        }
 
         // Check if question contains LaTeX and enable LaTeX mode if needed
         const hasLatex = question.question_text && /\\\(.+?\\\)/.test(question.question_text);
@@ -2869,6 +3198,7 @@ async function saveMaterial(event) {
         const difficulty = document.getElementById('materialDifficulty').value;
         const summary = document.getElementById('materialSummary').value.trim();
         const objectives = document.getElementById('materialObjectives').value.trim();
+        
         const isPublished = document.getElementById('materialPublished').checked;
 
         // Validate required fields
@@ -3573,30 +3903,38 @@ function toggleStatementsLatexMode() {
     const preview = document.getElementById('statementsLatexPreview');
     const textarea = document.getElementById('categoryStatements');
 
-    // Always remove existing event listener first to avoid duplicates
-    textarea.removeEventListener('input', updateStatementsLatexPreview);
+    // Check if elements exist before using them
+    if (!checkbox || !toolbar || !preview) {
+        console.warn('LaTeX elements not found, skipping toggle');
+        return;
+    }
+
+    // Remove existing event listener if textarea exists
+    if (textarea) {
+        textarea.removeEventListener('input', updateStatementsLatexPreview);
+    }
 
     if (checkbox.checked) {
         // Enable LaTeX mode
         toolbar.style.display = 'flex';
         preview.style.display = 'block';
-        textarea.placeholder = 'Masukkan pernyataan dengan LaTeX...';
-
-        // Add event listener for preview
-        textarea.addEventListener('input', updateStatementsLatexPreview);
-        updateStatementsLatexPreview(); // Update immediately
+        if (textarea) {
+            textarea.placeholder = 'Masukkan pernyataan dengan LaTeX...';
+            // Add event listener for preview
+            textarea.addEventListener('input', updateStatementsLatexPreview);
+            updateStatementsLatexPreview(); // Update immediately
+        }
     } else {
         // Disable LaTeX mode
         toolbar.style.display = 'none';
         preview.style.display = 'none';
-        textarea.placeholder = 'Masukkan pernyataan, satu per baris\nContoh:\n2 adalah bilangan genap\n3 adalah bilangan ganjil\n4 adalah bilangan prima';
+        if (textarea) {
+            textarea.placeholder = 'Masukkan pernyataan, satu per baris\nContoh:\n2 adalah bilangan genap\n3 adalah bilangan ganjil\n4 adalah bilangan prima';
+        }
 
         // Clear preview
         preview.innerHTML = '';
     }
-
-    // Update the statements preview
-    updateStatementsPreview();
 }
 
 function insertLatexIntoStatements(symbol) {
@@ -3868,12 +4206,131 @@ async function loadAnalytics() {
         // Load AI recommendations
         loadAIRecommendations(analytics);
 
+        // Load student exam table
+        loadStudentExamTable();
+
     } catch (error) {
         console.error('Error in loadAnalytics:', error);
         // Fallback to demo data
         loadDemoAnalytics();
     }
 }
+
+// Load student exam table for analytics tab
+async function loadStudentExamTable() {
+    const tableBody = document.getElementById('studentExamTable');
+    if (!tableBody) return;
+
+    try {
+        // Get exam sessions
+        const { data: exams, error } = await supabase
+            .from('exam_sessions')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(50);
+
+        if (error) {
+            console.error('Error loading exam sessions:', error);
+            tableBody.innerHTML = `<tr><td colspan="7" style="padding: 2rem; text-align: center; color: #ef4444;">Error memuat data: ${error.message}</td></tr>`;
+            return;
+        }
+
+        if (!exams || exams.length === 0) {
+            tableBody.innerHTML = `<tr><td colspan="7" style="padding: 2rem; text-align: center; color: #6b7280;">Belum ada data ujian</td></tr>`;
+            return;
+        }
+
+        // Get all unique user IDs
+        const userIds = [...new Set(exams.map(e => e.user_id).filter(Boolean))];
+        
+        // Get user profiles
+        let profilesMap = {};
+        if (userIds.length > 0) {
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, nama_lengkap, class_name')
+                .in('id', userIds);
+            
+            if (profiles) {
+                profiles.forEach(p => {
+                    profilesMap[p.id] = p;
+                });
+            }
+        }
+
+        // Combine exam data with profile data
+        const combinedData = exams.map(exam => ({
+            ...exam,
+            profile: profilesMap[exam.user_id] || {}
+        }));
+
+        // Store data for filtering
+        window.studentExamData = combinedData;
+
+        renderStudentExamRows(combinedData);
+    } catch (error) {
+        console.error('Error in loadStudentExamTable:', error);
+        tableBody.innerHTML = `<tr><td colspan="7" style="padding: 2rem; text-align: center; color: #ef4444;">Error: ${error.message}</td></tr>`;
+    }
+}
+
+// Render student exam rows
+function renderStudentExamRows(exams) {
+    const tableBody = document.getElementById('studentExamTable');
+    if (!tableBody) return;
+
+    tableBody.innerHTML = exams.map(exam => {
+        const studentName = exam.profile?.nama_lengkap || exam.profiles?.nama_lengkap || `Siswa ${exam.user_id?.slice(0, 8) || '-'}`;
+        const kelas = exam.profile?.class_name || exam.profiles?.class_name || '-';
+        const tipe = exam.exam_type || 'TKA';
+        const skor = exam.total_score || 0;
+        const status = exam.status === 'completed' ? 'Selesai' : (exam.status === 'in_progress' ? 'Sedang Dikerjakan' : exam.status);
+        const waktu = exam.completed_at ? new Date(exam.completed_at).toLocaleDateString('id-ID') : (exam.created_at ? new Date(exam.created_at).toLocaleDateString('id-ID') : '-');
+        const userId = exam.user_id;
+        const examId = exam.id;
+
+        return `
+            <tr>
+                <td style="padding: 12px;">${studentName}</td>
+                <td style="padding: 12px;">${kelas}</td>
+                <td style="padding: 12px;">${tipe}</td>
+                <td style="padding: 12px;">${skor}</td>
+                <td style="padding: 12px;"><span class="status-badge status-${exam.status}">${status}</span></td>
+                <td style="padding: 12px;">${waktu}</td>
+                <td style="padding: 12px; display: flex; gap: 5px;">
+                    <button onclick="showStudentDetail('${userId}')" class="mini-btn" style="background: #4f46e5;" title="Lihat Detail Hasil">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button onclick="deleteStudentExamData('${userId}', '${studentName}')" class="mini-btn" style="background: #ef4444;" title="Hapus Permanen Data Ujian">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Filter student exams
+function filterStudentExams() {
+    if (!window.studentExamData) return;
+
+    const searchName = document.getElementById('searchStudentName')?.value?.toLowerCase() || '';
+    const filterStatus = document.getElementById('filterExamStatus')?.value || '';
+
+    const filtered = window.studentExamData.filter(exam => {
+        const studentName = (exam.profile?.nama_lengkap || exam.profiles?.nama_lengkap || '').toLowerCase();
+        const matchesSearch = studentName.includes(searchName);
+        const matchesStatus = !filterStatus || exam.status === filterStatus;
+        return matchesSearch && matchesStatus;
+    });
+
+    renderStudentExamRows(filtered);
+}
+
+window.filterStudentExams = filterStudentExams;
+
+// Export function
+window.loadStudentExamTable = loadStudentExamTable;
 
 // Update student analytics from exam data
 async function updateStudentAnalyticsFromExams() {
@@ -4263,7 +4720,7 @@ async function loadStudentsList() {
             </div>
             <div class="students-grid">
                 ${students.map(student => `
-                    <div class="student-card" onclick="showStudentDetail('${student.id}')">
+                    <div class="student-card">
                         <div class="student-header">
                             <div class="student-avatar">
                                 ${student.nama_lengkap.charAt(0).toUpperCase()}
@@ -4283,9 +4740,12 @@ async function loadStudentsList() {
                                 <span class="stat-value">${student.averageMastery}%</span>
                                 <span class="stat-label">Mastery</span>
                             </div>
-                            <div class="stat">
-                                <button onclick="event.stopPropagation(); exportStudentToExcel('${student.id}')" class="mini-btn">
-                                    <i class="fas fa-download"></i> Excel
+                            <div class="stat" style="display: flex; gap: 5px;">
+                                <button onclick="event.stopPropagation(); showStudentDetail('${student.id}')" class="mini-btn" title="Lihat Detail">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button onclick="event.stopPropagation(); deleteStudentExamHistory('${student.id}', '${student.nama_langelog}')" class="mini-btn" style="background: #ef4444;" title="Hapus Riwayat Ujian">
+                                    <i class="fas fa-redo"></i>
                                 </button>
                             </div>
                         </div>
@@ -5047,6 +5507,299 @@ window.loadMaterials = loadMaterials;
 window.editMaterial = editMaterial;
 window.deleteMaterial = deleteMaterial;
 window.insertLatex = insertLatex;
+
+// LaTeX Functions for Material Summary
+function toggleSummaryLatex() {
+    const checkbox = document.getElementById('enableSummaryLatex');
+    const toolbar = document.getElementById('summaryLatexToolbar');
+    const preview = document.getElementById('summaryLatexPreview');
+    const help = document.getElementById('summaryLatexHelp');
+    const textarea = document.getElementById('materialSummary');
+
+    textarea.removeEventListener('input', updateSummaryLatexPreview);
+
+    if (checkbox && checkbox.checked) {
+        if (toolbar) toolbar.style.display = 'flex';
+        if (preview) preview.style.display = 'block';
+        if (help) help.style.display = 'block';
+        if (textarea) textarea.placeholder = 'Masukkan konten materi dengan LaTeX...';
+        textarea.addEventListener('input', updateSummaryLatexPreview);
+        updateSummaryLatexPreview();
+    } else {
+        if (toolbar) toolbar.style.display = 'none';
+        if (help) help.style.display = 'none';
+        if (preview) preview.style.display = 'none'; // sembunyikan saat nonaktif
+        if (textarea) textarea.placeholder = 'Masukkan konten ringkasan materi...';
+    }
+}
+
+function insertLatexIntoSummary(symbol) {
+    const latexSymbols = {
+        'fraction': '\\frac{a}{b}',
+        'sqrt': '\\sqrt{x}',
+        'power': 'x^{2}',
+        'subscript': 'x_{i}',
+        'integral': '\\int_{a}^{b}',
+        'sum': '\\sum_{i=1}^{n}',
+        'alpha': '\\alpha',
+        'beta': '\\beta',
+        'theta': '\\theta',
+        'pi': '\\pi',
+        'infty': '\\infty',
+        'times': '\\times',
+        'divide': '\\div',
+        'neq': '\\neq',
+        'leq': '\\leq',
+        'geq': '\\geq'
+    };
+
+    const latexCode = latexSymbols[symbol] || symbol;
+    const latexWithDelimiters = '\\(' + latexCode + '\\)';
+
+    const textarea = document.getElementById('materialSummary');
+    if (textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const before = textarea.value.substring(0, start);
+        const after = textarea.value.substring(end);
+        textarea.value = before + latexWithDelimiters + after;
+        textarea.selectionStart = textarea.selectionEnd = start + latexWithDelimiters.length;
+        textarea.focus();
+    }
+
+    updateSummaryLatexPreview();
+}
+
+function insertBoldIntoSummary() {
+    const textarea = document.getElementById('materialSummary');
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const selected = text.substring(start, end);
+    const boldText = selected ? `<b>${selected}</b>` : '<b></b>';
+    textarea.value = text.substring(0, start) + boldText + text.substring(end);
+    textarea.selectionStart = textarea.selectionEnd = start + boldText.length;
+    textarea.focus();
+    updateSummaryLatexPreview();
+}
+
+function insertCenterIntoSummary() {
+    const textarea = document.getElementById('materialSummary');
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const selected = text.substring(start, end);
+    const centerText = selected ? `<center>${selected}</center>` : '<center></center>';
+    textarea.value = text.substring(0, start) + centerText + text.substring(end);
+    textarea.selectionStart = textarea.selectionEnd = start + centerText.length;
+    textarea.focus();
+    updateSummaryLatexPreview();
+}
+
+async function insertImageIntoSummary() {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.style.display = 'none';
+
+    fileInput.onchange = async function() {
+        if (this.files && this.files[0]) {
+            const file = this.files[0];
+            if (!file.type.startsWith('image/')) {
+                alert('File harus berupa gambar!');
+                return;
+            }
+            if (file.size > 5 * 1024 * 1024) {
+                alert('Ukuran file maksimal 5MB!');
+                return;
+            }
+            try {
+                const imageUrl = await uploadImage(file);
+                const textarea = document.getElementById('materialSummary');
+                if (textarea) {
+                    const start = textarea.selectionStart;
+                    const imgTag = `<img src="${imageUrl}" alt="Gambar materi" style="max-width: 100%; height: auto;">`;
+                    textarea.value = textarea.value.substring(0, start) + imgTag + textarea.value.substring(textarea.selectionEnd);
+                    textarea.selectionStart = textarea.selectionEnd = start + imgTag.length;
+                    textarea.focus();
+                    updateSummaryLatexPreview();
+                }
+            } catch (err) {
+                alert('Gagal upload gambar: ' + err.message);
+            }
+        }
+    };
+
+    document.body.appendChild(fileInput);
+    fileInput.click();
+    document.body.removeChild(fileInput);
+}
+
+// ========== RULER / VISUAL GUIDE FUNCTIONS ==========
+let rulerEnabled = false;
+let rulerLines = [];
+
+function toggleRuler() {
+    const container = document.getElementById('rulerContainer');
+    const toolbar = document.getElementById('summaryLatexToolbar');
+    
+    rulerEnabled = !rulerEnabled;
+    
+    if (container) {
+        container.style.display = rulerEnabled ? 'block' : 'none';
+    }
+    
+    // Update button appearance
+    const rulerBtn = toolbar.querySelector('button[onclick="toggleRuler()"]');
+    if (rulerBtn) {
+        rulerBtn.style.background = rulerEnabled ? '#4f46e5' : '#f3f4f6';
+        rulerBtn.style.color = rulerEnabled ? 'white' : '#374151';
+    }
+    
+    if (!rulerEnabled) {
+        // Optional: Clear rulers when disabled
+        // clearRulers();
+    }
+}
+
+function addRuler(event) {
+    if (!rulerEnabled) return;
+    
+    const container = document.getElementById('rulerContainer');
+    if (!container) return;
+    
+    // Get click position relative to container
+    const rect = container.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const position = Math.round(x);
+    
+    // Create ruler line element
+    const line = document.createElement('div');
+    line.className = 'ruler-line';
+    line.style.left = position + 'px';
+    line.setAttribute('data-position', position + 'px');
+    line.setAttribute('data-x', position);
+    
+    // Add drag functionality
+    let isDragging = false;
+    let startX = 0;
+    let startLeft = position;
+    
+    line.addEventListener('mousedown', function(e) {
+        isDragging = true;
+        startX = e.clientX;
+        startLeft = parseInt(line.getAttribute('data-x'));
+        e.preventDefault();
+        e.stopPropagation();
+    });
+    
+    document.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        
+        const deltaX = e.clientX - startX;
+        let newPos = startLeft + deltaX;
+        
+        // Clamp position within container
+        newPos = Math.max(0, Math.min(rect.width, newPos));
+        
+        line.style.left = newPos + 'px';
+        line.setAttribute('data-position', newPos + 'px');
+        line.setAttribute('data-x', newPos);
+    });
+    
+    document.addEventListener('mouseup', function() {
+        isDragging = false;
+    });
+    
+    // Double click to remove
+    line.addEventListener('dblclick', function(e) {
+        e.stopPropagation();
+        line.remove();
+    });
+    
+    // Add right-click context menu to remove
+    line.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        line.remove();
+    });
+    
+    const linesContainer = document.getElementById('rulerLines');
+    if (linesContainer) {
+        linesContainer.appendChild(line);
+    }
+}
+
+function clearRulers() {
+    const linesContainer = document.getElementById('rulerLines');
+    if (linesContainer) {
+        linesContainer.innerHTML = '';
+    }
+}
+
+function updateSummaryLatexPreview() {
+    const inputArea = document.getElementById('materialSummary');
+    const previewArea = document.getElementById('summaryLatexPreview');
+
+    if (inputArea && previewArea) {
+        let content = inputArea.value;
+
+        // Replace line breaks with <br> for preview
+        content = content.replace(/\n/g, '<br>');
+
+        previewArea.innerHTML = content;
+
+        if (window.katex) {
+            try {
+                let renderedText = content.replace(/\\\((.+?)\\\)/g, (match) => {
+                    try {
+                        return window.katex.renderToString(match.slice(2, -2), { displayMode: false, throwOnError: false });
+                    } catch (e) {
+                        return match;
+                    }
+                });
+                renderedText = renderedText.replace(/\\\[(.+?)\\\]/g, (match) => {
+                    try {
+                        return window.katex.renderToString(match.slice(2, -2), { displayMode: true, throwOnError: false });
+                    } catch (e) {
+                        return match;
+                    }
+                });
+                previewArea.innerHTML = renderedText;
+            } catch (error) {
+                previewArea.innerHTML = content;
+            }
+        }
+    }
+}
+
+// Summary latex preview also initializes on textarea input event
+document.addEventListener('DOMContentLoaded', function() {
+    const summaryTextarea = document.getElementById('materialSummary');
+    if (summaryTextarea) {
+        summaryTextarea.addEventListener('input', function() {
+            const checkbox = document.getElementById('enableSummaryLatex');
+            if (checkbox && checkbox.checked) {
+                updateSummaryLatexPreview();
+            }
+        });
+    }
+});
+
+window.toggleSummaryLatex = toggleSummaryLatex;
+window.insertLatexIntoSummary = insertLatexIntoSummary;
+window.insertBoldIntoSummary = insertBoldIntoSummary;
+window.insertCenterIntoSummary = insertCenterIntoSummary;
+window.insertImageIntoSummary = insertImageIntoSummary;
+window.updateSummaryLatexPreview = updateSummaryLatexPreview;
+window.updateSummaryLatexPreview = updateSummaryLatexPreview;
+
+// Ruler functions
+window.toggleRuler = toggleRuler;
+window.addRuler = addRuler;
+window.clearRulers = clearRulers;
+
 window.insertBold = insertBold;
 window.insertCenter = insertCenter;
 window.toggleQuestionLatexMode = toggleQuestionLatexMode;

@@ -8,6 +8,29 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="halamanpertama.css">
     <link rel="stylesheet" href="materi.css">
+    <style>
+        /* KaTeX: display mode centered */
+        .materi-content .katex-display {
+            display: block;
+            text-align: center;
+            margin: 1em 0;
+            overflow-x: auto;
+        }
+
+        /* Konten materi */
+        .materi-content p { margin-bottom: 1em; }
+        .materi-content ul, .materi-content ol { margin-left: 1.5em; margin-bottom: 1em; }
+        .materi-content li { margin-bottom: 0.5em; }
+        .materi-content h1, .materi-content h2, .materi-content h3 {
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+            font-weight: 600;
+        }
+    </style>
+    <!-- KaTeX for LaTeX formula rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <!-- auto-render dihapus: KaTeX dirender manual setelah konten async dimuat -->
     <script type="importmap">
     {
       "imports": {
@@ -302,7 +325,7 @@
                     </li>
                     <li>
                         <i class="fas fa-envelope"></i>
-                        <span>helpdesk@um.ac.id</span>
+                        <span><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="3e565b524e5a5b4d557e4b53105f5d10575a">[email&#160;protected]</a></span>
                     </li>
                     <li>
                         <i class="fas fa-clock"></i>
@@ -315,10 +338,4 @@
             <p>&copy; 2026 <strong>Universitas Negeri Malang</strong>. All Rights Reserved</p>
             <div class="footer-links">
                 <a href="#">Kebijakan Privasi</a>
-                <a href="#">Syarat & Ketentuan</a>
-                <a href="#">Sitemap</a>
-            </div>
-        </div>
-    </footer>
-</body>
-</html>
+                <a href="#">Syarat & Ket

@@ -3,6 +3,7 @@
 
 import { supabase } from './supabaseClient.js';
 import { learningPathEngine } from './adaptive_learning_engine.js';
+import { irtAnalyzer, calibrateAllItems, getItemParameters } from './irt_analysis.js';
 
 // ==========================================
 // BAYESIAN KNOWLEDGE TRACING MODEL
@@ -282,6 +283,7 @@ class AdaptiveQuestionSelector {
         this.questionPool = new Map(); // conceptId -> questions[]
         this.questionDifficulty = new Map(); // questionId -> difficulty (0-1)
         this.questionDiscrimination = new Map(); // questionId -> discrimination
+        this.questionGuessing = new Map(); // questionId -> guessing parameter (c)
     }
 
     // Load questions for a concept
@@ -300,10 +302,10 @@ class AdaptiveQuestionSelector {
 
             this.questionPool.set(conceptId, questions || []);
 
-            // Estimate difficulty and discrimination for each question
-            questions.forEach(question => {
-                this.estimateQuestionParameters(question);
-            });
+            // Estimate difficulty and discrimination for each question (now async)
+            for (const question of questions || []) {
+                await this.estimateQuestionParameters(question);
+            }
 
             return questions || [];
 
@@ -313,9 +315,21 @@ class AdaptiveQuestionSelector {
         }
     }
 
-    // Estimate question parameters using IRT-like approach
-    estimateQuestionParameters(question) {
-        // Simple estimation based on scoring weight and question type
+    // Estimate question parameters using IRT - now uses actual data from irt_analysis.js
+    async estimateQuestionParameters(question) {
+        // First, try to get calibrated IRT parameters from database
+        const calibratedParams = await this.getCalibratedIRTParameters(question.id);
+        
+        if (calibratedParams) {
+            // Use calibrated parameters from IRT analysis
+            this.questionDifficulty.set(question.id, calibratedParams.bParameter);
+            this.questionDiscrimination.set(question.id, calibratedParams.aParameter);
+            this.questionGuessing.set(question.id, calibratedParams.cParameter);
+            return;
+        }
+
+        // Fallback: Simple estimation based on scoring weight and question type
+        // This is used when no calibration data is available yet
         let difficulty = 0.5; // Default medium difficulty
 
         // Adjust based on scoring weight (higher weight = harder)
@@ -334,9 +348,44 @@ class AdaptiveQuestionSelector {
 
         this.questionDifficulty.set(question.id, difficulty);
         this.questionDiscrimination.set(question.id, 1.0); // Default discrimination
+        
+        // Set guessing parameter based on question type
+        const guessingParams = {
+            'Pilihan Ganda': 0.25,
+            'PGK MCMA': 0.1,
+            'PGK Kategori': 0.2
+        };
+        this.questionGuessing.set(question.id, guessingParams[question.question_type] || 0.25);
     }
 
-    // Select next question based on current knowledge state
+    // Get calibrated IRT parameters from database
+    async getCalibratedIRTParameters(questionId) {
+        try {
+            const { data, error } = await supabase
+                .from('questions')
+                .select('irt_a_parameter, irt_b_parameter, irt_c_parameter, difficulty_pvalue, discrimination_index, is_valid_item')
+                .eq('id', questionId)
+                .single();
+
+            if (error || !data || !data.is_valid_item) {
+                return null;
+            }
+
+            return {
+                aParameter: data.irt_a_parameter || 1.0,
+                bParameter: data.irt_b_parameter || 0.0,
+                cParameter: data.irt_c_parameter || 0.25,
+                pValue: data.difficulty_pvalue,
+                discrimination: data.discrimination_index
+            };
+        } catch (error) {
+            console.warn('Could not fetch IRT parameters:', error);
+            return null;
+        }
+    }
+
+    // Select next question based on current knowledge state using IRT
+    // Uses Maximum Fisher Information criterion for optimal item selection
     selectNextQuestion(userId, conceptId, bktModel, excludeQuestions = []) {
         const questions = this.questionPool.get(conceptId) || [];
         const availableQuestions = questions.filter(q => !excludeQuestions.includes(q.id));
@@ -346,22 +395,66 @@ class AdaptiveQuestionSelector {
         }
 
         const knowledgeLevel = bktModel.getKnowledgeProbability(userId, conceptId);
+        
+        // Convert knowledge probability to theta (ability estimate)
+        // Using logit transformation: theta = ln(P/(1-P))
+        let theta = 0;
+        if (knowledgeLevel > 0.01 && knowledgeLevel < 0.99) {
+            theta = Math.log(knowledgeLevel / (1 - knowledgeLevel));
+        } else if (knowledgeLevel >= 0.99) {
+            theta = 3;
+        } else {
+            theta = -3;
+        }
 
-        // Select question with optimal difficulty for current knowledge level
-        // Use Item Response Theory - select item where difficulty ≈ ability
+        // Select question using Maximum Fisher Information
+        // This is the optimal criterion in IRT-based adaptive testing
         let bestQuestion = null;
-        let bestFit = Infinity;
+        let maxInfo = -Infinity;
 
         availableQuestions.forEach(question => {
-            const difficulty = this.questionDifficulty.get(question.id) || 0.5;
-            const fit = Math.abs(difficulty - knowledgeLevel);
-            if (fit < bestFit) {
-                bestFit = fit;
+            const a = this.questionDiscrimination.get(question.id) || 1.0;
+            const b = this.questionDifficulty.get(question.id) || 0.0;
+            const c = this.questionGuessing.get(question.id) || 0.25;
+
+            // Calculate Fisher Information at current theta
+            const info = this.calculateFisherInformation(theta, a, b, c);
+
+            if (info > maxInfo) {
+                maxInfo = info;
                 bestQuestion = question;
             }
         });
 
+        // Fallback to difficulty matching if no good item found
+        if (!bestQuestion) {
+            let bestFit = Infinity;
+            availableQuestions.forEach(question => {
+                const difficulty = this.questionDifficulty.get(question.id) || 0.5;
+                const fit = Math.abs(difficulty - knowledgeLevel);
+                if (fit < bestFit) {
+                    bestFit = fit;
+                    bestQuestion = question;
+                }
+            });
+        }
+
         return bestQuestion;
+    }
+
+    // Calculate Fisher Information for 3PL IRT model
+    // I(θ) = a² * (1-c)² * e^(-a(θ-b)) / [(c + e^(-a(θ-b)))² * (1 + e^(-a(θ-b)))²]
+    calculateFisherInformation(theta, a, b, c) {
+        const expTerm = Math.exp(-a * (theta - b));
+        const P = c + (1 - c) / (1 + expTerm);
+        const Q = 1 - P;
+        
+        // Fisher Information formula for 3PL model
+        const numerator = a * a * (1 - c) * (1 - c) * expTerm * expTerm;
+        const denominator = P * P * Q * Q * (1 + expTerm) * (1 + expTerm);
+        
+        if (denominator === 0) return 0;
+        return numerator / denominator;
     }
 
     // Get question by ID

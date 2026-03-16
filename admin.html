@@ -14,14 +14,191 @@
     }
     </script>
     <link rel="stylesheet" href="admin.css">
+    <!-- TAMBAHAN BARU: AI Analytics Styles -->
+    <link rel="stylesheet" href="admin_ai_analytics_styles.css">
     <!-- Chart.js for analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- KaTeX for LaTeX rendering -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <script type="module">
+        // Import and make supabase available globally immediately
+        import('https://esm.sh/@supabase/supabase-js@2').then(({ createClient }) => {
+            const supabaseUrl = 'https://tsgldkyuktqpsbeuevsn.supabase.co';
+            const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzY5MTE5OSwiZXhwIjoyMDc5MjY3MTk5fQ.0ovVI04BphGbSCSZE6EhHI6_rtZCPSZReiaM9dKYcIA';
+            window.supabase = createClient(supabaseUrl, supabaseServiceKey);
+        });
+    </script>
     <script type="module" src="admin.js"></script>
+    <!-- MS Word Paste Filter Script -->
+    <style>
+        /* ==========================================
+           PERBAIKAN MS WORD PASTE - CSS OVERRIDE
+           Membersihkan sisa gaya Word di Admin Panel
+           ========================================== */
+        .materi-content span, 
+        .materi-content font,
+        .materi-content math,
+        .materi-content mjx-container,
+        .materi-content sup,
+        .ql-editor span,
+        .ql-editor font,
+        .ql-editor sup {
+            font-size: inherit !important;
+            vertical-align: baseline !important;
+            font-family: inherit !important;
+            line-height: inherit !important;
+            background-color: transparent !important;
+            color: inherit !important;
+            font-weight: inherit !important;
+            font-style: inherit !important;
+            text-decoration: none !important;
+            position: static !important;
+            transform: none !important;
+            top: auto !important;
+            bottom: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        /* Hapus semua styling inline yang mungkin tersisa dari Word */
+        .materi-content [style*="font-size"], .ql-editor [style*="font-size"] { font-size: inherit !important; }
+        .materi-content [style*="vertical-align"], .ql-editor [style*="vertical-align"] { vertical-align: baseline !important; }
+        .materi-content [style*="line-height"], .ql-editor [style*="line-height"] { line-height: inherit !important; }
+        .materi-content [style*="background"], .ql-editor [style*="background"] { background-color: transparent !important; }
+        .materi-content [style*="color:"], .ql-editor [style*="color:"] { color: inherit !important; }
+        .materi-content [style*="position:"], .ql-editor [style*="position:"] { position: static !important; }
+        .materi-content [style*="top:"], .ql-editor [style*="top:"] { top: auto !important; }
+        .materi-content [style*="transform:"], .ql-editor [style*="transform:"] { transform: none !important; }
+
+        /* Hapus class MS Word */
+        .materi-content [class*="Mso"],
+        .materi-content [class*="msot"],
+        .ql-editor [class*="Mso"],
+        .ql-editor [class*="msot"] {
+            all: unset;
+            font-family: inherit !important;
+            font-size: inherit !important;
+        }
+
+        /* Kembalikan ukuran sub/sup asli */
+        .materi-content sup, .ql-editor sup { vertical-align: super !important; font-size: 0.8em !important; }
+        .materi-content sub, .ql-editor sub { vertical-align: sub !important; font-size: 0.8em !important; }
+    </style>
+    <script>
+        // Fungsi untuk membersihkan HTML dari MS Word
+        function stripWordStyles(html) {
+            // Buat elemen temporary untuk parsing
+            const temp = document.createElement('div');
+            temp.innerHTML = html;
+            
+            // Hapus semua style attributes
+            const allElements = temp.querySelectorAll('*');
+            allElements.forEach(el => {
+                el.removeAttribute('style');
+                el.removeAttribute('class');
+                
+                // Hapus atribut Word-specific
+                const attrs = Array.from(el.attributes);
+                attrs.forEach(attr => {
+                    if (attr.name.startsWith('data-') || 
+                        attr.name.startsWith('xml') || 
+                        attr.name.startsWith('o:') ||
+                        attr.name.match(/^(Mso|msot|msoc|mson|girc|cnz)/i)) {
+                        el.removeAttribute(attr.name);
+                    }
+                });
+                
+                // Hapus font tags (deprecated)
+                if (el.tagName === 'FONT') {
+                    const parent = el.parentNode;
+                    while (el.firstChild) {
+                        parent.insertBefore(el.firstChild, el);
+                    }
+                    parent.removeChild(el);
+                }
+            });
+            
+            // Hapus MS Word classes
+            temp.querySelectorAll('[class*="Mso"], [class*="msot"], [class*="msoc"]').forEach(el => {
+                el.removeAttribute('class');
+            });
+            
+            return temp.innerHTML;
+        }
+        
+        // Pasang event listener untuk paste di semua textarea dan editor
+        document.addEventListener('DOMContentLoaded', function() {
+            // Untuk Quill editor - sudah difilter via clipboard module di admin.js
+            // Untuk textarea biasa - tambahkan paste handler dengan fallback yang aman
+            const textareas = document.querySelectorAll('textarea#questionText, textarea#materialSummary');
+            textareas.forEach(textarea => {
+                textarea.addEventListener('paste', function(e) {
+                    // Dapatkan clipboard data
+                    const clipboardData = e.clipboardData || window.clipboardData;
+                    if (!clipboardData) return;
+                    
+                    try {
+                        // Coba dulu dengan text biasa - ini selalu bekerja
+                        let text = clipboardData.getData('text/plain');
+                        
+                        if (text) {
+                            // Jika ada text biasa, gunakan itu (paling aman)
+                            e.preventDefault();
+                            
+                            // Insert di posisi kursor
+                            const start = this.selectionStart;
+                            const end = this.selectionEnd;
+                            const before = this.value.substring(0, start);
+                            const after = this.value.substring(end);
+                            
+                            this.value = before + text + after;
+                            this.selectionStart = this.selectionEnd = start + text.length;
+                            
+                            // Trigger event change
+                            this.dispatchEvent(new Event('input', { bubbles: true }));
+                            return;
+                        }
+                        
+                        // Jika tidak ada text, coba HTML tapi bersihkan dulu
+                        const html = clipboardData.getData('text/html');
+                        if (html) {
+                            e.preventDefault();
+                            // Bersihkan HTML dari Word styles
+                            const cleanedHtml = stripWordStyles(html);
+                            
+                            // Konversi HTML ke text sederhana (tanpa formatting)
+                            const temp = document.createElement('div');
+                            temp.innerHTML = cleanedHtml;
+                            const plainText = temp.textContent || temp.innerText || '';
+                            
+                            // Insert di posisi kursor
+                            const start = this.selectionStart;
+                            const end = this.selectionEnd;
+                            const before = this.value.substring(0, start);
+                            const after = this.value.substring(end);
+                            
+                            this.value = before + plainText + after;
+                            this.selectionStart = this.selectionEnd = start + plainText.length;
+                            
+                            // Trigger event change
+                            this.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                        // Jika tidak ada HTML maupun text, biarkan paste default berjalan
+                    } catch (err) {
+                        console.warn('Paste handler error, allowing default:', err);
+                        // Jika ada error, biarkan paste default browser berjalan
+                    }
+                });
+            });
+            
+            console.log('MS Word paste filter initialized');
+        });
+    </script>
 </head>
+  <!-- TAMBAHAN BARU: AI Analytics Enhancement -->
+    <script type="module" src="admin_ai_analytics_enhancement.js"></script>
 <body>
     <!-- Header -->
     <section class="admin-hero">
@@ -58,6 +235,7 @@
                     <span>Lihat Analytics</span>
                 </a>
             </div>
+            </div>
         </div>
     </section>
 
@@ -81,13 +259,18 @@
                     <i class="fas fa-users"></i>
                     <span>Users</span>
                 </button>
-                <a href="analytics.html" class="nav-tab">
+                <button class="nav-tab" onclick="showTab('analytics')">
                     <i class="fas fa-chart-line"></i>
                     <span>Analytics</span>
-                </a>
+                </button>
                 <button class="nav-tab" onclick="showTab('activities')">
                     <i class="fas fa-history"></i>
                     <span>Aktivitas</span>
+                </button>
+                <button class="nav-tab" onclick="showTab('realtime')" id="realtimeTabBtn">
+                    <i class="fas fa-broadcast-tower"></i>
+                    <span>Live Monitor</span>
+                    <span class="live-indicator" id="liveIndicator" style="display: none;"></span>
                 </button>
             </div>
             <div class="nav-actions">
@@ -349,9 +532,44 @@
                                 <option value="Sulit">Sulit</option>
                             </select>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group full-width">
                             <label for="materialSummary">Ringkasan Materi:</label>
-                            <textarea id="materialSummary" rows="3" placeholder="Ringkasan singkat materi..."></textarea>
+                            <div class="question-input-controls">
+                                <div class="latex-toggle">
+                                    <input type="checkbox" id="enableSummaryLatex" onchange="toggleSummaryLatex()">
+                                    <label for="enableSummaryLatex">Aktifkan mode LaTeX</label>
+                                </div>
+                                <button type="button" class="image-insert-btn" onclick="insertImageIntoSummary()" title="Tambah Gambar">
+                                    <i class="fas fa-image"></i> Tambah Gambar
+                                </button>
+                            </div>
+                            <div class="text-toolbar">
+                                <button type="button" onclick="insertBoldIntoSummary()" title="Bold"><b>B</b></button>
+                                <button type="button" onclick="insertCenterIntoSummary()" title="Center">Center</button>
+                            </div>
+                            <textarea id="materialSummary" rows="10" placeholder="Masukkan konten ringkasan materi..."></textarea>
+                            <div class="latex-toolbar" id="summaryLatexToolbar" style="display: none;">
+                                <button type="button" onclick="insertLatexIntoSummary('fraction')" title="Fraction">½</button>
+                                <button type="button" onclick="insertLatexIntoSummary('sqrt')" title="Square Root">√</button>
+                                <button type="button" onclick="insertLatexIntoSummary('power')" title="Power">x²</button>
+                                <button type="button" onclick="insertLatexIntoSummary('subscript')" title="Subscript">xᵢ</button>
+                                <button type="button" onclick="insertLatexIntoSummary('integral')" title="Integral">∫</button>
+                                <button type="button" onclick="insertLatexIntoSummary('sum')" title="Sum">Σ</button>
+                                <button type="button" onclick="insertLatexIntoSummary('alpha')" title="Alpha">α</button>
+                                <button type="button" onclick="insertLatexIntoSummary('beta')" title="Beta">β</button>
+                                <button type="button" onclick="insertLatexIntoSummary('theta')" title="Theta">θ</button>
+                                <button type="button" onclick="insertLatexIntoSummary('pi')" title="Pi">π</button>
+                                <button type="button" onclick="insertLatexIntoSummary('infty')" title="Infinity">∞</button>
+                                <button type="button" onclick="insertLatexIntoSummary('times')" title="Kali">×</button>
+                                <button type="button" onclick="insertLatexIntoSummary('divide')" title="Bagi">÷</button>
+                                <button type="button" onclick="insertLatexIntoSummary('neq')" title="Tidak sama">≠</button>
+                                <button type="button" onclick="insertLatexIntoSummary('leq')" title="Kurang sama">≤</button>
+                                <button type="button" onclick="insertLatexIntoSummary('geq')" title="Lebih sama">≥</button>
+                            </div>
+                            <div id="summaryLatexPreview" class="latex-preview" style="display: none;"></div>
+                            <small class="latex-help" id="summaryLatexHelp" style="display: none; color: #6b7280;">
+                                Gunakan \( rumus \) untuk menampilkan persamaan matematika inline
+                            </small>
                         </div>
                         <div class="form-group">
                             <label for="materialObjectives">Tujuan Pembelajaran:</label>
@@ -453,6 +671,25 @@
                             </select>
                         </div>
                         <div class="form-group">
+                            <label for="questionTypeVariant">
+                                <i class="fas fa-layer-group"></i> Tipe Soal (A/B/C/D):
+                                <span style="color: #ef4444;">*</span>
+                            </label>
+                            <select id="questionTypeVariant" required>
+                                <option value="">-- Pilih Tipe soal --</option>
+                                <option value="A">Tipe A</option>
+                                <option value="B">Tipe B</option>
+                                <option value="C">Tipe C</option>
+                                <option value="D">Tipe D</option>
+                            </select>
+                            <small style="display: block; margin-top: 0.5rem; color: #6b7280; font-size: 0.875rem;">
+                                <i class="fas fa-info-circle"></i>
+                                Pilih tipe soal. Setiap siswa akan mendapat tipe berbeda secara random.
+                                <br>
+                                <strong>Tips:</strong> Distribusikan soal secara merata (30 soal per tipe dari total 120 soal)
+                            </small>
+                        </div>
+                        <div class="form-group">
                             <label for="chapter">Bab:</label>
                             <select id="chapter">
                                 <option value="">Pilih Bab</option>
@@ -480,9 +717,13 @@
                                 <option value="Sulit">Sulit</option>
                             </select>
                         </div>
+                        <!-- Bobot Nilai disembunyikan karena sistem penilaian sekarang fleksibel (0-100) -->
+                        <input type="hidden" id="scoringWeight" value="1">
                         <div class="form-group">
-                            <label for="scoringWeight">Bobot Nilai:</label>
-                            <input type="number" id="scoringWeight" min="1" max="10" value="1" readonly>
+                            <label><i class="fas fa-info-circle"></i> Informasi Penilaian:</label>
+                            <p style="color: #10b981; font-size: 0.9rem; margin: 0;">
+                                Sistem penilaian fleksibel: Nilai dihitung otomatis 0-100 berdasarkan persentase jawaban benar.
+                            </p>
                         </div>
                         <div class="form-group">
                             <label for="timeLimit">Batas Waktu (menit):</label>
@@ -699,6 +940,18 @@
                 <div class="section-header">
                     <h3 class="section-title">Daftar Soal</h3>
                     <div class="section-actions">
+                        <button id="calibrateIRTBtn" class="irt-calibrate-btn" onclick="calibrateIRTItems()">
+                            <span class="btn-icon">
+                                <i class="fas fa-chart-line"></i>
+                            </span>
+                            <span class="btn-text">
+                                <span class="btn-title">Kalibrasi IRT</span>
+                                <span class="btn-subtitle">Analisis Parameter Soal</span>
+                            </span>
+                            <span class="btn-badge">
+                                <i class="fas fa-bolt"></i>
+                            </span>
+                        </button>
                         <a href="analytics.html#questions" class="action-link">
                             <i class="fas fa-chart-bar"></i> Lihat Analytics Soal
                         </a>
@@ -707,12 +960,55 @@
                         </button>
                     </div>
                 </div>
+                
+                <!-- IRT Calibration Status -->
+                <div id="irtCalibrationStatus" class="irt-calibration-status" style="display: none;">
+                    <div class="status-content">
+                        <div class="status-icon">
+                            <i class="fas fa-spinner fa-spin" id="irtCalibrationSpinner"></i>
+                        </div>
+                        <div class="status-text">
+                            <span class="status-title" id="irtCalibrationMessage">Memulai kalibrasi IRT...</span>
+                            <span class="status-progress">Menganalisis parameter item...</span>
+                        </div>
+                    </div>
+                    <div class="status-progress-bar">
+                        <div class="progress-fill" id="irtProgressFill"></div>
+                    </div>
+                </div>
+                
+                <!-- IRT Statistics Summary -->
+                <div id="irtStatsSummary" style="display: none; margin-bottom: 1rem; padding: 1rem; background: #f0fdf4; border-radius: 8px; border-left: 4px solid #10b981;">
+                    <h4 style="margin-bottom: 0.5rem; color: #166534;"><i class="fas fa-check-circle"></i> Hasil Kalibrasi IRT</h4>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
+                        <div>
+                            <span style="color: #6b7280; font-size: 0.85rem;">Total Soal Dikalibrasi</span>
+                            <p style="font-size: 1.5rem; font-weight: 600; color: #1f2937;" id="irtTotalItems">-</p>
+                        </div>
+                        <div>
+                            <span style="color: #6b7280; font-size: 0.85rem;">Rata-rata Kesulitan</span>
+                            <p style="font-size: 1.5rem; font-weight: 600; color: #1f2937;" id="irtAvgDifficulty">-</p>
+                        </div>
+                        <div>
+                            <span style="color: #6b7280; font-size: 0.85rem;">Rata-rata Daya Beda</span>
+                            <p style="font-size: 1.5rem; font-weight: 600; color: #1f2937;" id="irtAvgDiscrimination">-</p>
+                        </div>
+                        <div>
+                            <span style="color: #6b7280; font-size: 0.85rem;">Soal Valid</span>
+                            <p style="font-size: 1.5rem; font-weight: 600; color: #10b981;" id="irtValidItems">-</p>
+                        </div>
+                    </div>
+                </div>
+                
                 <table class="data-table">
                     <thead>
                         <tr>
                             <th>Pertanyaan</th>
-                            <th>Tingkat</th>
-                            <th>Bobot</th>
+                            <th>Tipe Soal</th>
+                            <th>Varian</th>
+                            <th>Bab</th>
+                            <th>Tingkat Kesulitan</th>
+                            <th>Poin</th>
                             <th>Waktu</th>
                             <th>Status</th>
                             <th>Aksi</th>
@@ -734,12 +1030,10 @@
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>Avatar</th>
                             <th>Nama Lengkap</th>
                             <th>Email</th>
                             <th>Telepon</th>
                             <th>Sekolah</th>
-                            <th>Bio</th>
                             <th>Status</th>
                             <th>Tanggal Daftar</th>
                             <th>Aksi</th>
@@ -756,12 +1050,67 @@
         <div id="analytics" class="tab-content">
             <div class="content-section">
                 <div class="section-header">
-                    <h3 class="section-title">Analytics Siswa</h3>
+                    <h3 class="section-title">Analytics & Riwayat Ujian Siswa</h3>
                     <button id="refreshAnalyticsBtn" class="add-btn">
                         <i class="fas fa-refresh"></i> Refresh
                     </button>
                 </div>
 
+                <!-- Stats Cards -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 12px; text-align: center;">
+                        <div style="font-size: 2rem; font-weight: 700;"><span id="totalStudentsCount">0</span></div>
+                        <div style="font-size: 0.9rem; opacity: 0.9;">Total Siswa</div>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; padding: 1.5rem; border-radius: 12px; text-align: center;">
+                        <div style="font-size: 2rem; font-weight: 700;"><span id="completedExamsCount">0</span></div>
+                        <div style="font-size: 0.9rem; opacity: 0.9;">Ujian Selesai</div>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 1.5rem; border-radius: 12px; text-align: center;">
+                        <div style="font-size: 2rem; font-weight: 700;"><span id="avgScoreCount">0</span></div>
+                        <div style="font-size: 0.9rem; opacity: 0.9;">Rata-rata Skor</div>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 1.5rem; border-radius: 12px; text-align: center;">
+                        <div style="font-size: 2rem; font-weight: 700;"><span id="avgAccuracyCount">0%</span></div>
+                        <div style="font-size: 0.9rem; opacity: 0.9;">Rata-rata Akurasi</div>
+                    </div>
+                </div>
+
+                <!-- Filter -->
+                <div style="margin-bottom: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <input type="text" id="searchStudentName" placeholder="Cari nama siswa..." style="padding: 0.5rem 1rem; border: 1px solid #e5e7eb; border-radius: 8px; min-width: 250px;" onkeyup="filterStudentExams()">
+                    <select id="filterExamStatus" style="padding: 0.5rem 1rem; border: 1px solid #e5e7eb; border-radius: 8px;" onchange="filterStudentExams()">
+                        <option value="">Semua Status</option>
+                        <option value="completed">Selesai</option>
+                        <option value="in_progress">Sedang Dikerjakan</option>
+                    </select>
+                </div>
+
+                <!-- Student Exam Table -->
+                <div style="overflow-x: auto; margin-bottom: 2rem;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead style="background: #f9fafb;">
+                            <tr>
+                                <th style="padding: 12px; text-align: left; font-size: 0.85rem; color: #374151;">Nama Siswa</th>
+                                <th style="padding: 12px; text-align: left; font-size: 0.85rem; color: #374151;">Kelas</th>
+                                <th style="padding: 12px; text-align: left; font-size: 0.85rem; color: #374151;">Tipe</th>
+                                <th style="padding: 12px; text-align: left; font-size: 0.85rem; color: #374151;">Skor</th>
+                                <th style="padding: 12px; text-align: left; font-size: 0.85rem; color: #374151;">Status</th>
+                                <th style="padding: 12px; text-align: left; font-size: 0.85rem; color: #374151;">Waktu</th>
+                                <th style="padding: 12px; text-align: left; font-size: 0.85rem; color: #374151;">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="studentExamTable">
+                            <tr>
+                                <td colspan="7" style="padding: 2rem; text-align: center; color: #6b7280;">
+                                    <i class="fas fa-spinner fa-spin"></i> Memuat data...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Charts (Simple) -->
                 <div class="analytics-charts-grid">
                     <div class="chart-container">
                         <h4>Radar Kemampuan</h4>
@@ -780,13 +1129,7 @@
                     <div id="aiRecommendations"></div>
                 </div>
 
-                <!-- Per-Student Analytics Section -->
-                <div style="margin-top: 3rem; border-top: 1px solid #e5e7eb; padding-top: 2rem;">
-                    <h4 style="margin-bottom: 1rem;"><i class="fas fa-user-graduate"></i> Analytics Per Siswa</h4>
-                    <div id="studentsAnalyticsList">
-                        <!-- Student analytics will be loaded here -->
-                    </div>
-                </div>
+                <!-- Charts (Simple) -->
             </div>
         </div>
 
@@ -855,6 +1198,82 @@
                 </table>
             </div>
         </div>
+
+        <!-- Real-time Monitoring Tab -->
+        <div id="realtime" class="tab-content">
+            <div class="content-section">
+                <div class="section-header">
+                    <h3 class="section-title">
+                        <i class="fas fa-broadcast-tower"></i> Real-time Monitoring Ujian
+                        <span class="live-badge" id="liveBadge" style="display: none;">
+                            <span class="live-dot"></span> LIVE
+                        </span>
+                    </h3>
+                    <div class="realtime-controls">
+                        <button id="startMonitoringBtn" class="add-btn">
+                            <i class="fas fa-play"></i> Mulai Monitoring
+                        </button>
+                        <button id="stopMonitoringBtn" class="delete-btn" style="display: none;">
+                            <i class="fas fa-stop"></i> Stop Monitoring
+                        </button>
+                        <button id="refreshMonitoringBtn" class="secondary-btn">
+                            <i class="fas fa-sync-alt"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Monitoring Stats -->
+                <div class="monitoring-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                    <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 12px;">
+                        <div class="stat-icon"><i class="fas fa-users"></i></div>
+                        <div class="stat-value" id="activeStudentsCount">0</div>
+                        <div class="stat-label">Siswa Aktif Mengerjakan</div>
+                    </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; padding: 1.5rem; border-radius: 12px;">
+                        <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+                        <div class="stat-value" id="totalAnswersCount">0</div>
+                        <div class="stat-label">Total Jawaban Masuk</div>
+                    </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 1.5rem; border-radius: 12px;">
+                        <div class="stat-icon"><i class="fas fa-clock"></i></div>
+                        <div class="stat-value" id="avgResponseTime">-</div>
+                        <div class="stat-label">Rata-rata Waktu Jawab</div>
+                    </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 1.5rem; border-radius: 12px;">
+                        <div class="stat-icon"><i class="fas fa-percentage"></i></div>
+                        <div class="stat-value" id="correctRate">-</div>
+                        <div class="stat-label">Tingkat Keberhasilan</div>
+                    </div>
+                </div>
+
+                <!-- Active Sessions -->
+                <div class="monitoring-section" style="margin-bottom: 1.5rem;">
+                    <h4 style="margin-bottom: 1rem; color: #374151;">
+                        <i class="fas fa-user-clock"></i> Sesi Ujian Aktif
+                    </h4>
+                    <div id="activeSessionsContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem;">
+                        <div class="empty-state" style="text-align: center; padding: 2rem; color: #6b7280; grid-column: 1/-1;">
+                            <i class="fas fa-hourglass-start" style="font-size: 2rem; margin-bottom: 0.5rem;"></i>
+                            <p>Belum ada sesi ujian aktif</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Answer Feed -->
+                <div class="monitoring-section">
+                    <h4 style="margin-bottom: 1rem; color: #374151;">
+                        <i class="fas fa-stream"></i> Feed Jawaban Real-time
+                    </h4>
+                    <div id="liveAnswerFeed" style="max-height: 500px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 12px; background: #f9fafb;">
+                        <div class="empty-state" style="text-align: center; padding: 2rem; color: #6b7280;">
+                            <i class="fas fa-inbox" style="font-size: 2rem; margin-bottom: 0.5rem;"></i>
+                            <p>Menunggu jawaban dari siswa...</p>
+                            <p style="font-size: 0.85rem; margin-top: 0.5rem;">Klik "Mulai Monitoring" untuk memulai</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Login Section -->
@@ -899,6 +1318,7 @@
                 if (tabName === 'analytics') {
                     loadAnalytics();
                     loadStudentsList();
+                    loadStudentExamHistory();
                 }
         
                 // Load activities when activities tab is activated
@@ -963,6 +1383,269 @@
                 }
             };
             checkFunctions();
+        });
+    </script>
+
+    <!-- Student Exam Detail Modal -->
+    <div id="examDetailModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; padding: 20px;">
+        <div style="background: white; border-radius: 16px; width: 100%; max-width: 900px; max-height: 90vh; overflow: auto;">
+            <div style="padding: 20px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; font-size: 1.3rem;">Detail Pengerjaan Ujian</h3>
+                <button onclick="closeExamDetailModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">&times;</button>
+            </div>
+            <div id="examDetailContent" style="padding: 20px;">
+                <p style="text-align: center; color: #6b7280;"><i class="fas fa-spinner fa-spin"></i> Memuat...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Exam History Data
+        let allExamSessions = [];
+        
+        // Load exam history when analytics tab is opened
+        async function loadStudentExamHistory() {
+            // Initialize supabase if not available
+            if (!window.supabase) {
+                const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+                const supabaseUrl = 'https://tsgldkyuktqpsbeuevsn.supabase.co';
+                const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzY5MTE5OSwiZXhwIjoyMDc5MjY3MTk5fQ.0ovVI04BphGbSCSZE6EhHI6_rtZCPSZReiaM9dKYcIA';
+                window.supabase = createClient(supabaseUrl, supabaseServiceKey);
+            }
+            
+            const tableBody = document.getElementById('studentExamTable');
+            if (!tableBody) return;
+            
+            tableBody.innerHTML = '<tr><td colspan="7" style="padding: 2rem; text-align: center;"><i class="fas fa-spinner fa-spin"></i> Memuat...</td></tr>';
+            
+            try {
+                // Query exam_sessions without join (foreign key relationship not found)
+                const { data: sessions, error } = await window.supabase
+                    .from('exam_sessions')
+                    .select('id, user_id, total_score, status, completed_at, question_type_variant, created_at')
+                    .order('completed_at', { ascending: false });
+                
+                if (error) throw error;
+                
+                // Get unique user_ids
+                const userIds = [...new Set(sessions?.map(s => s.user_id).filter(Boolean) || [])];
+                
+                // Query profiles separately
+                let profilesMap = {};
+                if (userIds.length > 0) {
+                    const { data: profiles } = await window.supabase
+                        .from('profiles')
+                        .select('id, nama_lengkap, class_name')
+                        .in('id', userIds);
+                    
+                    if (profiles) {
+                        profiles.forEach(p => {
+                            profilesMap[p.id] = p;
+                        });
+                    }
+                }
+                
+                // Map profiles to sessions
+                const sessionsWithProfiles = (sessions || []).map(session => ({
+                    ...session,
+                    profiles: profilesMap[session.user_id] || {}
+                }));
+                
+                allExamSessions = sessionsWithProfiles;
+                
+                // Calculate stats
+                const completedSessions = allExamSessions.filter(s => s.status === 'completed');
+                const totalStudents = new Set(allExamSessions.map(s => s.user_id)).size;
+                const avgScore = completedSessions.length > 0 
+                    ? Math.round(completedSessions.reduce((sum, s) => sum + (s.total_score || 0), 0) / completedSessions.length)
+                    : 0;
+                
+                // Update stats cards
+                document.getElementById('totalStudentsCount').textContent = totalStudents;
+                document.getElementById('completedExamsCount').textContent = completedSessions.length;
+                document.getElementById('avgScoreCount').textContent = avgScore;
+                document.getElementById('avgAccuracyCount').textContent = '-';
+                
+                renderStudentExamTable(allExamSessions);
+                
+            } catch (error) {
+                console.error('Error loading exam history:', error);
+                tableBody.innerHTML = '<tr><td colspan="7" style="padding: 2rem; text-align: center; color: red;">Gagal memuat: ' + error.message + '</td></tr>';
+            }
+        }
+        
+        function renderStudentExamTable(sessions) {
+            const tableBody = document.getElementById('studentExamTable');
+            if (!tableBody) return;
+            
+            if (sessions.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="7" style="padding: 2rem; text-align: center; color: #6b7280;">Belum ada data</td></tr>';
+                return;
+            }
+            
+            tableBody.innerHTML = sessions.map(session => {
+                const student = session.profiles || {};
+                const name = student.nama_lengkap || 'Unknown';
+                const className = student.class_name || '-';
+                const score = session.total_score || 0;
+                const variant = session.question_type_variant || '-';
+                const status = session.status;
+                const completedAt = session.completed_at 
+                    ? new Date(session.completed_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : '-';
+                
+                let scoreClass = '#f59e0b';
+                if (score >= 80) scoreClass = '#10b981';
+                else if (score < 60) scoreClass = '#ef4444';
+                
+                const statusBadge = status === 'completed' 
+                    ? '<span style="background: rgba(16,185,129,0.1); color: #059669; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;"><i class="fas fa-check"></i> Selesai</span>'
+                    : '<span style="background: rgba(59,130,246,0.1); color: #2563eb; padding: 4px 10px; border-radius: 20px; font-size: 0.8rem;"><i class="fas fa-clock"></i> Dikerjakan</span>';
+                
+                return `
+                    <tr style="border-bottom: 1px solid #f3f4f6;">
+                        <td style="padding: 12px;"><strong>${name}</strong></td>
+                        <td style="padding: 12px;">${className}</td>
+                        <td style="padding: 12px;"><span style="background: #667eea; color: white; padding: 4px 8px; border-radius: 8px; font-size: 0.8rem;">${variant}</span></td>
+                        <td style="padding: 12px;"><span style="background: ${scoreClass}20; color: ${scoreClass}; padding: 4px 10px; border-radius: 20px; font-weight: 600;">${score}</span></td>
+                        <td style="padding: 12px;">${statusBadge}</td>
+                        <td style="padding: 12px; font-size: 0.85rem; color: #6b7280;">${completedAt}</td>
+                        <td style="padding: 12px;">
+                            <button onclick="viewExamDetail('${session.id}')" style="background: #667eea; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem;">
+                                <i class="fas fa-eye"></i> Lihat
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        function filterStudentExams() {
+            const searchName = document.getElementById('searchStudentName').value.toLowerCase();
+            const filterStatus = document.getElementById('filterExamStatus').value;
+            
+            let filtered = allExamSessions.filter(session => {
+                const student = session.profiles || {};
+                const name = (student.nama_lengkap || '').toLowerCase();
+                const status = session.status;
+                
+                return name.includes(searchName) && (filterStatus === '' || status === filterStatus);
+            });
+            
+            renderStudentExamTable(filtered);
+        }
+        
+        async function viewExamDetail(sessionId) {
+            // Initialize supabase if not available
+            if (!window.supabase) {
+                const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+                const supabaseUrl = 'https://tsgldkyuktqpsbeuevsn.supabase.co';
+                const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzY5MTE5OSwiZXhwIjoyMDc5MjY3MTk5fQ.0ovVI04BphGbSCSZE6EhHI6_rtZCPSZReiaM9dKYcIA';
+                window.supabase = createClient(supabaseUrl, supabaseServiceKey);
+            }
+            
+            const modal = document.getElementById('examDetailModal');
+            const content = document.getElementById('examDetailContent');
+            
+            modal.style.display = 'flex';
+            content.innerHTML = '<p style="text-align: center;"><i class="fas fa-spinner fa-spin"></i> Memuat...</p>';
+            
+            try {
+                // Get session - use window.supabase
+                const { data: session } = await window.supabase
+                    .from('exam_sessions')
+                    .select('*')
+                    .eq('id', sessionId)
+                    .single();
+                
+                // Get user profile
+                let student = {};
+                if (session?.user_id) {
+                    const { data: profile } = await window.supabase
+                        .from('profiles')
+                        .select('nama_lengkap, class_name')
+                        .eq('id', session.user_id)
+                        .single();
+                    if (profile) student = profile;
+                }
+                
+                // Get answers
+                const { data: answers } = await window.supabase
+                    .from('exam_answers')
+                    .select('*')
+                    .eq('exam_session_id', sessionId)
+                    .order('created_at', { ascending: true });
+                
+                if (!session) {
+                    content.innerHTML = '<p>Data tidak ditemukan</p>';
+                    return;
+                }
+                
+                const totalQuestions = answers?.length || 0;
+                const correctAnswers = answers?.filter(a => a.is_correct).length || 0;
+                
+                let html = `
+                    <div style="background: #f9fafb; padding: 16px; border-radius: 10px; margin-bottom: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+                        <div><label style="font-size: 0.75rem; color: #6b7280; text-transform: uppercase;">Nama</label><div style="font-weight: 600;">${student.nama_lengkap || '-'}</div></div>
+                        <div><label style="font-size: 0.75rem; color: #6b7280; text-transform: uppercase;">Kelas</label><div style="font-weight: 600;">${student.class_name || '-'}</div></div>
+                        <div><label style="font-size: 0.75rem; color: #6b7280; text-transform: uppercase;">Skor</label><div style="font-weight: 600;">${session.total_score || 0}</div></div>
+                        <div><label style="font-size: 0.75rem; color: #6b7280; text-transform: uppercase;">Benar</label><div style="font-weight: 600;">${correctAnswers}/${totalQuestions}</div></div>
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <button onclick="openAIAnalysis('${session.id}', '${session.user_id}', '${student.nama_lengkap || 'Siswa'}')" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 8px;">
+                            <i class="fas fa-robot"></i> Analisis AI
+                        </button>
+                    </div>
+                    <h4 style="margin-bottom: 12px;">Detail Jawaban</h4>
+                `;
+                
+                if (answers && answers.length > 0) {
+                    answers.forEach((answer, index) => {
+                        const isCorrect = answer.is_correct;
+                        html += `
+                            <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 12px; border-left: 4px solid ${isCorrect ? '#10b981' : '#ef4444'};">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                    <span style="color: #667eea; font-weight: 600;">Soal ${index + 1}</span>
+                                    <span style="background: ${isCorrect ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'}; color: ${isCorrect ? '#059669' : '#dc2626'}; padding: 2px 8px; border-radius: 10px; font-size: 0.8rem;">
+                                        <i class="fas fa-${isCorrect ? 'check' : 'times'}"></i> ${isCorrect ? 'Benar' : 'Salah'}
+                                    </span>
+                                </div>
+                                <div style="font-size: 0.9rem; color: #374151; margin-bottom: 8px;">Soal ${answer.question_number || (index + 1)}</div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85rem;">
+                                    <div style="background: rgba(59,130,246,0.1); padding: 8px; border-radius: 6px;">
+                                        <div style="color: #6b7280; font-size: 0.7rem;">Jawaban Siswa</div>
+                                        <div style="font-weight: 500;">${answer.selected_answer || '-'}</div>
+                                    </div>
+                                    <div style="background: rgba(16,185,129,0.1); padding: 8px; border-radius: 6px;">
+                                        <div style="color: #6b7280; font-size: 0.7rem;">Jawaban Benar</div>
+                                        <div style="font-weight: 500;">${answer.correct_answer || '-'}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    html += '<p style="color: #6b7280;">Belum ada jawaban</p>';
+                }
+                
+                content.innerHTML = html;
+                
+            } catch (error) {
+                content.innerHTML = '<p style="color: red;">Gagal memuat: ' + error.message + '</p>';
+            }
+        }
+        
+        function closeExamDetailModal() {
+            document.getElementById('examDetailModal').style.display = 'none';
+        }
+        
+        function openAIAnalysis(sessionId, userId, studentName) {
+            window.location.href = 'ai_viewer.html?session=' + sessionId + '&user=' + userId + '&name=' + encodeURIComponent(studentName);
+        }
+        
+        // Close modal when clicking outside
+        document.getElementById('examDetailModal').addEventListener('click', function(e) {
+            if (e.target === this) closeExamDetailModal();
         });
     </script>
 </body>

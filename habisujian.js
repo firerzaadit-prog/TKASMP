@@ -2,6 +2,7 @@
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
 import { geminiAnalytics } from './gemini_analytics.js';
+import { getItemParameters } from './irt_analysis.js';
 
 // Global variables
 let examSessionId = null;
@@ -185,15 +186,266 @@ function displayExamResults(session) {
         correctAnswersElement.textContent = correctCount;
     }
 
+    // Calculate and display IRT ability estimate (θ)
+    const theta = estimateAbility(questions, answers);
+    displayIRTResults(theta);
+
     // Show answer review
     showAnswerReview(questions, answers);
 }
 
+// ==========================================
+// IRT ABILITY ESTIMATION FUNCTIONS
+// ==========================================
+
+/**
+ * Estimate student ability (θ) using Maximum Likelihood Estimation
+ * @param {Array} questions - Array of question objects with IRT parameters
+ * @param {Array} answers - Array of student answers
+ * @returns {number} - Estimated ability (θ) value between -3 and 3
+ */
+function estimateAbility(questions, answers) {
+    let theta = 0; // Initial ability estimate (average)
+    let iteration = 0;
+    const maxIterations = 50;
+    const tolerance = 0.001;
+    
+    // Filter questions that have answers
+    const answeredQuestions = questions.filter((q, i) => {
+        const answer = answers[i];
+        return answer !== null && answer !== undefined;
+    });
+    
+    if (answeredQuestions.length === 0) {
+        console.log('No answers to estimate ability');
+        return 0;
+    }
+    
+    console.log('Starting IRT ability estimation...');
+    
+    while (iteration < maxIterations) {
+        let sumNumerator = 0;
+        let sumDenominator = 0;
+        
+        questions.forEach((q, i) => {
+            const answer = answers[i];
+            if (answer === null || answer === undefined) return;
+            
+            // Get IRT parameters for this question
+            const params = getItemParameters(q.id);
+            let a, b, c;
+            
+            if (params) {
+                a = params.a || 1.0;
+                b = params.b || 0.0;
+                c = params.c || 0.25;
+            } else {
+                // Use default values if no IRT parameters exist
+                a = q.irt_a_parameter || 1.0;
+                b = q.irt_b_parameter || 0.0;
+                c = q.irt_c_parameter || 0.25;
+            }
+            
+            // Check if answer is correct
+            const isCorrect = checkAnswerCorrectness(q, answer);
+            
+            // Calculate probability using 3PL IRT model
+            // P(θ) = c + (1 - c) / (1 + e^(-a(θ - b)))
+            const expTerm = Math.exp(-a * (theta - b));
+            const P = c + (1 - c) / (1 + expTerm);
+            const Q = 1 - P;
+            
+            // Calculate derivatives for Newton-Raphson
+            // First derivative: a * (P - c) / (1 - c) * (X - P)
+            // Second derivative (for weighting): a² * P * Q * ((P - c) / (1 - c))²
+            const pCorrection = (P - c) / (1 - c);
+            const W = a * a * P * Q * pCorrection * pCorrection;
+            
+            sumNumerator += a * pCorrection * (isCorrect ? (1 - P) : -P);
+            sumDenominator += W;
+        });
+        
+        if (Math.abs(sumDenominator) < 0.0001) {
+            console.log('Denominator too small, stopping iteration');
+            break;
+        }
+        
+        const deltaTheta = sumNumerator / sumDenominator;
+        theta += deltaTheta;
+        
+        // Clamp theta to reasonable range
+        theta = Math.max(-3, Math.min(3, theta));
+        
+        if (Math.abs(deltaTheta) < tolerance) {
+            console.log(`Converged after ${iteration + 1} iterations`);
+            break;
+        }
+        
+        iteration++;
+    }
+    
+    console.log(`Final θ estimate: ${theta.toFixed(3)} (after ${iteration} iterations)`);
+    return theta;
+}
+
+/**
+ * Check if an answer is correct for a given question
+ * @param {Object} question - Question object
+ * @param {*} answer - Student's answer
+ * @returns {boolean} - Whether the answer is correct
+ */
+function checkAnswerCorrectness(question, answer) {
+    if (!answer) return false;
+    
+    try {
+        if (question.question_type === 'PGK MCMA') {
+            const selectedAnswers = (answer || '').split(',').sort();
+            const correctAnswers = Array.isArray(question.correct_answers)
+                ? question.correct_answers.sort()
+                : (question.correct_answers || '').split(',').sort();
+            return JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
+        } else if (question.question_type === 'PGK Kategori') {
+            const selectedAnswers = typeof answer === 'string' ? JSON.parse(answer) : answer;
+            const correctMapping = typeof question.category_mapping === 'string'
+                ? JSON.parse(question.category_mapping)
+                : question.category_mapping;
+            
+            if (!correctMapping || !selectedAnswers) return false;
+            
+            // Check if all answers match
+            for (const [stmtIndex, isTrue] of Object.entries(selectedAnswers)) {
+                if (correctMapping[stmtIndex] !== isTrue) return false;
+            }
+            for (const [stmtIndex, shouldBeTrue] of Object.entries(correctMapping)) {
+                if (shouldBeTrue && selectedAnswers[stmtIndex] !== true) return false;
+            }
+            return true;
+        } else {
+            return answer === question.correct_answer;
+        }
+    } catch (error) {
+        console.error('Error checking answer correctness:', error);
+        return false;
+    }
+}
+
+/**
+ * Display IRT results in the UI
+ * @param {number} theta - Estimated ability value
+ */
+function displayIRTResults(theta) {
+    const irtResultElement = document.getElementById('irtResult');
+    if (!irtResultElement) {
+        console.warn('IRT result element not found');
+        return;
+    }
+    
+    // Interpret ability level
+    const abilityLevel = interpretAbilityLevel(theta);
+    const abilityDescription = getAbilityDescription(theta);
+    
+    // Calculate standard error (approximate)
+    const standardError = calculateStandardError(theta);
+    
+    irtResultElement.innerHTML = `
+        <div class="irt-analysis-card">
+            <h3 class="irt-title">
+                <i class="fas fa-chart-line"></i> Analisis Kemampuan (IRT)
+            </h3>
+            <div class="irt-content">
+                <div class="irt-main-score">
+                    <div class="theta-value">
+                        <span class="theta-number">${theta >= 0 ? '+' : ''}${theta.toFixed(2)}</span>
+                        <span class="theta-label">θ (Theta)</span>
+                    </div>
+                    <div class="ability-badge ${abilityLevel.class}">
+                        ${abilityLevel.icon} ${abilityLevel.label}
+                    </div>
+                </div>
+                <div class="irt-details">
+                    <div class="irt-detail-item">
+                        <span class="detail-label">Standar Error:</span>
+                        <span class="detail-value">±${standardError.toFixed(2)}</span>
+                    </div>
+                    <div class="irt-detail-item">
+                        <span class="detail-label">Rentang Kemampuan:</span>
+                        <span class="detail-value">${(theta - standardError).toFixed(2)} s/d ${(theta + standardError).toFixed(2)}</span>
+                    </div>
+                </div>
+                <div class="irt-description">
+                    <p>${abilityDescription}</p>
+                </div>
+                <div class="irt-scale">
+                    <div class="scale-bar">
+                        <div class="scale-marker" style="left: ${((theta + 3) / 6) * 100}%"></div>
+                    </div>
+                    <div class="scale-labels">
+                        <span>Rendah</span>
+                        <span>Sedang</span>
+                        <span>Tinggi</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    irtResultElement.style.display = 'block';
+}
+
+/**
+ * Interpret ability level based on theta value
+ * @param {number} theta - Estimated ability value
+ * @returns {Object} - Object with label, class, and icon
+ */
+function interpretAbilityLevel(theta) {
+    if (theta >= 2.0) {
+        return { label: 'Sangat Tinggi', class: 'ability-very-high', icon: '🌟' };
+    } else if (theta >= 1.0) {
+        return { label: 'Tinggi', class: 'ability-high', icon: '⭐' };
+    } else if (theta >= 0.0) {
+        return { label: 'Sedang', class: 'ability-medium', icon: '📊' };
+    } else if (theta >= -1.0) {
+        return { label: 'Rendah', class: 'ability-low', icon: '📈' };
+    } else {
+        return { label: 'Perlu Bimbingan', class: 'ability-very-low', icon: '💪' };
+    }
+}
+
+/**
+ * Get description based on ability level
+ * @param {number} theta - Estimated ability value
+ * @returns {string} - Description text
+ */
+function getAbilityDescription(theta) {
+    if (theta >= 2.0) {
+        return 'Siswa memiliki kemampuan sangat tinggi dalam matematika. Mampu mengerjakan soal dengan tingkat kesulitan tinggi dengan baik.';
+    } else if (theta >= 1.0) {
+        return 'Siswa memiliki kemampuan di atas rata-rata. Mampu mengerjakan soal dengan tingkat kesulitan sedang hingga sulit.';
+    } else if (theta >= 0.0) {
+        return 'Siswa memiliki kemampuan rata-rata. Mampu mengerjakan soal dengan tingkat kesulitan sedang dengan cukup baik.';
+    } else if (theta >= -1.0) {
+        return 'Siswa memiliki kemampuan di bawah rata-rata. Perlu latihan lebih banyak untuk soal dengan tingkat kesulitan sedang.';
+    } else {
+        return 'Siswa memerlukan bimbingan intensif. Disarankan untuk mempelajari kembali materi dasar dan berlatih soal-soal mudah terlebih dahulu.';
+    }
+}
+
+/**
+ * Calculate approximate standard error for the ability estimate
+ * @param {number} theta - Estimated ability value
+ * @returns {number} - Standard error value
+ */
+function calculateStandardError(theta) {
+    // Approximate standard error based on test information
+    // This is a simplified calculation
+    const averageInformation = 2.0; // Assumed average test information
+    return 1 / Math.sqrt(averageInformation);
+}
+
 // Function to retake exam
 function retakeExam() {
-    if (confirm('Apakah Anda yakin ingin mengerjakan ulang ujian? Progress sebelumnya akan hilang.')) {
-        window.location.href = 'ujian.html';
-    }
+ alert("Kesempatan ujian hanya 1 kali. Silakan cek analisis nilai Anda.");
+    window.location.href = 'halamanpertama.html';
 }
 
 // Trigger AI analysis for the completed exam

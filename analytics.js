@@ -67,6 +67,7 @@ let analyticsData = {
     students: [],
     exams: [],
     questions: [],
+    answers: [], // Data jawaban siswa untuk analisis
     insights: [],
     // Adaptive learning data
     learningPaths: [],
@@ -135,7 +136,9 @@ async function loadAnalyticsData() {
 
         if (answersError) {
             console.error('Error loading answers data:', answersError);
-            answersData = [];
+            analyticsData.answers = [];
+        } else {
+            analyticsData.answers = answersData || [];
         }
 
         // Load questions data
@@ -1136,20 +1139,34 @@ function initializeCharts() {
         });
     }
 
-    // Questions Quality Chart
+    // Questions Quality Chart - Menggunakan data nyata dari database
     const questionsCtx = document.getElementById('questionsChart');
     if (questionsCtx) {
+        // Mapping difficulty ke nilai numerik untuk chart
+        const difficultyMap = {
+            'Mudah': 33,
+            'Sedang': 66,
+            'Sulit': 100
+        };
+        
+        // Hitung tingkat keberhasilan per soal dari data jawaban
+        const questionSuccessRates = calculateQuestionSuccessRates();
+        
         const questionsData = {
-            labels: analyticsData.questions.slice(0, 10).map(q => `Soal ${q.id}`),
+            labels: analyticsData.questions.slice(0, 10).map((q, idx) => {
+                const chapter = q.chapter || 'Umum';
+                const subChapter = q.sub_chapter ? ` - ${q.sub_chapter}` : '';
+                return `${chapter}${subChapter}`.substring(0, 20);
+            }),
             datasets: [{
-                label: 'Tingkat Kesulitan',
-                data: analyticsData.questions.slice(0, 10).map(q => q.scoring_weight || 1),
+                label: 'Tingkat Kesulitan (%)',
+                data: analyticsData.questions.slice(0, 10).map(q => difficultyMap[q.difficulty] || 50),
                 backgroundColor: 'rgba(245, 158, 11, 0.6)',
                 borderColor: 'rgba(245, 158, 11, 1)',
                 borderWidth: 1
             }, {
-                label: 'Tingkat Keberhasilan',
-                data: analyticsData.questions.slice(0, 10).map(() => Math.random() * 100),
+                label: 'Tingkat Keberhasilan Siswa (%)',
+                data: analyticsData.questions.slice(0, 10).map(q => questionSuccessRates[q.id] || 0),
                 backgroundColor: 'rgba(16, 185, 129, 0.6)',
                 borderColor: 'rgba(16, 185, 129, 1)',
                 borderWidth: 1
@@ -1164,13 +1181,18 @@ function initializeCharts() {
                 plugins: {
                     title: {
                         display: true,
-                        text: 'Analisis Kualitas Soal'
+                        text: 'Analisis Kualitas Soal (Data Nyata)'
                     }
                 },
                 scales: {
                     y: {
                         beginAtZero: true,
-                        max: 100
+                        max: 100,
+                        ticks: {
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        }
                     }
                 }
             }
@@ -1178,16 +1200,90 @@ function initializeCharts() {
     }
 }
 
-// Generate sample scatter plot data
+// Generate scatter plot data from real exam data
+// Menghubungkan tingkat kesulitan soal dengan skor siswa
 function generateScatterData() {
     const data = [];
-    for (let i = 0; i < 50; i++) {
-        data.push({
-            x: Math.random() * 5 + 1, // Difficulty 1-5
-            y: Math.random() * 100 // Score 0-100
-        });
+    
+    // Jika tidak ada data, kembalikan array kosong
+    if (!analyticsData.exams || analyticsData.exams.length === 0) {
+        console.log('No exam data available for scatter plot');
+        return data;
     }
+    
+    // Mapping difficulty ke nilai numerik
+    const difficultyMap = {
+        'Mudah': 1,
+        'Sedang': 2,
+        'Sulit': 3
+    };
+    
+    // Iterasi melalui exam sessions untuk mendapatkan skor
+    analyticsData.exams.forEach(exam => {
+        if (exam.total_score !== null && exam.total_score !== undefined) {
+            // Hitung rata-rata difficulty dari soal yang dijawab
+            // Berdasarkan question_type_variant jika tidak ada difficulty spesifik
+            let avgDifficulty = 2; // Default Sedang
+            
+            // Jika ada questions data, hitung rata-rata difficulty
+            if (analyticsData.questions && analyticsData.questions.length > 0) {
+                const examQuestions = analyticsData.questions.filter(q => 
+                    q.question_type_variant === exam.question_type_variant
+                );
+                
+                if (examQuestions.length > 0) {
+                    const totalDiff = examQuestions.reduce((sum, q) => {
+                        return sum + (difficultyMap[q.difficulty] || 2);
+                    }, 0);
+                    avgDifficulty = totalDiff / examQuestions.length;
+                }
+            }
+            
+            data.push({
+                x: avgDifficulty,
+                y: exam.total_score
+            });
+        }
+    });
+    
+    console.log(`Generated ${data.length} scatter data points from real exam data`);
     return data;
+}
+
+// Calculate success rate per question from exam answers
+// Menghitung persentase jawaban benar per soal
+function calculateQuestionSuccessRates() {
+    const successRates = {};
+    
+    // Jika tidak ada data jawaban, kembalikan object kosong
+    if (!analyticsData.answers || analyticsData.answers.length === 0) {
+        console.log('No answer data available for success rate calculation');
+        return successRates;
+    }
+    
+    // Group answers by question_id
+    const questionAnswers = {};
+    analyticsData.answers.forEach(answer => {
+        if (!questionAnswers[answer.question_id]) {
+            questionAnswers[answer.question_id] = {
+                total: 0,
+                correct: 0
+            };
+        }
+        questionAnswers[answer.question_id].total++;
+        if (answer.is_correct) {
+            questionAnswers[answer.question_id].correct++;
+        }
+    });
+    
+    // Calculate success rate per question
+    Object.keys(questionAnswers).forEach(questionId => {
+        const stats = questionAnswers[questionId];
+        successRates[questionId] = Math.round((stats.correct / stats.total) * 100);
+    });
+    
+    console.log(`Calculated success rates for ${Object.keys(successRates).length} questions`);
+    return successRates;
 }
 
 // Update UI with analytics data

@@ -1,28 +1,112 @@
-// ujian.js - Exam interface with countdown timer
+// ujian.js - Exam interface with 4 question types (A, B, C, D) and randomization
 import { supabase } from './supabaseClient.js';
 import { getCurrentUser } from './auth.js';
+
+// ============================================================
+// FITUR: CEK APAKAH SUDAH PERNAH UJIAN (GATEKEEPER)
+// ============================================================
+async function checkEligibility(userId) {
+    try {
+        console.log("Memeriksa riwayat ujian user:", userId);
+
+        // 1. Cek ke tabel 'exam_sessions'
+        const { data, error } = await supabase
+            .from('exam_sessions') 
+            .select('id, total_score, created_at, status') 
+            .eq('user_id', userId)
+            .eq('status', 'completed') 
+            .limit(1);
+
+        if (error) throw error;
+
+        // 2. JIKA DATA DITEMUKAN (Artinya sudah pernah mengerjakan)
+        if (data && data.length > 0) {
+            
+            const lastScore = data[0].total_score; 
+            const examDate = new Date(data[0].created_at).toLocaleDateString('id-ID');
+
+            // 3. Tampilkan Layar Blokir
+            document.body.innerHTML = `
+                <div style="
+                    display: flex; 
+                    flex-direction: column;
+                    justify-content: center; 
+                    align-items: center; 
+                    height: 100vh; 
+                    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+                    color: white;
+                    font-family: 'Poppins', sans-serif;
+                    text-align: center;
+                    padding: 20px;
+                ">
+                    <i class="fas fa-check-circle" style="font-size: 5rem; color: #10b981; margin-bottom: 20px;"></i>
+                    <h1 style="font-size: 2rem; margin-bottom: 10px;">Ujian Telah Selesai</h1>
+                    <p style="font-size: 1.1rem; color: #9ca3af; max-width: 500px; line-height: 1.6;">
+                        Anda sudah menyelesaikan ujian ini sebelumnya.<br>
+                        Kesempatan mengerjakan hanya diberikan 1 kali.
+                    </p>
+                    
+                    <div style="margin-top: 30px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 15px; border: 1px solid rgba(255,255,255,0.1); min-width: 250px;">
+                        <p style="margin:0; font-size: 0.9rem; color: #9ca3af;">Nilai Anda</p>
+                        <p style="margin:5px 0 15px 0; font-size: 2.5rem; font-weight: 700; color: #f59e0b;">${lastScore}</p>
+                        <div style="height: 1px; background: rgba(255,255,255,0.1); margin-bottom: 15px;"></div>
+                        <p style="margin:0; font-size: 0.8rem; color: #6b7280;">Tanggal: ${examDate}</p>
+                    </div>
+
+                    <div style="margin-top: 40px;">
+                        <a href="halamanpertama.html" style="
+                            padding: 15px 40px;
+                            background: #4f46e5;
+                            color: white;
+                            text-decoration: none;
+                            border-radius: 50px;
+                            font-weight: 600;
+                            font-size: 1rem;
+                            box-shadow: 0 4px 15px rgba(79, 70, 229, 0.4);
+                            transition: transform 0.2s;
+                            display: inline-block;
+                        ">
+                            <i class="fas fa-home"></i> Kembali ke Menu Utama
+                        </a>
+                    </div>
+                </div>
+            `;
+            
+            return false; // Stop ujian
+        }
+
+        return true; // Boleh lanjut ujian
+
+    } catch (error) {
+        console.error("Gagal cek eligibility:", error);
+        return false;
+    }
+}
 
 // Exam state
 let currentQuestionIndex = 0;
 let questions = [];
 let answers = [];
-let doubtfulQuestions = []; // Track questions marked as doubtful
+let doubtfulQuestions = []; 
 let examSessionId = null;
-let timeRemaining = 0; // in seconds
+let timeRemaining = 0; 
 let timerInterval = null;
 let examStartTime = null;
+let assignedQuestionType = null; 
 
-// DOM Elements - will be initialized after DOM load
+// DOM Elements
 let timerDisplay, progressFill, questionNav, questionCard, questionCounter;
 let prevBtn, nextBtn;
 
-// Initialize exam
+// ============================================================
+// MAIN LOGIC: JALANKAN SAAT HALAMAN DIMUAT
+// ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        // Initialize DOM elements first
+        // 1. Siapkan Elemen HTML
         initializeDOMElements();
 
-        // Check if user is logged in
+        // 2. Cek Login
         const result = await getCurrentUser();
         if (!result.success || !result.user) {
             alert('Anda harus login terlebih dahulu!');
@@ -32,17 +116,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         console.log('User authenticated:', result.user.email);
 
-        // Load questions and start exam
-        await loadExamQuestions();
-        await startExamSession();
+        // 3. GATEKEEPER: CEK APAKAH SUDAH PERNAH UJIAN
+        const bolehUjian = await checkEligibility(result.user.id);
+        
+        if (!bolehUjian) {
+            console.log("User diblokir karena sudah pernah ujian.");
+            return; // STOP DI SINI.
+        }
 
-        // Setup navigation event listeners after DOM is ready
-        setupNavigationListeners();
+        // 4. Lanjut Proses Ujian
+        await assignQuestionType(result.user.id); 
+        await loadExamQuestions();                
+        await startExamSession();                 
 
     } catch (error) {
         console.error('Error initializing exam:', error);
-        alert('Terjadi kesalahan saat memuat ujian.');
-        window.location.href = 'halamanpertama.html';
     }
 });
 
@@ -59,15 +147,72 @@ function initializeDOMElements() {
     console.log('DOM elements initialized');
 }
 
-// Load mathematics questions for TKA
+// Assign question type to user (A, B, C, or D)
+async function assignQuestionType(userId) {
+    try {
+        console.log('Checking assigned question type for user:', userId);
+
+        const { data: existingSession, error: sessionError } = await supabase
+            .from('exam_sessions')
+            .select('question_type_variant')
+            .eq('user_id', userId)
+            .eq('status', 'in_progress')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (existingSession && existingSession.question_type_variant) {
+            assignedQuestionType = existingSession.question_type_variant;
+            console.log('Retrieved existing question type:', assignedQuestionType);
+            displayQuestionTypeInfo();
+            return;
+        }
+
+        const { data: lastSession, error: lastError } = await supabase
+            .from('exam_sessions')
+            .select('question_type_variant')
+            .eq('user_id', userId)
+            .in('status', ['completed', 'expired'])
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        const types = ['A', 'B', 'C', 'D'];
+        const randomIndex = Math.floor(Math.random() * types.length);
+        assignedQuestionType = types[randomIndex];
+
+        console.log('Assigned new question type:', assignedQuestionType);
+        displayQuestionTypeInfo();
+
+    } catch (error) {
+        console.error('Error in assignQuestionType:', error);
+        assignedQuestionType = 'A';
+        console.log('Defaulting to question type A due to error');
+        displayQuestionTypeInfo();
+    }
+}
+
+// Display question type information to user
+function displayQuestionTypeInfo() {
+    const examHeader = document.querySelector('.exam-header h1');
+    if (examHeader) {
+        const typeIndicator = document.createElement('span');
+        typeIndicator.style.cssText = 'background: #3b82f6; color: white; padding: 0.25rem 0.75rem; border-radius: 0.5rem; font-size: 0.9rem; margin-left: 1rem;';
+        typeIndicator.innerHTML = `<i class="fas fa-file-alt"></i> Tipe ${assignedQuestionType}`;
+        examHeader.appendChild(typeIndicator);
+    }
+}
+
+// Load mathematics questions for TKA based on assigned type
 async function loadExamQuestions() {
     try {
-        console.log('Loading exam questions...');
+        console.log('Loading exam questions for type:', assignedQuestionType);
 
         const { data: questionsData, error } = await supabase
             .from('questions')
             .select('*')
             .eq('subject', 'Matematika')
+            .eq('question_type_variant', assignedQuestionType) 
             .eq('is_active', true)
             .order('created_at');
 
@@ -77,31 +222,23 @@ async function loadExamQuestions() {
             return;
         }
 
-        console.log('Questions data received:', questionsData);
-
         if (!questionsData || questionsData.length === 0) {
-            console.log('No questions found');
-            alert('Belum ada soal matematika yang tersedia. Silakan hubungi admin untuk menambahkan soal.');
+            console.log('No questions found for type:', assignedQuestionType);
+            alert(`Belum ada soal matematika tipe ${assignedQuestionType} yang tersedia. Silakan hubungi admin.`);
             window.location.href = 'halamanpertama.html';
             return;
         }
 
-        questions = questionsData;
-        console.log(`Loaded ${questions.length} questions`);
+        questions = shuffleArray([...questionsData]);
+        console.log(`Loaded and shuffled ${questions.length} questions of type ${assignedQuestionType}`);
 
-        // Initialize answers array
         answers = new Array(questions.length).fill(null);
         doubtfulQuestions = new Array(questions.length).fill(false);
 
-        // Set total exam time (sum of all question times or default to 30 minutes per question)
         const totalMinutes = questions.reduce((sum, q) => sum + (q.time_limit_minutes || 30), 0);
-        timeRemaining = totalMinutes * 60; // convert to seconds
+        timeRemaining = totalMinutes * 60; 
 
         console.log(`Total exam time: ${totalMinutes} minutes (${timeRemaining} seconds)`);
-
-        // Log question types for debugging
-        const questionTypes = questions.map(q => q.question_type);
-        console.log('Question types:', questionTypes);
 
     } catch (error) {
         console.error('Error in loadExamQuestions:', error);
@@ -117,13 +254,13 @@ async function startExamSession() {
             throw new Error('User not authenticated');
         }
 
-        // Create exam session (required - fail if cannot create)
         try {
             const { data: session, error } = await supabase
                 .from('exam_sessions')
                 .insert([{
                     user_id: result.user.id,
-                    question_set_id: null, // Not using question sets, filtering by subject instead
+                    question_set_id: null,
+                    question_type_variant: assignedQuestionType, 
                     total_time_seconds: timeRemaining,
                     status: 'in_progress'
                 }])
@@ -140,7 +277,7 @@ async function startExamSession() {
             }
 
             examSessionId = session.id;
-            console.log('Exam session created:', examSessionId);
+            console.log('Exam session created:', examSessionId, 'Type:', assignedQuestionType);
 
         } catch (sessionError) {
             console.error('Error creating exam session:', sessionError);
@@ -154,6 +291,9 @@ async function startExamSession() {
         renderQuestionNav();
         await showQuestion(0);
 
+        // Initialize security features
+        initializeSecurityFeatures();
+
         console.log('Exam session started successfully');
 
     } catch (error) {
@@ -161,6 +301,404 @@ async function startExamSession() {
         throw error;
     }
 }
+
+// ============================================================
+// FITUR KEAMANAN UJIAN
+// ============================================================
+
+// Tab switch detection variables
+let tabSwitchCount = 0;
+const maxTabSwitches = 3;
+let tabSwitchWarningShown = false;
+
+/**
+ * Initialize all security features for the exam
+ */
+function initializeSecurityFeatures() {
+    // 1. Tab Switch Detection
+    setupTabSwitchDetection();
+    
+    // 2. Right-click Disable
+    disableRightClick();
+    
+    // 3. Browser Back Button Warning
+    setupBackButtonWarning();
+    
+    // 4. Disable keyboard shortcuts
+    disableKeyboardShortcuts();
+    
+    // 5. Prevent copy-paste
+    preventCopyPaste();
+    
+    console.log('Security features initialized');
+}
+
+/**
+ * 1. Tab Switch Detection
+ * Detects when student switches to another tab or window
+ */
+function setupTabSwitchDetection() {
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+    
+    console.log('Tab switch detection enabled');
+}
+
+function handleVisibilityChange() {
+    if (document.hidden) {
+        tabSwitchCount++;
+        console.log('Tab switch detected. Count:', tabSwitchCount);
+        
+        // Show warning
+        showTabSwitchWarning();
+        
+        // If exceeded max switches, auto-submit exam
+        if (tabSwitchCount >= maxTabSwitches) {
+            handleExamViolation('Tab switch limit exceeded');
+        }
+    }
+}
+
+function handleWindowBlur() {
+    tabSwitchCount++;
+    console.log('Window blur detected. Count:', tabSwitchCount);
+    
+    showTabSwitchWarning();
+    
+    if (tabSwitchCount >= maxTabSwitches) {
+        handleExamViolation('Window switch limit exceeded');
+    }
+}
+
+function showTabSwitchWarning() {
+    if (tabSwitchWarningShown) return;
+    
+    const remainingSwitches = maxTabSwitches - tabSwitchCount;
+    
+    if (remainingSwitches > 0) {
+        // Create warning modal
+        const warningModal = document.createElement('div');
+        warningModal.id = 'tabSwitchWarningModal';
+        warningModal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            font-family: 'Poppins', sans-serif;
+        `;
+        
+        warningModal.innerHTML = `
+            <div style="
+                background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+                padding: 40px;
+                border-radius: 20px;
+                text-align: center;
+                max-width: 500px;
+                box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+            ">
+                <i class="fas fa-exclamation-triangle" style="font-size: 4rem; color: #fbbf24; margin-bottom: 20px;"></i>
+                <h2 style="color: white; margin-bottom: 15px; font-size: 1.5rem;">⚠️ PERINGATAN!</h2>
+                <p style="color: #fecaca; font-size: 1rem; line-height: 1.6; margin-bottom: 20px;">
+                    Terdeteksi Anda berpindah tab/window!<br>
+                    <strong>Sisa kesempatan: ${remainingSwitches} kali</strong>
+                </p>
+                <p style="color: #fbbf24; font-size: 0.9rem;">
+                    Jika berpindah tab ${remainingSwitches} kali lagi, ujian akan diakhiri otomatis.
+                </p>
+                <button onclick="document.getElementById('tabSwitchWarningModal').remove()" style="
+                    margin-top: 25px;
+                    padding: 12px 40px;
+                    background: white;
+                    color: #dc2626;
+                    border: none;
+                    border-radius: 50px;
+                    font-size: 1rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: transform 0.2s;
+                ">
+                    Mengerti, Lanjutkan Ujian
+                </button>
+            </div>
+        `;
+        
+        document.body.appendChild(warningModal);
+        tabSwitchWarningShown = true;
+        
+        // Auto-close after 5 seconds
+        setTimeout(() => {
+            const modal = document.getElementById('tabSwitchWarningModal');
+            if (modal) modal.remove();
+            tabSwitchWarningShown = false;
+        }, 5000);
+    }
+}
+
+/**
+ * 2. Disable Right-Click Context Menu
+ */
+function disableRightClick() {
+    document.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        showSecurityNotification('Klik kanan dinonaktifkan selama ujian');
+        return false;
+    });
+    
+    console.log('Right-click disabled');
+}
+
+/**
+ * 3. Browser Back Button Warning
+ */
+function setupBackButtonWarning() {
+    // Push a state to history
+    history.pushState({ exam: 'in_progress' }, '', location.href);
+    
+    // Listen for popstate event (back button)
+    window.addEventListener('popstate', function(e) {
+        e.preventDefault();
+        
+        // Show confirmation
+        const confirmLeave = confirm(
+            '⚠️ PERINGATAN!\n\n' +
+            'Jika Anda kembali, ujian akan diakhiri dan jawaban tidak akan disimpan.\n\n' +
+            'Apakah Anda yakin ingin keluar dari ujian?'
+        );
+        
+        if (confirmLeave) {
+            // End exam and redirect
+            completeExam();
+            window.location.href = 'halamanpertama.html';
+        } else {
+            // Stay on page, push state again
+            history.pushState({ exam: 'in_progress' }, '', location.href);
+        }
+    });
+    
+    console.log('Back button warning enabled');
+}
+
+/**
+ * 4. Disable Keyboard Shortcuts
+ */
+function disableKeyboardShortcuts() {
+    document.addEventListener('keydown', function(e) {
+        // Disable F12 (Developer Tools)
+        if (e.key === 'F12') {
+            e.preventDefault();
+            showSecurityNotification('F12 dinonaktifkan selama ujian');
+            return false;
+        }
+        
+        // Disable Ctrl+Shift+I (Developer Tools)
+        if (e.ctrlKey && e.shiftKey && e.key === 'I') {
+            e.preventDefault();
+            showSecurityNotification('Developer Tools dinonaktifkan selama ujian');
+            return false;
+        }
+        
+        // Disable Ctrl+Shift+J (Console)
+        if (e.ctrlKey && e.shiftKey && e.key === 'J') {
+            e.preventDefault();
+            showSecurityNotification('Console dinonaktifkan selama ujian');
+            return false;
+        }
+        
+        // Disable Ctrl+Shift+C (Inspect Element)
+        if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+            e.preventDefault();
+            showSecurityNotification('Inspect Element dinonaktifkan selama ujian');
+            return false;
+        }
+        
+        // Disable Ctrl+U (View Source)
+        if (e.ctrlKey && e.key === 'u') {
+            e.preventDefault();
+            showSecurityNotification('View Source dinonaktifkan selama ujian');
+            return false;
+        }
+        
+        // Disable Ctrl+S (Save)
+        if (e.ctrlKey && e.key === 's') {
+            e.preventDefault();
+            showSecurityNotification('Save dinonaktifkan selama ujian');
+            return false;
+        }
+        
+        // Disable Ctrl+P (Print)
+        if (e.ctrlKey && e.key === 'p') {
+            e.preventDefault();
+            showSecurityNotification('Print dinonaktifkan selama ujian');
+            return false;
+        }
+        
+        // Disable Alt+Tab (show warning only, can't prevent)
+        if (e.altKey && e.key === 'Tab') {
+            showSecurityNotification('Alt+Tab terdeteksi! Ini akan dihitung sebagai pelanggaran.');
+        }
+    });
+    
+    console.log('Keyboard shortcuts disabled');
+}
+
+/**
+ * 5. Prevent Copy-Paste
+ */
+function preventCopyPaste() {
+    // Disable copy
+    document.addEventListener('copy', function(e) {
+        e.preventDefault();
+        showSecurityNotification('Copy dinonaktifkan selama ujian');
+        return false;
+    });
+    
+    // Disable paste
+    document.addEventListener('paste', function(e) {
+        e.preventDefault();
+        showSecurityNotification('Paste dinonaktifkan selama ujian');
+        return false;
+    });
+    
+    // Disable cut
+    document.addEventListener('cut', function(e) {
+        e.preventDefault();
+        showSecurityNotification('Cut dinonaktifkan selama ujian');
+        return false;
+    });
+    
+    // Disable select on specific elements
+    document.body.style.userSelect = 'none';
+    document.body.style.webkitUserSelect = 'none';
+    
+    console.log('Copy-paste prevention enabled');
+}
+
+/**
+ * Show security notification toast
+ */
+function showSecurityNotification(message) {
+    // Remove existing notification if any
+    const existing = document.getElementById('securityNotification');
+    if (existing) existing.remove();
+    
+    const notification = document.createElement('div');
+    notification.id = 'securityNotification';
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+        color: white;
+        padding: 15px 30px;
+        border-radius: 50px;
+        font-family: 'Poppins', sans-serif;
+        font-size: 0.9rem;
+        font-weight: 500;
+        box-shadow: 0 10px 30px rgba(220, 38, 38, 0.4);
+        z-index: 10001;
+        animation: slideDown 0.3s ease;
+    `;
+    notification.innerHTML = `<i class="fas fa-shield-alt"></i> ${message}`;
+    
+    document.body.appendChild(notification);
+    
+    // Auto-remove after 3 seconds
+    setTimeout(() => {
+        notification.style.animation = 'slideUp 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+}
+
+/**
+ * Handle exam violation - auto submit
+ */
+async function handleExamViolation(reason) {
+    console.log('Exam violation detected:', reason);
+    
+    // Show violation modal
+    const violationModal = document.createElement('div');
+    violationModal.id = 'violationModal';
+    violationModal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.95);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10002;
+        font-family: 'Poppins', sans-serif;
+    `;
+    
+    violationModal.innerHTML = `
+        <div style="
+            background: linear-gradient(135deg, #7f1d1d 0%, #450a0a 100%);
+            padding: 50px;
+            border-radius: 20px;
+            text-align: center;
+            max-width: 500px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+        ">
+            <i class="fas fa-times-circle" style="font-size: 5rem; color: #f87171; margin-bottom: 25px;"></i>
+            <h2 style="color: white; margin-bottom: 15px; font-size: 1.8rem;">🚫 UJIAN DIHENTIKAN</h2>
+            <p style="color: #fecaca; font-size: 1rem; line-height: 1.6; margin-bottom: 15px;">
+                Ujian Anda telah diakhiri secara otomatis karena:
+            </p>
+            <p style="color: #fbbf24; font-size: 1.1rem; font-weight: 600; margin-bottom: 25px;">
+                ${reason}
+            </p>
+            <p style="color: #9ca3af; font-size: 0.9rem;">
+                Jawaban yang sudah disimpan akan dikumpulkan.
+            </p>
+        </div>
+    `;
+    
+    document.body.appendChild(violationModal);
+    
+    // Complete exam
+    await completeExam();
+    
+    // Redirect after 3 seconds
+    setTimeout(() => {
+        window.location.href = `habisujian.html?session=${examSessionId}`;
+    }, 3000);
+}
+
+// Add CSS animations for notifications
+const styleSheet = document.createElement('style');
+styleSheet.textContent = `
+    @keyframes slideDown {
+        from {
+            transform: translateX(-50%) translateY(-100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes slideUp {
+        from {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+        to {
+            transform: translateX(-50%) translateY(-100%);
+            opacity: 0;
+        }
+    }
+`;
+document.head.appendChild(styleSheet);
 
 // Start countdown timer
 function startTimer() {
@@ -170,7 +708,6 @@ function startTimer() {
         timeRemaining--;
 
         if (timeRemaining <= 0) {
-            // Time's up - auto submit
             clearInterval(timerInterval);
             handleTimeUp();
             return;
@@ -178,8 +715,7 @@ function startTimer() {
 
         updateTimerDisplay();
 
-        // Warning when less than 5 minutes
-        if (timeRemaining <= 300) { // 5 minutes
+        if (timeRemaining <= 300) { 
             timerDisplay.classList.add('timer-warning');
         }
 
@@ -199,14 +735,8 @@ function updateTimerDisplay() {
 // Handle time up - auto submit
 async function handleTimeUp() {
     alert('Waktu ujian telah habis! Jawaban Anda akan disimpan secara otomatis.');
-
-    // Save any unsaved answers
     await saveCurrentAnswer();
-
-    // Complete exam
-    await completeExam(true); // true = expired
-
-    // Show expired screen
+    await completeExam(true); 
     showExamExpired();
 }
 
@@ -218,645 +748,387 @@ function renderQuestionNav() {
         const navBtn = document.createElement('button');
         navBtn.className = `question-nav-btn ${index === currentQuestionIndex ? 'current' : ''} ${answers[index] ? 'answered' : ''} ${doubtfulQuestions[index] ? 'doubtful' : ''}`;
         navBtn.textContent = index + 1;
-        navBtn.onclick = async () => await showQuestion(index);
+        // Allow clicking on any question number to navigate (no restrictions)
+        navBtn.onclick = async () => {
+            console.log('Navigating to question:', index);
+            await showQuestion(index);
+        };
         questionNav.appendChild(navBtn);
     });
 }
 
-// Show question by index
+// Show question
 async function showQuestion(index) {
-    if (index < 0 || index >= questions.length) return;
-
-    // Save current answer before switching
-    await saveCurrentAnswer();
+    if (currentQuestionIndex !== index) {
+        await saveCurrentAnswer();
+    }
 
     currentQuestionIndex = index;
     const question = questions[index];
+    
+    // Track question start time for real-time monitoring
+    window.questionStartTime = Date.now();
 
-    // Update navigation
-    renderQuestionNav();
+    questionCounter.textContent = `Soal ${index + 1} dari ${questions.length}`;
 
-    // Update progress based on answered questions
-    const answeredCount = answers.filter(answer => answer !== null && answer !== '').length;
+    const answeredCount = answers.filter(a => a !== null).length;
     const progress = (answeredCount / questions.length) * 100;
     progressFill.style.width = `${progress}%`;
     document.getElementById('progressText').textContent = `${Math.round(progress)}%`;
 
-    // Update question counter
-    questionCounter.textContent = `Soal ${index + 1} dari ${questions.length}`;
+    let questionHTML = `
+        <div class="question-header">
+            <div class="question-number">
+                <i class="fas fa-question-circle"></i>
+                Soal ${index + 1}
+            </div>
+            <div class="question-type-badge">
+                <i class="fas fa-file-alt"></i> Tipe ${assignedQuestionType}
+            </div>
+        </div>
+        
+        <div class="question-text">
+            ${question.question_text}
+        </div>
+    `;
 
-    // Update navigation buttons
-    prevBtn.disabled = index === 0;
-    nextBtn.textContent = index === questions.length - 1 ? 'Selesai' : 'Selanjutnya';
+    if (question.image_url) {
+        questionHTML += `
+            <div class="question-image">
+                <img src="${question.image_url}" alt="Question Image" style="max-width: 100%; height: auto; border-radius: 8px; margin: 1rem 0;">
+            </div>
+        `;
+    }
 
-    // Render question content (sections or legacy format)
-    let questionContentHtml = '';
-
-    if (question.question_sections && Array.isArray(question.question_sections) && question.question_sections.length > 0) {
-        // Render composite question sections
-        questionContentHtml = question.question_sections
-            .sort((a, b) => (a.order || 0) - (b.order || 0))
-            .map(section => {
-                if (section.type === 'text') {
-                    let textContent = section.content || '';
-                    if (textContent && window.katex) {
-                        try {
-                            // Render LaTeX expressions found in the text
-                            textContent = textContent.replace(/\\\(.+?\\\)/g, (match) => {
-                                try {
-                                    return window.katex.renderToString(match.slice(2, -2), { displayMode: false });
-                                } catch (e) {
-                                    return match; // Return original if LaTeX fails
-                                }
-                            });
-                        } catch (error) {
-                            console.error('LaTeX rendering error in section text:', error);
-                        }
-                    }
-                    // Replace line breaks with <br> for proper paragraph display
-                    textContent = textContent.replace(/\n/g, '<br>');
-                    return `<div class="question-text-section">${textContent}</div>`;
-                } else if (section.type === 'image') {
-                    return `<div class="question-image"><img src="${section.content}" alt="Soal ${index + 1}" onerror="this.style.display='none'"></div>`;
-                }
-                return '';
-            })
-            .join('');
+    if (question.question_type === 'PGK MCMA') {
+        questionHTML += renderMCMAOptions(question, index);
+    } else if (question.question_type === 'PGK Kategori') {
+        questionHTML += renderCategoryOptions(question, index);
     } else {
-        // Legacy format: question text and image
-        const imageHtml = question.image_url
-            ? `<div class="question-image"><img src="${question.image_url}" alt="Soal ${index + 1}" onerror="this.style.display='none'"></div>`
-            : '';
+        questionHTML += renderMultipleChoiceOptions(question, index);
+    }
 
-        // Render question text with LaTeX support
-        let questionTextHtml = question.question_text || '';
-        if (questionTextHtml && window.katex) {
+    const isDoubtful = doubtfulQuestions[index];
+    questionHTML += `
+        <div class="question-actions">
+            <button onclick="toggleDoubt()" class="doubt-btn ${isDoubtful ? 'active' : ''}">
+                <i class="fas fa-flag"></i>
+                ${isDoubtful ? 'Tandai Ragu' : 'Ragu-ragu'}
+            </button>
+        </div>
+    `;
+
+    questionCard.innerHTML = questionHTML;
+
+    // Enable both navigation buttons - allow free navigation
+    prevBtn.disabled = false;
+    nextBtn.disabled = false;
+
+    if (index === questions.length - 1) {
+        nextBtn.innerHTML = '<i class="fas fa-check-circle"></i> Selesai';
+        nextBtn.onclick = async () => await confirmSubmit();
+    } else {
+        nextBtn.innerHTML = 'Selanjutnya <i class="fas fa-chevron-right"></i>';
+        nextBtn.onclick = async () => await showQuestion(index + 1);
+    }
+
+    renderQuestionNav();
+
+    if (window.renderMathInElement) {
+        setTimeout(() => {
+            renderMathInElement(questionCard, {
+                delimiters: [
+                    {left: "$$", right: "$$", display: true},
+                    {left: "\\[", right: "\\]", display: true},
+                    {left: "$", right: "$", display: false},
+                    {left: "\\(", right: "\\)", display: false}
+                ],
+                throwOnError: false
+            });
+        }, 100);
+    }
+}
+
+// Render multiple choice options
+function renderMultipleChoiceOptions(question, questionIndex) {
+    const options = ['A', 'B', 'C', 'D', 'E'].filter(opt => question[`option_${opt.toLowerCase()}`]);
+    const currentAnswer = answers[questionIndex];
+
+    let html = '<div class="options">';
+    
+    options.forEach(option => {
+        const optionText = question[`option_${option.toLowerCase()}`];
+        const isSelected = currentAnswer === option;
+        
+        html += `
+            <div class="option ${isSelected ? 'selected' : ''}" onclick="selectAnswer('${option}')">
+                <span class="option-letter">${option}</span>
+                <span class="option-text">${optionText}</span>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    return html;
+}
+
+// Render MCMA (Multiple Choice Multiple Answer) options
+function renderMCMAOptions(question, questionIndex) {
+    const options = ['A', 'B', 'C', 'D', 'E'].filter(opt => question[`option_${opt.toLowerCase()}`]);
+    const currentAnswer = answers[questionIndex];
+    const selectedOptions = currentAnswer ? currentAnswer.split(',') : [];
+
+    let html = '<div class="mcma-instruction"><i class="fas fa-info-circle"></i> Pilih satu atau lebih jawaban yang benar</div>';
+    html += '<div class="options mcma-options">';
+    
+    options.forEach(option => {
+        const optionText = question[`option_${option.toLowerCase()}`];
+        const isSelected = selectedOptions.includes(option);
+        
+        html += `
+            <div class="option mcma-option ${isSelected ? 'selected' : ''}" onclick="toggleMCMA('${option}')">
+                <span class="mcma-checkbox ${isSelected ? 'checked' : ''}">
+                    <i class="fas fa-check"></i>
+                </span>
+                <span class="option-letter">${option}</span>
+                <span class="option-text">${optionText}</span>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    return html;
+}
+
+// Render category options
+function renderCategoryOptions(question, questionIndex) {
+    const statements = JSON.parse(question.category_statements || '[]');
+    const currentAnswer = answers[questionIndex];
+    const selectedAnswers = currentAnswer ? (typeof currentAnswer === 'string' ? JSON.parse(currentAnswer) : currentAnswer) : {};
+
+    let html = '<div class="category-instruction"><i class="fas fa-info-circle"></i> Tentukan benar atau salah untuk setiap pernyataan</div>';
+    html += '<div class="category-options">';
+    
+    statements.forEach((statement, idx) => {
+        const isTrue = selectedAnswers[idx] === true;
+        const isFalse = selectedAnswers[idx] === false;
+        
+        // Render LaTeX if present
+        let displayStatement = statement;
+        if (statement && typeof statement === 'string' && statement.includes('\\(')) {
             try {
-                // Render LaTeX expressions found in the text
-                questionTextHtml = questionTextHtml.replace(/\\\(.+?\\\)/g, (match) => {
+                displayStatement = statement.replace(/\\\((.+?)\\\)/g, (match, latex) => {
                     try {
-                        return window.katex.renderToString(match.slice(2, -2), { displayMode: false });
+                        return window.katex.renderToString(latex, { displayMode: false });
                     } catch (e) {
                         return match; // Return original if LaTeX fails
                     }
                 });
             } catch (error) {
-                console.error('LaTeX rendering error in question text:', error);
-                // Keep original text if LaTeX fails
+                displayStatement = statement;
             }
         }
-        // Replace line breaks with <br> for proper paragraph display
-        questionTextHtml = questionTextHtml.replace(/\n/g, '<br>');
-
-        questionContentHtml = `<div class="question-text">${questionTextHtml}</div>${imageHtml}`;
-    }
-
-    // Render different question types
-    let optionsHtml = '';
-
-    console.log(`Rendering question ${index + 1}, type: ${question.question_type}`);
-
-    switch (question.question_type) {
-        case 'Pilihan Ganda':
-            console.log('Rendering Pilihan Ganda options');
-
-            // Parse option images if they exist
-            let optionImages = {};
-            if (question.option_images) {
-                if (typeof question.option_images === 'string') {
-                    try {
-                        optionImages = JSON.parse(question.option_images);
-                    } catch (e) {
-                        console.error('Error parsing option_images:', e);
-                        optionImages = {};
-                    }
-                } else {
-                    optionImages = question.option_images;
-                }
-            }
-
-            // Parse option LaTeX if they exist
-            let optionLatex = {};
-            if (question.option_latex) {
-                if (typeof question.option_latex === 'string') {
-                    try {
-                        optionLatex = JSON.parse(question.option_latex);
-                    } catch (e) {
-                        console.error('Error parsing option_latex:', e);
-                        optionLatex = {};
-                    }
-                } else {
-                    optionLatex = question.option_latex;
-                }
-            }
-
-            // Helper function to render option content
-            const renderOptionContent = (letter) => {
-                const textContent = question[`option_${letter.toLowerCase()}`] || 'N/A';
-                const latexContent = optionLatex[`option_${letter.toLowerCase()}_latex`];
-                const imageContent = optionImages[`option_${letter.toLowerCase()}_image`];
-
-                let html = textContent;
-
-                if (latexContent && window.katex) {
-                    try {
-                        const latexHtml = window.katex.renderToString(latexContent);
-                        html += ` ${latexHtml}`;
-                    } catch (e) {
-                        console.error('LaTeX rendering error for option', letter, e);
-                        html += ` <span style="color: red;">[LaTeX Error]</span>`;
-                    }
-                }
-
-                if (imageContent) {
-                    html += `<div class="option-image"><img src="${imageContent}" alt="Option ${letter}" onerror="this.style.display='none'"></div>`;
-                }
-
-                return html;
-            };
-
-            optionsHtml = `
-                <div class="option ${answers[index] === 'A' ? 'selected' : ''}" onclick="selectAnswer('A')">
-                    <input type="radio" name="answer" value="A" ${answers[index] === 'A' ? 'checked' : ''}>
-                    <label>A. ${renderOptionContent('A')}</label>
+        
+        html += `
+            <div class="category-item">
+                <div class="category-statement">${displayStatement}</div>
+                <div class="category-buttons">
+                    <button class="category-btn ${isTrue ? 'selected' : ''}" onclick="selectCategoryAnswer(${idx}, true)">
+                        <i class="fas fa-check"></i> Benar
+                    </button>
+                    <button class="category-btn ${isFalse ? 'selected' : ''}" onclick="selectCategoryAnswer(${idx}, false)">
+                        <i class="fas fa-times"></i> Salah
+                    </button>
                 </div>
-                <div class="option ${answers[index] === 'B' ? 'selected' : ''}" onclick="selectAnswer('B')">
-                    <input type="radio" name="answer" value="B" ${answers[index] === 'B' ? 'checked' : ''}>
-                    <label>B. ${renderOptionContent('B')}</label>
-                </div>
-                <div class="option ${answers[index] === 'C' ? 'selected' : ''}" onclick="selectAnswer('C')">
-                    <input type="radio" name="answer" value="C" ${answers[index] === 'C' ? 'checked' : ''}>
-                    <label>C. ${renderOptionContent('C')}</label>
-                </div>
-                <div class="option ${answers[index] === 'D' ? 'selected' : ''}" onclick="selectAnswer('D')">
-                    <input type="radio" name="answer" value="D" ${answers[index] === 'D' ? 'checked' : ''}>
-                    <label>D. ${renderOptionContent('D')}</label>
-                </div>
-            `;
-            break;
-
-        case 'PGK Kategori':
-            console.log('Rendering PGK Kategori options');
-            // For category questions, show statements with True/False radio buttons in a table
-            let categoryHtml = '<div class="category-question"><table class="category-table"><thead><tr><th>Pernyataan</th><th>Benar</th><th>Salah</th></tr></thead><tbody>';
-
-            if (question.category_options) {
-                let statements = question.category_options;
-
-                // Parse if it's a JSON string
-                if (typeof statements === 'string') {
-                    try {
-                        statements = JSON.parse(statements);
-                    } catch (e) {
-                        console.error('Error parsing category_options:', e);
-                        statements = [];
-                    }
-                }
-
-                // Parse category_mapping to get current answers
-                let categoryMapping = question.category_mapping || {};
-                if (typeof categoryMapping === 'string') {
-                    try {
-                        categoryMapping = JSON.parse(categoryMapping);
-                    } catch (e) {
-                        console.error('Error parsing category_mapping:', e);
-                        categoryMapping = {};
-                    }
-                }
-
-                // Load existing category answers from database
-                let userAnswers = {};
-                try {
-                    const { data: existingAnswers, error } = await supabase
-                        .from('category_answers')
-                        .select('statement_text, selected_answer')
-                        .eq('exam_session_id', examSessionId)
-                        .eq('question_id', question.id);
-
-                    if (!error && existingAnswers) {
-                        existingAnswers.forEach(answer => {
-                            userAnswers[answer.statement_text] = answer.selected_answer;
-                        });
-                    }
-                } catch (e) {
-                    console.error('Error loading category answers:', e);
-                }
-
-                // Update local answers array
-                answers[index] = JSON.stringify(userAnswers);
-
-                console.log('Statements:', statements);
-                console.log('Category mapping:', categoryMapping);
-                console.log('User answers:', userAnswers);
-
-                if (Array.isArray(statements)) {
-                    statements.forEach((statement, stmtIndex) => {
-                        const isTrue = userAnswers[statement] === true;
-                        const isFalse = userAnswers[statement] === false;
-                        // Escape single quotes in statement for JavaScript
-                        const escapedStatement = statement.replace(/'/g, "\\'");
-                        categoryHtml += `
-                            <tr class="statement-row">
-                                <td class="statement-text">${statement}</td>
-                                <td class="radio-cell">
-                                    <input type="radio"
-                                           name="answer-${stmtIndex}"
-                                           value="true"
-                                           ${isTrue ? 'checked' : ''}
-                                           onchange="selectCategoryAnswer('${escapedStatement}', 'true')">
-                                </td>
-                                <td class="radio-cell">
-                                    <input type="radio"
-                                           name="answer-${stmtIndex}"
-                                           value="false"
-                                           ${isFalse ? 'checked' : ''}
-                                           onchange="selectCategoryAnswer('${escapedStatement}', 'false')">
-                                </td>
-                            </tr>
-                        `;
-                    });
-                } else {
-                    categoryHtml += '<tr><td colspan="3">Format pernyataan tidak valid</td></tr>';
-                }
-            } else {
-                categoryHtml += '<tr><td colspan="3">Tidak ada pernyataan yang tersedia</td></tr>';
-            }
-
-            categoryHtml += '</tbody></table></div>';
-            optionsHtml = categoryHtml;
-            break;
-
-        case 'PGK MCMA':
-            console.log('Rendering PGK MCMA options');
-            // For MCMA questions, show checkboxes
-            const selectedAnswers = answers[index] ? answers[index].split(',') : [];
-
-            // Parse option images if they exist
-            let mcmaOptionImages = {};
-            if (question.option_images) {
-                if (typeof question.option_images === 'string') {
-                    try {
-                        mcmaOptionImages = JSON.parse(question.option_images);
-                    } catch (e) {
-                        console.error('Error parsing option_images:', e);
-                        mcmaOptionImages = {};
-                    }
-                } else {
-                    mcmaOptionImages = question.option_images;
-                }
-            }
-
-            // Parse option LaTeX if they exist
-            let mcmaOptionLatex = {};
-            if (question.option_latex) {
-                if (typeof question.option_latex === 'string') {
-                    try {
-                        mcmaOptionLatex = JSON.parse(question.option_latex);
-                    } catch (e) {
-                        console.error('Error parsing option_latex:', e);
-                        mcmaOptionLatex = {};
-                    }
-                } else {
-                    mcmaOptionLatex = question.option_latex;
-                }
-            }
-
-            // Helper function to render MCMA option content
-            const renderMCMAOptionContent = (letter) => {
-                const textContent = question[`option_${letter.toLowerCase()}`] || 'N/A';
-                const latexContent = mcmaOptionLatex[`option_${letter.toLowerCase()}_latex`];
-                const imageContent = mcmaOptionImages[`option_${letter.toLowerCase()}_image`];
-
-                let html = textContent;
-
-                if (latexContent && window.katex) {
-                    try {
-                        const latexHtml = window.katex.renderToString(latexContent);
-                        html += ` ${latexHtml}`;
-                    } catch (e) {
-                        console.error('LaTeX rendering error for MCMA option', letter, e);
-                        html += ` <span style="color: red;">[LaTeX Error]</span>`;
-                    }
-                }
-
-                if (imageContent) {
-                    html += `<div class="option-image"><img src="${imageContent}" alt="Option ${letter}" onerror="this.style.display='none'"></div>`;
-                }
-
-                return html;
-            };
-
-            optionsHtml = `
-                <div class="mcma-options">
-                    <div class="option ${selectedAnswers.includes('A') ? 'selected' : ''}" onclick="toggleMCMA('A')">
-                        <input type="checkbox" value="A" ${selectedAnswers.includes('A') ? 'checked' : ''}>
-                        <label>A. ${renderMCMAOptionContent('A')}</label>
-                    </div>
-                    <div class="option ${selectedAnswers.includes('B') ? 'selected' : ''}" onclick="toggleMCMA('B')">
-                        <input type="checkbox" value="B" ${selectedAnswers.includes('B') ? 'checked' : ''}>
-                        <label>B. ${renderMCMAOptionContent('B')}</label>
-                    </div>
-                    <div class="option ${selectedAnswers.includes('C') ? 'selected' : ''}" onclick="toggleMCMA('C')">
-                        <input type="checkbox" value="C" ${selectedAnswers.includes('C') ? 'checked' : ''}>
-                        <label>C. ${renderMCMAOptionContent('C')}</label>
-                    </div>
-                    <div class="option ${selectedAnswers.includes('D') ? 'selected' : ''}" onclick="toggleMCMA('D')">
-                        <input type="checkbox" value="D" ${selectedAnswers.includes('D') ? 'checked' : ''}>
-                        <label>D. ${renderMCMAOptionContent('D')}</label>
-                    </div>
-                </div>
-            `;
-            break;
-
-        default:
-            console.log('Rendering default (Pilihan Ganda) options');
-            // Fallback to multiple choice
-            optionsHtml = `
-                <div class="option ${answers[index] === 'A' ? 'selected' : ''}" onclick="selectAnswer('A')">
-                    <input type="radio" name="answer" value="A" ${answers[index] === 'A' ? 'checked' : ''}>
-                    <label>A. ${question.option_a || 'N/A'}</label>
-                </div>
-                <div class="option ${answers[index] === 'B' ? 'selected' : ''}" onclick="selectAnswer('B')">
-                    <input type="radio" name="answer" value="B" ${answers[index] === 'B' ? 'checked' : ''}>
-                    <label>B. ${question.option_b || 'N/A'}</label>
-                </div>
-                <div class="option ${answers[index] === 'C' ? 'selected' : ''}" onclick="selectAnswer('C')">
-                    <input type="radio" name="answer" value="C" ${answers[index] === 'C' ? 'checked' : ''}>
-                    <label>C. ${question.option_c || 'N/A'}</label>
-                </div>
-                <div class="option ${answers[index] === 'D' ? 'selected' : ''}" onclick="selectAnswer('D')">
-                    <input type="radio" name="answer" value="D" ${answers[index] === 'D' ? 'checked' : ''}>
-                    <label>D. ${question.option_d || 'N/A'}</label>
-                </div>
-            `;
-    }
-
-    questionCard.innerHTML = `
-        <div class="question-number">Soal ${index + 1}</div>
-        ${questionContentHtml}
-        <div class="question-actions">
-            <button class="doubt-btn ${doubtfulQuestions[index] ? 'active' : ''}" onclick="toggleDoubt()">
-                <i class="fas fa-question-circle"></i> ${doubtfulQuestions[index] ? 'Hapus Ragu-ragu' : 'Tandai Ragu-ragu'}
-            </button>
-        </div>
-        <div class="options">
-            ${optionsHtml}
-        </div>
-    `;
-}
-
-// Select answer for multiple choice questions
-function selectAnswer(answer) {
-    answers[currentQuestionIndex] = answer;
-
-    // Update UI
-    const options = questionCard.querySelectorAll('.option');
-    options.forEach(option => option.classList.remove('selected'));
-
-    const selectedOption = questionCard.querySelector(`.option:nth-child(${answer.charCodeAt(0) - 64})`);
-    if (selectedOption) {
-        selectedOption.classList.add('selected');
-    }
-
-    // Update navigation
-    renderQuestionNav();
-}
-
-// Toggle MCMA answer
-function toggleMCMA(option) {
-    console.log(`Toggling MCMA option: ${option}`);
-
-    const currentAnswer = answers[currentQuestionIndex] || '';
-    const selectedOptions = currentAnswer ? currentAnswer.split(',') : [];
-
-    const optionIndex = selectedOptions.indexOf(option);
-    if (optionIndex > -1) {
-        // Remove option if already selected
-        selectedOptions.splice(optionIndex, 1);
-        console.log(`Removed option ${option}`);
-    } else {
-        // Add option if not selected
-        selectedOptions.push(option);
-        selectedOptions.sort(); // Keep in alphabetical order
-        console.log(`Added option ${option}`);
-    }
-
-    answers[currentQuestionIndex] = selectedOptions.join(',');
-
-    console.log('Updated MCMA answers:', selectedOptions);
-
-    // Update UI - find the correct option element
-    const options = questionCard.querySelectorAll('.option');
-    options.forEach((optionEl, index) => {
-        const letter = String.fromCharCode(65 + index); // A, B, C, D
-        const isSelected = selectedOptions.includes(letter);
-        optionEl.classList.toggle('selected', isSelected);
-
-        // Update checkbox state
-        const checkbox = optionEl.querySelector('input[type="checkbox"]');
-        if (checkbox) {
-            checkbox.checked = isSelected;
-        }
+            </div>
+        `;
     });
-
-    // Update navigation
-    renderQuestionNav();
+    
+    html += '</div>';
+    return html;
 }
 
-// Select answer for category questions
-async function selectCategoryAnswer(statement, value) {
-    const question = questions[currentQuestionIndex];
-    const isTrue = value === 'true';
+// Select answer for regular multiple choice
+function selectAnswer(option) {
+    answers[currentQuestionIndex] = option;
+    showQuestion(currentQuestionIndex); 
+}
 
-    try {
-        // Save to category_answers table
-        await supabase
-            .from('category_answers')
-            .upsert([{
-                exam_session_id: examSessionId,
-                question_id: question.id,
-                statement_text: statement,
-                selected_answer: isTrue
-            }]);
-
-        // Also update local answers array for UI purposes
-        if (!answers[currentQuestionIndex] || typeof answers[currentQuestionIndex] !== 'object') {
-            answers[currentQuestionIndex] = {};
-        }
-
-        let currentAnswers = answers[currentQuestionIndex];
-        if (typeof currentAnswers === 'string') {
-            try {
-                currentAnswers = JSON.parse(currentAnswers);
-            } catch (error) {
-                currentAnswers = {};
-            }
-        }
-
-        currentAnswers[statement] = isTrue;
-        answers[currentQuestionIndex] = JSON.stringify(currentAnswers);
-
-        // Update navigation
-        renderQuestionNav();
-
-    } catch (error) {
-        console.error('Error saving category answer:', error);
-        alert('Gagal menyimpan jawaban. Silakan coba lagi.');
+// Toggle MCMA option
+function toggleMCMA(option) {
+    const currentAnswer = answers[currentQuestionIndex];
+    let selectedOptions = currentAnswer ? currentAnswer.split(',') : [];
+    
+    if (selectedOptions.includes(option)) {
+        selectedOptions = selectedOptions.filter(opt => opt !== option);
+    } else {
+        selectedOptions.push(option);
     }
+    
+    answers[currentQuestionIndex] = selectedOptions.length > 0 ? selectedOptions.join(',') : null;
+    showQuestion(currentQuestionIndex); 
 }
 
+// Select category answer
+function selectCategoryAnswer(statementIndex, value) {
+    const currentAnswer = answers[currentQuestionIndex];
+    const selectedAnswers = currentAnswer ? (typeof currentAnswer === 'string' ? JSON.parse(currentAnswer) : currentAnswer) : {};
+    
+    selectedAnswers[statementIndex] = value;
+    answers[currentQuestionIndex] = selectedAnswers;
+    
+    showQuestion(currentQuestionIndex); 
+}
 
 // Save current answer to database
 async function saveCurrentAnswer() {
-    if (!examSessionId || answers[currentQuestionIndex] === null || answers[currentQuestionIndex] === '') return;
-
     try {
-        const question = questions[currentQuestionIndex];
-        let isCorrect = false;
+        const answer = answers[currentQuestionIndex];
+        if (answer === null) return; 
 
-        // Check correctness based on question type
+        const question = questions[currentQuestionIndex];
+        
+        let answerValue = answer;
+        if (question.question_type === 'PGK Kategori') {
+            answerValue = JSON.stringify(answer);
+        }
+
+        // Calculate time taken for this question
+        const timeTaken = window.questionStartTime ? 
+            Math.floor((Date.now() - window.questionStartTime) / 1000) : 0;
+
+        // Check if answer is correct
+        let isCorrect = false;
         if (question.question_type === 'PGK MCMA') {
-            // For MCMA, check if selected answers match correct answers
-            const selectedAnswers = answers[currentQuestionIndex].split(',').sort();
+            const selectedAnswers = answerValue.split(',').sort();
             const correctAnswers = Array.isArray(question.correct_answers)
                 ? question.correct_answers.sort()
                 : (question.correct_answers || '').split(',').sort();
             isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
         } else if (question.question_type === 'PGK Kategori') {
-            // For PGK Kategori, check if selected answers match the correct mapping
-            const selectedAnswers = typeof answers[currentQuestionIndex] === 'string' ? JSON.parse(answers[currentQuestionIndex]) : answers[currentQuestionIndex];
+            const selectedAnswers = typeof answerValue === 'string' ? JSON.parse(answerValue) : answerValue;
             const correctMapping = typeof question.category_mapping === 'string'
                 ? JSON.parse(question.category_mapping)
                 : question.category_mapping;
-
-            // Check if all selected answers are correct
-            let allCorrect = true;
-            for (const [stmt, isTrue] of Object.entries(selectedAnswers || {})) {
-                if (correctMapping[stmt] !== isTrue) {
-                    allCorrect = false;
+            isCorrect = true;
+            for (const [stmtIndex, isTrue] of Object.entries(selectedAnswers || {})) {
+                if (correctMapping[stmtIndex] !== isTrue) {
+                    isCorrect = false;
                     break;
                 }
             }
-
-            // Also check that no correct statements were missed
-            for (const [stmt, shouldBeTrue] of Object.entries(correctMapping || {})) {
-                if (shouldBeTrue && selectedAnswers[stmt] !== true) {
-                    allCorrect = false;
-                    break;
-                }
-            }
-
-            isCorrect = allCorrect;
         } else {
-            // For regular multiple choice
-            isCorrect = answers[currentQuestionIndex] === question.correct_answer;
+            isCorrect = answerValue === question.correct_answer;
         }
 
-        await supabase
+        const { error } = await supabase
             .from('exam_answers')
-            .upsert([{
+            .upsert({
                 exam_session_id: examSessionId,
                 question_id: question.id,
-                selected_answer: answers[currentQuestionIndex],
+                selected_answer: answerValue,
+                user_answer: answerValue,
                 is_correct: isCorrect,
-                time_taken_seconds: Math.floor((Date.now() - examStartTime) / 1000)
-            }]);
+                time_taken_seconds: timeTaken,
+                is_doubtful: doubtfulQuestions[currentQuestionIndex],
+                answered_at: new Date().toISOString()
+            });
+
+        if (error) {
+            console.error('Error saving answer:', error);
+        } else {
+            console.log('Answer saved successfully for real-time monitoring');
+        }
+
+        // Reset question start time for next question
+        window.questionStartTime = Date.now();
 
     } catch (error) {
-        console.error('Error saving answer:', error);
+        console.error('Error in saveCurrentAnswer:', error);
     }
 }
 
-// Setup navigation event listeners
+// Setup navigation listeners
 function setupNavigationListeners() {
-    if (prevBtn) {
-        prevBtn.addEventListener('click', async () => {
-            if (currentQuestionIndex > 0) {
-                await showQuestion(currentQuestionIndex - 1);
-            }
-        });
-    }
-
-    if (nextBtn) {
-        nextBtn.addEventListener('click', async () => {
-            if (currentQuestionIndex < questions.length - 1) {
-                await showQuestion(currentQuestionIndex + 1);
-            } else {
-                // Finish exam
-                finishExam();
-            }
-        });
-    }
-
-    // Setup navigation toggle
-    const navToggleBtn = document.getElementById('navToggleBtn');
-    const questionNavSection = document.querySelector('.question-navigation-section');
-
-    if (navToggleBtn && questionNavSection) {
-        navToggleBtn.addEventListener('click', () => {
-            questionNavSection.classList.toggle('show');
-        });
-    }
-
-    console.log('Navigation listeners set up');
-}
-
-// Finish exam
-async function finishExam() {
-    // First confirmation: warn about submitting answers
-    if (!confirm('PERINGATAN: Setelah menekan "Ya", jawaban Anda akan dikirim dan tidak dapat diubah lagi. Apakah Anda yakin ingin menyelesaikan ujian?')) {
-        return;
-    }
-
-    const unanswered = answers.filter(answer => answer === null).length;
-
-    if (unanswered > 0) {
-        if (!confirm(`Masih ada ${unanswered} soal yang belum dijawab. Yakin ingin menyelesaikan ujian?`)) {
-            return;
+    prevBtn.onclick = async () => {
+        // Always allow going to previous question (no restrictions)
+        if (currentQuestionIndex > 0) {
+            console.log('Going to previous question:', currentQuestionIndex - 1);
+            await showQuestion(currentQuestionIndex - 1);
         }
+    };
+
+    nextBtn.onclick = async () => {
+        // Allow going to next question
+        if (currentQuestionIndex < questions.length - 1) {
+            console.log('Going to next question:', currentQuestionIndex + 1);
+            await showQuestion(currentQuestionIndex + 1);
+        } else {
+            // Last question - confirm submit
+            await confirmSubmit();
+        }
+    };
+
+    const navToggleBtn = document.getElementById('navToggleBtn');
+    if (navToggleBtn) {
+        navToggleBtn.onclick = () => {
+            document.querySelector('.question-navigation-section').classList.toggle('show');
+        };
     }
-
-    // Save final answer
-    await saveCurrentAnswer();
-
-    // Complete exam
-    await completeExam(false); // false = completed normally
-
-    // Show completion screen
-    showExamCompleted();
 }
 
-// Complete exam session
+// Confirm submit
+async function confirmSubmit() {
+    const answeredCount = answers.filter(a => a !== null).length;
+    const unansweredCount = questions.length - answeredCount;
+    
+    let message = `Anda akan menyelesaikan ujian.\n\n`;
+    message += `Soal dijawab: ${answeredCount}/${questions.length}\n`;
+    
+    if (unansweredCount > 0) {
+        message += `Soal belum dijawab: ${unansweredCount}\n\n`;
+        message += `Anda yakin ingin menyelesaikan ujian?`;
+    } else {
+        message += `\nSemua soal sudah dijawab. Lanjutkan submit?`;
+    }
+
+    if (confirm(message)) {
+        await saveCurrentAnswer();
+        await completeExam(false);
+        showExamCompleted();
+    }
+}
+
+// Complete exam and calculate score
+// Sistem penilaian fleksibel: selalu menghasilkan nilai 0-100 terlepas dari jumlah soal
 async function completeExam(isExpired = false) {
     try {
-        if (examSessionId) {
-            const totalTime = Math.floor((Date.now() - examStartTime) / 1000);
+        clearInterval(timerInterval);
 
-            // Calculate score based on question types
-            let totalScore = 0;
-            for (let i = 0; i < questions.length; i++) {
-                const question = questions[i];
-                const answer = answers[i];
+        const totalTime = Math.floor((Date.now() - examStartTime) / 1000);
 
-                if (!answer) continue; // Skip unanswered questions
+        // Hitung jumlah jawaban benar (bukan total weight)
+        let correctCount = 0;
+        
+        for (let i = 0; i < questions.length; i++) {
+            const question = questions[i];
+            const answer = answers[i];
 
+            if (answer !== null) {
                 let isCorrect = false;
 
                 if (question.question_type === 'PGK MCMA') {
-                    // For MCMA, check if all correct answers are selected
                     const selectedAnswers = answer.split(',').sort();
                     const correctAnswers = Array.isArray(question.correct_answers)
                         ? question.correct_answers.sort()
                         : (question.correct_answers || '').split(',').sort();
                     isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
                 } else if (question.question_type === 'PGK Kategori') {
-                    // For PGK Kategori, check if selected answers match the correct mapping
                     const selectedAnswers = typeof answer === 'string' ? JSON.parse(answer) : answer;
                     const correctMapping = typeof question.category_mapping === 'string'
                         ? JSON.parse(question.category_mapping)
                         : question.category_mapping;
 
-                    // Check if all selected answers are correct
                     let allCorrect = true;
                     for (const [stmtIndex, isTrue] of Object.entries(selectedAnswers || {})) {
                         if (correctMapping[stmtIndex] !== isTrue) {
@@ -865,7 +1137,6 @@ async function completeExam(isExpired = false) {
                         }
                     }
 
-                    // Also check that no correct statements were missed
                     for (const [stmtIndex, shouldBeTrue] of Object.entries(correctMapping || {})) {
                         if (shouldBeTrue && selectedAnswers[stmtIndex] !== true) {
                             allCorrect = false;
@@ -875,38 +1146,32 @@ async function completeExam(isExpired = false) {
 
                     isCorrect = allCorrect;
                 } else {
-                    // For regular questions
                     isCorrect = answer === question.correct_answer;
                 }
 
                 if (isCorrect) {
-                    totalScore += question.scoring_weight;
+                    correctCount++;
                 }
             }
-
-            // Update exam session
-            await supabase
-                .from('exam_sessions')
-                .update({
-                    completed_at: new Date().toISOString(),
-                    total_time_seconds: totalTime,
-                    total_score: totalScore,
-                    status: isExpired ? 'expired' : 'completed',
-                    is_passed: totalScore >= 70 // Assuming passing score is 70
-                })
-                .eq('id', examSessionId);
-
-            // Update student analytics after exam completion
-            await updateStudentAnalyticsAfterExam();
-
-            // Show final score
-            finalScore.textContent = `${totalScore} poin`;
-            if (expiredScore) {
-                expiredScore.textContent = `${totalScore} poin`;
-            }
-            passStatus.textContent = totalScore >= 70 ? '🎉 LULUS' : '❌ TIDAK LULUS';
-            passStatus.style.color = totalScore >= 70 ? '#059669' : '#dc2626';
         }
+
+        // Hitung nilai dalam skala 0-100 (fleksibel, tidak tergantung jumlah soal)
+        const totalScore = Math.round((correctCount / questions.length) * 100);
+
+        await supabase
+            .from('exam_sessions')
+            .update({
+                completed_at: new Date().toISOString(),
+                total_time_seconds: totalTime,
+                total_score: totalScore,
+                status: isExpired ? 'expired' : 'completed',
+                is_passed: totalScore >= 70
+            })
+            .eq('id', examSessionId);
+
+        await updateStudentAnalyticsAfterExam();
+
+        console.log('Exam completed. Correct:', correctCount, '/', questions.length, 'Score:', totalScore, 'Type:', assignedQuestionType);
 
     } catch (error) {
         console.error('Error completing exam:', error);
@@ -917,7 +1182,6 @@ async function completeExam(isExpired = false) {
 function showExamCompleted() {
     clearInterval(timerInterval);
 
-    // Ensure we have a valid session ID before redirecting
     if (!examSessionId) {
         console.error('No exam session ID available for results page');
         alert('Error: Tidak dapat menampilkan hasil ujian. Session tidak valid.');
@@ -925,7 +1189,6 @@ function showExamCompleted() {
         return;
     }
 
-    // Redirect to dedicated results page
     window.location.href = `habisujian.html?session=${examSessionId}`;
 }
 
@@ -933,7 +1196,6 @@ function showExamCompleted() {
 function showExamExpired() {
     clearInterval(timerInterval);
 
-    // Ensure we have a valid session ID before redirecting
     if (!examSessionId) {
         console.error('No exam session ID available for expired results page');
         alert('Error: Tidak dapat menampilkan hasil ujian. Session tidak valid.');
@@ -941,7 +1203,6 @@ function showExamExpired() {
         return;
     }
 
-    // Redirect to dedicated results page
     window.location.href = `habisujian.html?session=${examSessionId}`;
 }
 
@@ -956,7 +1217,6 @@ async function updateStudentAnalyticsAfterExam() {
 
         const userId = result.user.id;
 
-        // Calculate performance data from current exam
         let totalCorrect = 0;
         const chapterPerformance = {};
 
@@ -1004,7 +1264,6 @@ async function updateStudentAnalyticsAfterExam() {
                 totalCorrect++;
             }
 
-            // Track chapter performance
             const chapter = question.chapter;
             if (chapter) {
                 if (!chapterPerformance[chapter]) {
@@ -1022,19 +1281,17 @@ async function updateStudentAnalyticsAfterExam() {
 
         const masteryLevel = questions.length > 0 ? totalCorrect / questions.length : 0;
 
-        // Prepare skill radar data
         const skillRadarData = Object.keys(chapterPerformance).map(chapter => ({
             skill: chapter,
             level: Math.round((chapterPerformance[chapter].correct / chapterPerformance[chapter].total) * 100)
         }));
 
-        // Update or insert analytics record
         await supabase
             .from('student_analytics')
             .upsert({
                 user_id: userId,
                 chapter: 'Overall',
-                sub_chapter: 'Recent Exam',
+                sub_chapter: `Exam Type ${assignedQuestionType}`,
                 total_questions_attempted: questions.length,
                 correct_answers: totalCorrect,
                 mastery_level: masteryLevel,
@@ -1052,8 +1309,17 @@ async function updateStudentAnalyticsAfterExam() {
 // Toggle doubt status for current question
 async function toggleDoubt() {
     doubtfulQuestions[currentQuestionIndex] = !doubtfulQuestions[currentQuestionIndex];
-    await showQuestion(currentQuestionIndex); // Re-render to update button state
-    renderQuestionNav(); // Update navigation
+    await showQuestion(currentQuestionIndex); 
+    renderQuestionNav(); 
+}
+
+// Fisher-Yates Shuffle Algorithm
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
 }
 
 // Export functions for global access
@@ -1061,15 +1327,3 @@ window.selectAnswer = selectAnswer;
 window.toggleMCMA = toggleMCMA;
 window.selectCategoryAnswer = selectCategoryAnswer;
 window.toggleDoubt = toggleDoubt;
-
-// Add debugging function
-window.debugExamState = function() {
-    console.log('=== EXAM DEBUG INFO ===');
-    console.log('Current question index:', currentQuestionIndex);
-    console.log('Total questions:', questions.length);
-    console.log('Answers array:', answers);
-    console.log('Current question:', questions[currentQuestionIndex]);
-    console.log('Time remaining:', timeRemaining);
-    console.log('Exam session ID:', examSessionId);
-    alert('Debug info logged to console');
-};

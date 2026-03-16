@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Persiapan Ujian - EduLearn TKA SMP</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="preexam.css">
+    <script type="importmap">
+    {
+      "imports": {
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+    </script>
+</head>
+<body>
+    <div class="preexam-container">
+        <!-- Header -->
+        <header class="preexam-header">
+            <div class="logo">
+                <i class="fas fa-graduation-cap"></i>
+                <span>EduLearn TKA</span>
+            </div>
+            <a href="halamanpertama.html" class="back-btn">
+                <i class="fas fa-arrow-left"></i> Kembali ke Dashboard
+            </a>
+        </header>
+
+        <!-- Main Content -->
+        <main class="preexam-main">
+            <!-- Title Section -->
+            <div class="title-section">
+                <div class="title-icon">
+                    <i class="fas fa-clipboard-check"></i>
+                </div>
+                <h1>Persiapan Ujian TKA Matematika</h1>
+                <p>Baca informasi berikut sebelum memulai ujian</p>
+            </div>
+
+            <!-- Info Cards -->
+            <div class="info-cards">
+                <!-- Exam Info -->
+                <div class="info-card">
+                    <div class="info-card-header">
+                        <i class="fas fa-info-circle"></i>
+                        <h3>Informasi Ujian</h3>
+                    </div>
+                    <div class="info-card-body">
+                        <div class="info-item">
+                            <i class="fas fa-book"></i>
+                            <div>
+                                <span class="info-label">Mata Pelajaran</span>
+                                <span class="info-value">Matematika</span>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-layer-group"></i>
+                            <div>
+                                <span class="info-label">Tipe Soal</span>
+                                <span class="info-value">A, B, C, D (Random)</span>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-question-circle"></i>
+                            <div>
+                                <span class="info-label">Jumlah Soal</span>
+                                <span class="info-value" id="questionCount">30 Soal</span>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-clock"></i>
+                            <div>
+                                <span class="info-label">Waktu Pengerjaan</span>
+                                <span class="info-value" id="timeLimit">30 Menit</span>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <i class="fas fa-star"></i>
+                            <div>
+                                <span class="info-label">Nilai Kelulusan</span>
+                                <span class="info-value">70 (Skala 0-100)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Rules -->
+                <div class="info-card rules-card">
+                    <div class="info-card-header">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <h3>Aturan Ujian</h3>
+                    </div>
+                    <div class="info-card-body">
+                        <ul class="rules-list">
+                            <li>
+                                <i class="fas fa-times-circle"></i>
+                                <span>Kesempatan ujian hanya <strong>1 kali</strong>. Setelah submit, tidak bisa mengulang.</span>
+                            </li>
+                            <li>
+                                <i class="fas fa-times-circle"></i>
+                                <span>Jika waktu habis, jawaban akan <strong>otomatis disimpan</strong>.</span>
+                            </li>
+                            <li>
+                                <i class="fas fa-check-circle"></i>
+                                <span>Anda bisa <strong>kembali ke soal sebelumnya</strong> jika masih ada waktu.</span>
+                            </li>
+                            <li>
+                                <i class="fas fa-times-circle"></i>
+                                <span>Dilarang <strong>refresh halaman</strong> selama ujian berlangsung.</span>
+                            </li>
+                            <li>
+                                <i class="fas fa-times-circle"></i>
+                                <span>Pastikan koneksi internet <strong>stabil</strong> sebelum memulai.</span>
+                            </li>
+                            <li>
+                                <i class="fas fa-check-circle"></i>
+                                <span>Gunakan fitur <strong>"Tandai Ragu"</strong> untuk soal yang masih ragu.</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tips Section -->
+            <div class="tips-section">
+                <div class="tips-header">
+                    <i class="fas fa-lightbulb"></i>
+                    <h3>Tips Mengerjakan Ujian</h3>
+                </div>
+                <div class="tips-grid">
+                    <div class="tip-item">
+                        <div class="tip-number">1</div>
+                        <p>Baca setiap soal dengan <strong>teliti</strong> sebelum menjawab</p>
+                    </div>
+                    <div class="tip-item">
+                        <div class="tip-number">2</div>
+                        <p>Kelola waktu dengan baik, jangan terlalu lama di satu soal</p>
+                    </div>
+                    <div class="tip-item">
+                        <div class="tip-number">3</div>
+                        <p>Periksa kembali jawaban sebelum submit</p>
+                    </div>
+                    <div class="tip-item">
+                        <div class="tip-number">4</div>
+                        <p>Tetap tenang dan fokus selama ujian</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agreement Checkbox -->
+            <div class="agreement-section">
+                <label class="checkbox-container">
+                    <input type="checkbox" id="agreementCheckbox">
+                    <span class="checkmark"></span>
+                    <span>Saya telah membaca dan memahami aturan ujian. Saya siap untuk memulai ujian.</span>
+                </label>
+            </div>
+
+            <!-- Start Button -->
+            <div class="start-section">
+                <button id="startExamBtn" class="start-btn" disabled>
+                    <i class="fas fa-play-circle"></i>
+                    Mulai Ujian
+                </button>
+                <p class="start-note">
+                    <i class="fas fa-shield-alt"></i>
+                    Pastikan Anda siap sebelum memulai. Ujian tidak bisa diulang.
+                </p>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="preexam-footer">
+            <p>&copy; 2024 EduLearn TKA SMP. Platform Pembelajaran Interaktif.</p>
+        </footer>
+    </div>
+
+    <script type="module" src="preexam.js"></script>
+</body>
+</html>

@@ -573,11 +573,9 @@ function getTimeAgo(dateString) {
     }
 }
 
-// Start exam function
+// Start exam function - redirect to pre-exam page
 function startExam() {
-    if (confirm('Apakah Anda yakin ingin memulai ujian TKA Matematika? Pastikan koneksi internet stabil dan waktu cukup.')) {
-        window.location.href = 'ujian.html';
-    }
+    window.location.href = 'preexam.html';
 }
 
 // Load user analytics and update dashboard

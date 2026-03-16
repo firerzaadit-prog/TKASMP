@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Analytics Viewer - Standalone</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    
+    <link rel="stylesheet" href="admin_ai_analytics_styles.css">
+
+    <script type="importmap">
+    {
+      "imports": {
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: #f3f4f6;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .viewer-container {
+            background: white;
+            padding: 40px;
+            border-radius: 24px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+            position: relative; /* Penting untuk tombol absolute */
+        }
+
+        /* Tombol Kembali yang Baru */
+        .btn-back-nav {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            text-decoration: none;
+            color: #6b7280;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: color 0.2s;
+            padding: 5px 10px;
+            border-radius: 8px;
+        }
+
+        .btn-back-nav:hover {
+            color: #4f46e5;
+            background: #eef2ff;
+        }
+
+        h1 {
+            color: #1f2937;
+            margin-bottom: 10px;
+            margin-top: 20px;
+            font-size: 1.8rem;
+        }
+
+        p {
+            color: #6b7280;
+            margin-bottom: 30px;
+        }
+
+        .select-wrapper {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        select {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 16px;
+            font-family: inherit;
+            appearance: none;
+            background: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e") no-repeat right 1rem center;
+            background-size: 1em;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #6366f1;
+        }
+
+        .btn-view {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            border: none;
+            padding: 16px 30px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+            width: 100%;
+        }
+
+        .btn-view:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
+        }
+        
+        .btn-view:disabled {
+            background: #cbd5e1;
+            transform: none;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        #statusMessage {
+            margin-top: 20px;
+            font-size: 14px;
+            min-height: 20px;
+        }
+        
+        .loading { color: #6366f1; }
+        .error { color: #ef4444; }
+    </style>
+</head>
+<body>
+
+    <div class="viewer-container">
+        <a href="admin.html" class="btn-back-nav">
+            <i class="fas fa-arrow-left"></i> Admin Panel
+        </a>
+
+        <h1>🤖 AI Viewer</h1>
+        <p>Pilih siswa untuk melihat hasil analisis.</p>
+
+        <div class="select-wrapper">
+            <select id="studentSelect">
+                <option value="">-- Memuat Data Siswa... --</option>
+            </select>
+        </div>
+
+        <button id="btnAnalyze" class="btn-view" disabled>
+            <i class="fas fa-magic"></i> Tampilkan Analisis AI
+        </button>
+
+        <div id="statusMessage"></div>
+    </div>
+
+    <script type="module">
+        import { supabase } from './supabaseClient.js';
+        
+        // Import file enhancement (tanpa kurung kurawal agar auto-execute)
+        import './admin_ai_analytics_enhancement.js';
+
+        // Pastikan supabase tersedia global
+        window.supabase = supabase;
+
+        const studentSelect = document.getElementById('studentSelect');
+        const btnAnalyze = document.getElementById('btnAnalyze');
+        const statusMsg = document.getElementById('statusMessage');
+
+        // Fungsi bantu untuk menebak nama kolom (Smart Detection)
+        function findName(studentData) {
+            return studentData.nama_lengkap || 
+                   studentData.nama || 
+                   studentData.name || 
+                   studentData.full_name || 
+                   studentData.username || 
+                   studentData.email || 
+                   studentData.user_id || 
+                   "Siswa Tanpa Nama";
+        }
+
+        // 1. Load Daftar Siswa dengan Smart Detection
+        async function loadStudents() {
+            try {
+                statusMsg.textContent = "Mencari data siswa...";
+                statusMsg.className = "loading";
+
+                // Ambil semua kolom agar tidak error "column not found"
+                const { data, error } = await supabase
+                    .from('student_analytics')
+                    .select('*') 
+                    .limit(100);
+
+                if (error) throw error;
+
+                if (!data || data.length === 0) {
+                    studentSelect.innerHTML = '<option value="">Database Kosong</option>';
+                    statusMsg.textContent = "Tidak ada data di student_analytics.";
+                    return;
+                }
+
+                // Filter duplikat user_id
+                const uniqueStudents = new Map();
+                data.forEach(item => {
+                    if (item.user_id && !uniqueStudents.has(item.user_id)) {
+                        uniqueStudents.set(item.user_id, item);
+                    }
+                });
+
+                // Reset Dropdown
+                studentSelect.innerHTML = '<option value="">-- Pilih Siswa --</option>';
+
+                // Isi Dropdown dengan nama yang berhasil dideteksi
+                uniqueStudents.forEach(student => {
+                    const displayName = findName(student); 
+                    const kelas = student.kelas || student.class || '-';
+                    
+                    const option = document.createElement('option');
+                    option.value = student.user_id;
+                    option.text = `${displayName} (${kelas})`;
+                    studentSelect.appendChild(option);
+                });
+
+                statusMsg.textContent = `${uniqueStudents.size} siswa ditemukan.`;
+                statusMsg.className = "";
+                btnAnalyze.disabled = true;
+
+            } catch (err) {
+                console.error('Error loading students:', err);
+                statusMsg.textContent = "Error: " + err.message;
+                statusMsg.className = "error";
+            }
+        }
+
+        // 2. Event Listener saat memilih siswa
+        studentSelect.addEventListener('change', () => {
+            if (studentSelect.value) {
+                btnAnalyze.disabled = false;
+                statusMsg.textContent = "Siap.";
+            } else {
+                btnAnalyze.disabled = true;
+                statusMsg.textContent = "";
+            }
+        });
+
+        // 3. Eksekusi Analisis
+        btnAnalyze.addEventListener('click', async () => {
+            const userId = studentSelect.value;
+            if (!userId) return;
+
+            btnAnalyze.disabled = true;
+            btnAnalyze.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
+            
+            try {
+                // Panggil fungsi analisis dari window
+                if (typeof window.showStudentDetail === 'function') {
+                    await window.showStudentDetail(userId);
+                } else {
+                    // Retry logic sederhana
+                    setTimeout(async () => {
+                         if (typeof window.showStudentDetail === 'function') {
+                            await window.showStudentDetail(userId);
+                            resetBtn();
+                         } else {
+                            alert("Fungsi analisis belum siap. Coba refresh halaman.");
+                            resetBtn();
+                         }
+                    }, 500);
+                    return;
+                }
+                resetBtn();
+
+            } catch (err) {
+                console.error(err);
+                alert('Gagal: ' + err.message);
+                resetBtn();
+            }
+        });
+
+        function resetBtn() {
+            btnAnalyze.innerHTML = '<i class="fas fa-check"></i> Selesai';
+            setTimeout(() => {
+                btnAnalyze.disabled = false;
+                btnAnalyze.innerHTML = '<i class="fas fa-magic"></i> Tampilkan Analisis AI';
+            }, 1000);
+        }
+
+        // Jalankan saat load
+        loadStudents();
+    </script>
+</body>
+</html>
