@@ -7,7 +7,7 @@ export async function signInWithGoogle() {
             provider: 'google',
             options: {
                 // Diubah: Menghapus /app/ agar mengarah ke root Vercel
-                redirectTo: window.location.origin + '/index.html' 
+                redirectTo: window.location.origin 
             }
         });
 
