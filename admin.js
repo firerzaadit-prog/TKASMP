@@ -548,94 +548,26 @@ async function loadTodaysPerformance() {
     }
 }
 
-// Load users data for management from Supabase Auth
+// Load users data for management (Langsung pakai profiles)
 async function loadUsersData() {
     try {
-        // First try to get users from Supabase Auth (requires admin privileges)
-        const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
-
-        if (!authError && authUsers && authUsers.users) {
-            // Clear existing table rows
-            if (usersTableBody) usersTableBody.innerHTML = '';
-
-            // Filter out admin users and populate table with regular users
-            const regularUsers = authUsers.users.filter(user =>
-                !user.user_metadata?.is_admin &&
-                user.email !== 'admin@edulearn.com' // Exclude admin accounts
-            );
-
-            // Get profile data for all users
-            const userIds = regularUsers.map(user => user.id);
-            const { data: profiles, error: profilesError } = await supabase
-                .from('profiles')
-                .select('id, nama_lengkap, email, phone, school, bio, avatar_url, created_at')
-                .in('id', userIds);
-
-            if (profilesError) {
-                console.warn('Error loading profiles:', profilesError);
-            }
-
-            // Create a map of profiles by user ID
-            const profilesMap = {};
-            if (profiles) {
-                profiles.forEach(profile => {
-                    profilesMap[profile.id] = profile;
-                });
-            }
-
-            // Populate table with user data from auth + profiles
-            if (regularUsers.length === 0) {
-                if (usersTableBody) {
-                    usersTableBody.innerHTML = `
-                        <tr>
-                            <td colspan="9" style="text-align: center; padding: 2rem; color: #666;">
-                                <i class="fas fa-users" style="font-size: 2rem; margin-bottom: 1rem; color: #999;"></i><br>
-                                <p>Belum ada siswa yang terdaftar.</p>
-                            </td>
-                        </tr>
-                    `;
-                }
-            } else {
-                regularUsers.forEach(user => {
-                    const profile = profilesMap[user.id];
-                    const row = createUserTableRowFromAuth(user, profile);
-                    if (usersTableBody) usersTableBody.appendChild(row);
-                });
-            }
-
-            console.log(`Loaded ${regularUsers.length} users from Supabase Auth`);
-        } else if (authUsers && authUsers.users && authUsers.users.length === 0) {
-            // No users found
-            if (usersTableBody) {
-                usersTableBody.innerHTML = `
-                    <tr>
-                        <td colspan="7" style="text-align: center; padding: 2rem; color: #666;">
-                            <i class="fas fa-users" style="font-size: 2rem; margin-bottom: 1rem; color: #999;"></i><br>
-                            <p>Belum ada siswa yang terdaftar.</p>
-                        </td>
-                    </tr>
-                `;
-            }
-        } else {
-            // Fallback to profiles table if auth access fails
-            console.log('Auth access failed, falling back to profiles table...');
-            await loadUsersFromProfiles();
-        }
-
+        console.log('Loading users from profiles table...');
+        await loadUsersFromProfiles();
     } catch (error) {
         console.error('Error in loadUsersData:', error);
-        // Fallback to profiles table
-        console.log('Error accessing auth, falling back to profiles table...');
-        await loadUsersFromProfiles();
     }
 }
 
-// Fallback function to load from profiles table
+// Fallback function to load from profiles table menggunakan ADMIN KEY
 async function loadUsersFromProfiles() {
     try {
-        const { data: profiles, error } = await supabase
+        // Menggunakan window.supabase (berisi service_role_key) agar tembus keamanan RLS
+        const adminSupabase = window.supabase || supabase;
+        
+        // Memanggil data dengan lengkap termasuk phone dan school
+        const { data: profiles, error } = await adminSupabase
             .from('profiles')
-            .select('id, nama_lengkap, email, created_at')
+            .select('id, nama_lengkap, email, phone, school, created_at')
             .order('created_at', { ascending: false });
 
         if (error) {
@@ -654,9 +586,6 @@ async function loadUsersFromProfiles() {
                         <td colspan="7" style="text-align: center; padding: 2rem; color: #666;">
                             <i class="fas fa-users" style="font-size: 2rem; margin-bottom: 1rem; color: #999;"></i><br>
                             <p>Belum ada siswa yang terdaftar.</p>
-                            <button class="delete-history-btn" onclick="alert('Fitur untuk testing - tidak ada user untuk dihapus')">
-                                <i class="fas fa-redo"></i> Test
-                            </button>
                         </td>
                     </tr>
                 `;

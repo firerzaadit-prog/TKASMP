@@ -1330,6 +1330,11 @@
                 if (tabName === 'materials') {
                     loadMaterials();
                 }
+        
+                // Load users when users tab is activated
+                if (tabName === 'users') {
+                    loadUsersData();
+                }
             }
 
             // Add active class to clicked button
