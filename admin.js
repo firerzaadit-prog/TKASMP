@@ -179,111 +179,44 @@ async function showAdminDashboard() {
 // Load admin statistics
 async function loadAdminStats() {
     try {
-        // Load users count from auth.users (more reliable for total count)
+        // Gunakan admin key agar tembus keamanan RLS
+        const adminSupabase = window.supabase || supabase;
+        
         let totalUsersCount = 0;
         let activeUsersCount = 0;
 
-        try {
-            // Try to get users from Supabase Auth first
-            const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
+        // 1. Ambil jumlah total user dari tabel profiles
+        const { count: profilesCount, error: profilesError } = await adminSupabase
+            .from('profiles')
+            .select('*', { count: 'exact', head: true });
 
-            if (!authError && authUsers && authUsers.users) {
-                // Filter regular users (exclude admin accounts)
-                const regularUsers = authUsers.users.filter(user =>
-                    !user.user_metadata?.is_admin &&
-                    user.email !== 'admin@edulearn.com'
-                );
-
-                totalUsersCount = regularUsers.length;
-                
-                // Calculate active users based on exam sessions in the last 30 days
-                const thirtyDaysAgo = new Date();
-                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                
-                const { data: recentSessions, error: sessionsError } = await supabase
-                    .from('exam_sessions')
-                    .select('user_id')
-                    .gte('created_at', thirtyDaysAgo.toISOString());
-                
-                if (!sessionsError && recentSessions) {
-                    const uniqueActiveUsers = new Set(recentSessions.map(s => s.user_id));
-                    activeUsersCount = uniqueActiveUsers.size;
-                } else {
-                    // Fallback: users with confirmed email
-                    activeUsersCount = regularUsers.filter(user =>
-                        user.email_confirmed_at !== null
-                    ).length;
-                }
-
-                console.log(`Found ${totalUsersCount} total users, ${activeUsersCount} active users from auth`);
+        if (profilesError) {
+            console.error('Error loading profiles count:', profilesError);
+        } else {
+            totalUsersCount = profilesCount || 0;
+            
+            // 2. Hitung active users (yang mengerjakan ujian dalam 30 hari terakhir)
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            
+            const { data: recentSessions, error: sessionsError } = await adminSupabase
+                .from('exam_sessions')
+                .select('user_id')
+                .gte('created_at', thirtyDaysAgo.toISOString());
+            
+            if (!sessionsError && recentSessions) {
+                const uniqueActiveUsers = new Set(recentSessions.map(s => s.user_id));
+                activeUsersCount = uniqueActiveUsers.size;
             } else {
-                console.log('Auth access failed, falling back to profiles table');
-                // Fallback to profiles table
-                const { count: profilesCount, error: profilesError } = await supabase
-                    .from('profiles')
-                    .select('*', { count: 'exact', head: true });
-
-                if (profilesError) {
-                    console.error('Error loading profiles count:', profilesError);
-                    totalUsersCount = 0;
-                    activeUsersCount = 0;
-                } else {
-                    totalUsersCount = profilesCount || 0;
-                    
-                    // Calculate active users based on exam sessions in the last 30 days
-                    const thirtyDaysAgo = new Date();
-                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                    
-                    const { data: recentSessions, error: sessionsError } = await supabase
-                        .from('exam_sessions')
-                        .select('user_id')
-                        .gte('created_at', thirtyDaysAgo.toISOString());
-                    
-                    if (!sessionsError && recentSessions) {
-                        const uniqueActiveUsers = new Set(recentSessions.map(s => s.user_id));
-                        activeUsersCount = uniqueActiveUsers.size;
-                    } else {
-                        activeUsersCount = profilesCount || 0;
-                    }
-                }
-            }
-        } catch (authError) {
-            console.error('Auth access error:', authError);
-            // Fallback to profiles table
-            const { count: profilesCount, error: profilesError } = await supabase
-                .from('profiles')
-                .select('*', { count: 'exact', head: true });
-
-            if (profilesError) {
-                console.error('Error loading profiles count:', profilesError);
-                totalUsersCount = 0;
-                activeUsersCount = 0;
-            } else {
-                totalUsersCount = profilesCount || 0;
-                
-                // Calculate active users based on exam sessions in the last 30 days
-                const thirtyDaysAgo = new Date();
-                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                
-                const { data: recentSessions, error: sessionsError } = await supabase
-                    .from('exam_sessions')
-                    .select('user_id')
-                    .gte('created_at', thirtyDaysAgo.toISOString());
-                
-                if (!sessionsError && recentSessions) {
-                    const uniqueActiveUsers = new Set(recentSessions.map(s => s.user_id));
-                    activeUsersCount = uniqueActiveUsers.size;
-                } else {
-                    activeUsersCount = profilesCount || 0;
-                }
+                activeUsersCount = profilesCount || 0; // Fallback jika tidak ada ujian
             }
         }
 
         if (totalUsersEl) totalUsersEl.textContent = totalUsersCount;
         if (activeUsersEl) activeUsersEl.textContent = activeUsersCount;
 
-        // Load questions count
-        const { count: questionsCount, error: questionsError } = await supabase
+        // 3. Load jumlah soal (questions count)
+        const { count: questionsCount, error: questionsError } = await adminSupabase
             .from('questions')
             .select('*', { count: 'exact', head: true });
 
@@ -294,8 +227,8 @@ async function loadAdminStats() {
             if (totalQuestionsEl) totalQuestionsEl.textContent = questionsCount || 0;
         }
 
-        // Load materials count
-        const { count: materialsCount, error: materialsError } = await supabase
+        // 4. Load jumlah materi (materials count)
+        const { count: materialsCount, error: materialsError } = await adminSupabase
             .from('materials')
             .select('*', { count: 'exact', head: true });
 
@@ -306,16 +239,11 @@ async function loadAdminStats() {
             if (totalMaterialsEl) totalMaterialsEl.textContent = materialsCount || 0;
         }
 
-        console.log('Admin stats loaded successfully:', {
-            totalUsers: totalUsersCount,
-            activeUsers: activeUsersCount,
-            totalQuestions: questionsCount,
-            totalMaterials: materialsCount
-        });
+        console.log('Admin stats loaded successfully');
 
     } catch (error) {
         console.error('Error in loadAdminStats:', error);
-        // Final fallback
+        // Tampilkan 0 jika error
         if (totalUsersEl) totalUsersEl.textContent = '0';
         if (activeUsersEl) activeUsersEl.textContent = '0';
         if (totalQuestionsEl) totalQuestionsEl.textContent = '0';
@@ -868,7 +796,7 @@ async function deleteStudentExamData(userId, userName) {
 // Export function to global scope
 window.deleteStudentExamData = deleteStudentExamData;
 window.deleteStudentExamHistory = deleteStudentExamHistory;
-
+window.loadUsersData = loadUsersData; // INI YANG DITAMBAHKAN
 // Setup password toggle for admin login
 function setupPasswordToggle() {
     const toggleBtn = document.getElementById('toggleAdminPassword');
