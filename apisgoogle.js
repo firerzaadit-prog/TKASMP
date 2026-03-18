@@ -33,13 +33,12 @@ supabase.auth.onAuthStateChange(async (event, session) => {
 
         const currentPath = window.location.pathname;
         
-        // Diubah: Menghapus pengecekan folder /app/
         if (currentPath === '/' || 
             currentPath === '/index.html' || 
             currentPath.includes('daftarsekarang.html')) {
             
-            // Diubah: Mengarahkan langsung ke halamanpertama.html tanpa /app/
-            window.location.href = window.location.origin + '/halamanpertama';
+            // PERBAIKAN: Tambahkan .html di akhir URL
+            window.location.href = window.location.origin + '/halamanpertama.html';
         }
     }
 });
