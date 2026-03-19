@@ -951,13 +951,15 @@ function renderMCMAOptions(question, questionIndex) {
 function renderCategoryOptions(question, questionIndex) {
     let statements = [];
     try {
-        statements = JSON.parse(question.category_statements || '[]');
+        // Admin uses 'category_options' field, not 'category_statements'
+        statements = JSON.parse(question.category_options || question.category_statements || '[]');
     } catch (e) {
-        console.error('Error parsing category_statements:', e);
+        console.error('Error parsing category_options:', e);
         statements = [];
     }
     
     if (!statements || statements.length === 0) {
+        console.log('Category options is empty for question:', question.id);
         return '<div class="error-message">Data kategori tidak tersedia. Silakan hubungi admin.</div>';
     }
     
