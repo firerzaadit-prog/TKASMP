@@ -608,46 +608,61 @@ async function deleteStudentExamHistory(userId, userName) {
     }
 
     try {
-        // PERBAIKAN: Wajib menggunakan adminSupabase agar bisa menembus keamanan RLS
-        const adminSupabase = window.supabase || supabase;
-        
         console.log(`Menghapus data ujian untuk user: ${userId}`);
 
-        // 1. Hapus data dari tabel student_answers terlebih dahulu (mencegah error relasi)
-        const { error: errorAnswers } = await adminSupabase
-            .from('student_answers')
-            .delete()
+        // 1. Ambil semua session ID milik user ini
+        const { data: sessions, error: fetchError } = await supabase
+            .from('exam_sessions')
+            .select('id')
             .eq('user_id', userId);
 
-        if (errorAnswers) {
-            console.error('Gagal menghapus jawaban:', errorAnswers);
+        if (fetchError) {
+            console.error('Gagal ambil sesi:', fetchError);
+            alert('Gagal ambil data sesi: ' + fetchError.message);
+            return;
         }
 
-        // 2. Hapus data dari tabel exam_sessions
-        const { error: errorSessions } = await adminSupabase
+        const sessionIds = sessions?.map(s => s.id) || [];
+        console.log(`Ditemukan ${sessionIds.length} sesi untuk user ${userId}`);
+
+        // 2. Hapus exam_answers berdasarkan session ID
+        if (sessionIds.length > 0) {
+            const { error: errorAnswers } = await supabase
+                .from('exam_answers')
+                .delete()
+                .in('exam_session_id', sessionIds);
+
+            if (errorAnswers) {
+                console.error('Gagal menghapus exam_answers:', errorAnswers);
+            } else {
+                console.log('exam_answers berhasil dihapus');
+            }
+        }
+
+        // 3. Hapus exam_sessions
+        const { error: errorSessions } = await supabase
             .from('exam_sessions')
             .delete()
             .eq('user_id', userId);
 
         if (errorSessions) {
-            console.error('Gagal menghapus sesi ujian:', errorSessions);
+            console.error('Gagal menghapus exam_sessions:', errorSessions);
+            alert('Gagal menghapus sesi ujian: ' + errorSessions.message);
+            return;
         }
+        console.log('exam_sessions berhasil dihapus');
 
-        // 3. Hapus data dari tabel analytics jika ada
-        const { error: errorAnalytics } = await adminSupabase
-            .from('exam_analytics')
+        // 4. Hapus student_analytics
+        const { error: errorAnalytics } = await supabase
+            .from('student_analytics')
             .delete()
             .eq('user_id', userId);
 
         if (errorAnalytics) {
-            console.error('Gagal menghapus analytics:', errorAnalytics);
+            console.log('student_analytics skip (mungkin tidak ada data):', errorAnalytics.message);
+        } else {
+            console.log('student_analytics berhasil dihapus');
         }
-
-        // 4. Hapus data progress tracking jika ada
-        const { error: errorProgress } = await adminSupabase
-            .from('progress_tracking')
-            .delete()
-            .eq('user_id', userId);
 
         alert('Berhasil! Riwayat ujian siswa telah dihapus. Siswa sekarang dapat mulai mengerjakan ujian kembali dari awal.');
         
