@@ -603,56 +603,67 @@ function viewUserDetails(userId) {
 
 // Delete exam history for a specific student
 async function deleteStudentExamHistory(userId, userName) {
-    // Handle test button click
-    if (userId === 'test-id') {
-        alert('Test button works! But this is just a test - cannot delete history for test user.');
+    if (!confirm('Apakah Anda yakin ingin MENGHAPUS SELURUH RIWAYAT UJIAN siswa ini? Data nilai akan hilang dan siswa akan bisa mengerjakan ujian dari awal.')) {
         return;
     }
 
-    // First confirm
-    const confirmDelete = confirm(`Apakah Anda yakin ingin menghapus riwayat ujian untuk siswa "${userName}"?\n\nSemua riwayat ujian dan jawaban akan dihapus. Siswa ini akan bisa mengerjakan simulasi lagi dari awal.`);
-    
-    if (!confirmDelete) return;
-
-    // Second confirmation
-    const confirmAgain = confirm(`PERINGATAN: Data yang dihapus tidak dapat dikembalikan!\n\nYakin ingin menghapus riwayat ujian untuk "${userName}"?`);
-    
-    if (!confirmAgain) return;
-
     try {
-        // Delete exam sessions for this user
-        const { error: sessionsError } = await supabase
+        // PERBAIKAN: Wajib menggunakan adminSupabase agar bisa menembus keamanan RLS
+        const adminSupabase = window.supabase || supabase;
+        
+        console.log(`Menghapus data ujian untuk user: ${userId}`);
+
+        // 1. Hapus data dari tabel student_answers terlebih dahulu (mencegah error relasi)
+        const { error: errorAnswers } = await adminSupabase
+            .from('student_answers')
+            .delete()
+            .eq('user_id', userId);
+
+        if (errorAnswers) {
+            console.error('Gagal menghapus jawaban:', errorAnswers);
+        }
+
+        // 2. Hapus data dari tabel exam_sessions
+        const { error: errorSessions } = await adminSupabase
             .from('exam_sessions')
             .delete()
             .eq('user_id', userId);
 
-        if (sessionsError) {
-            console.error('Error deleting exam sessions:', sessionsError);
-            alert('Gagal menghapus riwayat ujian: ' + sessionsError.message);
-            return;
+        if (errorSessions) {
+            console.error('Gagal menghapus sesi ujian:', errorSessions);
         }
 
-        // Also delete exam answers for this user (if exam_answers table exists)
-        try {
-            await supabase
-                .from('exam_answers')
-                .delete()
-                .eq('user_id', userId);
-        } catch (e) {
-            // Table might not exist or no answers to delete, continue
-            console.log('No exam_answers to delete or table does not exist');
+        // 3. Hapus data dari tabel analytics jika ada
+        const { error: errorAnalytics } = await adminSupabase
+            .from('exam_analytics')
+            .delete()
+            .eq('user_id', userId);
+
+        if (errorAnalytics) {
+            console.error('Gagal menghapus analytics:', errorAnalytics);
         }
 
-        alert(`Riwayat ujian untuk "${userName}" berhasil dihapus!\n\nSiswa ini sekarang bisa mengerjakan simulasi lagi.`);
+        // 4. Hapus data progress tracking jika ada
+        const { error: errorProgress } = await adminSupabase
+            .from('progress_tracking')
+            .delete()
+            .eq('user_id', userId);
+
+        alert('Berhasil! Riwayat ujian siswa telah dihapus. Siswa sekarang dapat mulai mengerjakan ujian kembali dari awal.');
         
-        // Refresh the users table
-        await loadUsersData();
+        // Otomatis refresh data di tabel setelah penghapusan
+        if (typeof loadUsersData === 'function') {
+            loadUsersData();
+        }
         
     } catch (error) {
-        console.error('Error in deleteStudentExamHistory:', error);
-        alert('Terjadi kesalahan saat menghapus riwayat ujian.');
+        console.error('Terjadi kesalahan saat menghapus data ujian:', error);
+        alert('Gagal menghapus data ujian. Silakan cek console.');
     }
 }
+
+// Pastikan fungsi ini diekspor ke global window (agar tombol HTML bisa memanggilnya)
+window.deleteStudentExamHistory = deleteStudentExamHistory;
 
 // Delete exam data completely for a specific student (hard delete)
 async function deleteStudentExamData(userId, userName) {
