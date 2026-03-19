@@ -1271,24 +1271,33 @@ async function saveOneAnswer(index, question, answer) {
         };
 
         // Cek apakah sudah ada record untuk soal ini
-        const { data: existing } = await supabase
+        const { data: existing, error: selectError } = await supabase
             .from('exam_answers')
             .select('id')
             .eq('exam_session_id', examSessionId)
             .eq('question_id', question.id)
             .maybeSingle();
 
+        if (selectError) {
+            console.error('[saveOneAnswer] SELECT error soal ' + (index+1) + ':', selectError.message, selectError.code);
+        }
+
         if (existing && existing.id) {
             const { error } = await supabase
                 .from('exam_answers')
                 .update(payload)
                 .eq('id', existing.id);
-            if (error) console.error('[saveOneAnswer] UPDATE error soal ' + (index+1) + ':', error);
+            if (error) console.error('[saveOneAnswer] UPDATE error soal ' + (index+1) + ':', error.message, error.code, error.hint);
         } else {
-            const { error } = await supabase
+            const { data: insertData, error } = await supabase
                 .from('exam_answers')
-                .insert([payload]);
-            if (error) console.error('[saveOneAnswer] INSERT error soal ' + (index+1) + ':', error);
+                .insert([payload])
+                .select('id');
+            if (error) {
+                console.error('[saveOneAnswer] INSERT error soal ' + (index+1) + ':', error.message, error.code, error.hint);
+            } else {
+                console.log('[saveOneAnswer] Soal ' + (index+1) + ' tersimpan, id:', insertData?.[0]?.id);
+            }
         }
     } catch (error) {
         console.error('[saveOneAnswer] Exception soal ' + (index+1) + ':', error);
@@ -1296,18 +1305,109 @@ async function saveOneAnswer(index, question, answer) {
 }
 
 // Simpan SEMUA jawaban ke database (dipanggil saat ujian selesai)
+// Strategi: batch DELETE semua jawaban lama lalu batch INSERT baru
+// Ini paling robust — tidak bergantung unique constraint, tidak kena RLS update
 async function saveAllAnswers() {
     console.log('[saveAllAnswers] Mulai menyimpan semua jawaban...');
-    let savedCount = 0;
+
+    if (!examSessionId) {
+        console.error('[saveAllAnswers] examSessionId kosong, batalkan.');
+        return;
+    }
+
+    // 1. Bangun payload semua jawaban
+    const payload = [];
     for (let i = 0; i < questions.length; i++) {
         const answer = answers[i];
         if (answer === null || answer === undefined) continue;
         const question = questions[i];
         if (!question || !question.id) continue;
-        await saveOneAnswer(i, question, answer);
-        savedCount++;
+
+        let answerValue = answer;
+        if (question.question_type === 'PGK Kategori') {
+            answerValue = typeof answer === 'object' ? JSON.stringify(answer) : answer;
+        }
+
+        let isCorrect = false;
+        if (question.question_type === 'PGK MCMA') {
+            const sel = (answerValue || '').split(',').sort();
+            const cor = Array.isArray(question.correct_answers)
+                ? [...question.correct_answers].sort()
+                : (question.correct_answers || '').split(',').sort();
+            isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
+        } else if (question.question_type === 'PGK Kategori') {
+            isCorrect = checkKategoriAnswer(answer, question);
+        } else {
+            isCorrect = answerValue === question.correct_answer;
+        }
+
+        payload.push({
+            exam_session_id: examSessionId,
+            question_id: question.id,
+            selected_answer: answerValue,
+            user_answer: answerValue,
+            is_correct: isCorrect,
+            time_taken_seconds: 0,
+            is_doubtful: doubtfulQuestions[i] || false,
+            answered_at: new Date().toISOString()
+        });
     }
-    console.log('[saveAllAnswers] Selesai. ' + savedCount + ' jawaban disimpan dari ' + questions.length + ' soal.');
+
+    console.log('[saveAllAnswers] Total jawaban yang akan disimpan:', payload.length);
+    if (payload.length === 0) {
+        console.warn('[saveAllAnswers] Tidak ada jawaban untuk disimpan.');
+        return;
+    }
+
+    // 2. DIAGNOSTIC: test INSERT satu record dulu untuk cek error Supabase
+    const testRecord = payload[0];
+    const { data: testData, error: testError } = await supabase
+        .from('exam_answers')
+        .insert([testRecord])
+        .select('id');
+
+    if (testError) {
+        console.error('[saveAllAnswers] DIAGNOSTIC INSERT GAGAL — ini error sebenarnya dari Supabase:', testError);
+        console.error('[saveAllAnswers] Error code:', testError.code);
+        console.error('[saveAllAnswers] Error message:', testError.message);
+        console.error('[saveAllAnswers] Error details:', testError.details);
+        console.error('[saveAllAnswers] Error hint:', testError.hint);
+        alert('Gagal menyimpan jawaban: ' + testError.message + '\n\nSilakan screenshot error ini dan hubungi developer.');
+        return;
+    }
+
+    console.log('[saveAllAnswers] Test INSERT berhasil, lanjut batch save sisa jawaban...');
+
+    // 3. Batch INSERT sisanya (skip index 0 yang sudah disimpan)
+    const remaining = payload.slice(1);
+    const chunkSize = 50;
+    let totalSaved = 1; // sudah 1 dari test
+
+    for (let i = 0; i < remaining.length; i += chunkSize) {
+        const chunk = remaining.slice(i, i + chunkSize);
+        const { error: chunkError } = await supabase
+            .from('exam_answers')
+            .insert(chunk);
+
+        if (chunkError) {
+            console.error('[saveAllAnswers] Chunk INSERT error (index ' + i + '):', chunkError);
+            // Fallback: coba satu per satu untuk chunk ini
+            for (const row of chunk) {
+                const { error: singleError } = await supabase
+                    .from('exam_answers')
+                    .insert([row]);
+                if (singleError) {
+                    console.error('[saveAllAnswers] Single INSERT error question_id=' + row.question_id + ':', singleError);
+                } else {
+                    totalSaved++;
+                }
+            }
+        } else {
+            totalSaved += chunk.length;
+        }
+    }
+
+    console.log('[saveAllAnswers] SELESAI. ' + totalSaved + '/' + payload.length + ' jawaban tersimpan.');
 }
 
 // Setup navigation listeners
