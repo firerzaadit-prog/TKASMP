@@ -110,6 +110,45 @@ async function loadExamResults() {
     }
 }
 
+// Helper: cek jawaban PGK Kategori
+// category_mapping key = teks pernyataan, jawaban siswa key = index angka
+function checkKategoriHabisUjian(answer, question) {
+    try {
+        if (!answer) return false;
+        const selectedAnswers = typeof answer === 'string' ? JSON.parse(answer) : answer;
+        if (!selectedAnswers || Object.keys(selectedAnswers).length === 0) return false;
+
+        let statements = question.category_options || question.category_statements || [];
+        if (!Array.isArray(statements)) {
+            statements = typeof statements === 'string' ? JSON.parse(statements) : [];
+        }
+
+        let correctMapping = question.category_mapping || {};
+        if (typeof correctMapping === 'string') correctMapping = JSON.parse(correctMapping);
+        if (!correctMapping || Object.keys(correctMapping).length === 0) return false;
+
+        const indexCorrectMap = {};
+        statements.forEach((stmt, idx) => {
+            const t = typeof stmt === 'string' ? stmt.trim() : stmt;
+            if (correctMapping.hasOwnProperty(t)) {
+                indexCorrectMap[idx] = correctMapping[t];
+            } else if (correctMapping.hasOwnProperty(String(idx))) {
+                indexCorrectMap[idx] = correctMapping[String(idx)];
+            }
+        });
+
+        for (let idx = 0; idx < statements.length; idx++) {
+            const correct = indexCorrectMap[idx];
+            if (correct === undefined) continue;
+            if (selectedAnswers[idx] !== correct) return false;
+        }
+        return true;
+    } catch (e) {
+        console.error('checkKategoriHabisUjian error:', e);
+        return false;
+    }
+}
+
 // Display exam results
 function displayExamResults(session) {
     // Display final score
@@ -157,25 +196,7 @@ function displayExamResults(session) {
                     : (question.correct_answers || '').split(',').sort();
                 isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
             } else if (question.question_type === 'PGK Kategori') {
-                const selectedAnswers = typeof userAnswer === 'string' ? JSON.parse(userAnswer) : userAnswer;
-                const correctMapping = typeof question.category_mapping === 'string'
-                    ? JSON.parse(question.category_mapping)
-                    : question.category_mapping;
-
-                let allCorrect = true;
-                for (const [stmtIndex, isTrue] of Object.entries(selectedAnswers || {})) {
-                    if (correctMapping[stmtIndex] !== isTrue) {
-                        allCorrect = false;
-                        break;
-                    }
-                }
-                for (const [stmtIndex, shouldBeTrue] of Object.entries(correctMapping || {})) {
-                    if (shouldBeTrue && selectedAnswers[stmtIndex] !== true) {
-                        allCorrect = false;
-                        break;
-                    }
-                }
-                isCorrect = allCorrect;
+                isCorrect = checkKategoriHabisUjian(userAnswer, question);
             } else {
                 isCorrect = userAnswer === question.correct_answer;
             }

@@ -171,25 +171,7 @@
                         : (question.correct_answers || '').split(',').sort();
                     isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
                 } else if (question.question_type === 'PGK Kategori') {
-                    const selectedAnswers = typeof userAnswer === 'string' ? JSON.parse(userAnswer) : userAnswer;
-                    const correctMapping = typeof question.category_mapping === 'string'
-                        ? JSON.parse(question.category_mapping)
-                        : question.category_mapping;
-
-                    let allCorrect = true;
-                    for (const [stmtIndex, isTrue] of Object.entries(selectedAnswers || {})) {
-                        if (correctMapping[stmtIndex] !== isTrue) {
-                            allCorrect = false;
-                            break;
-                        }
-                    }
-                    for (const [stmtIndex, shouldBeTrue] of Object.entries(correctMapping || {})) {
-                        if (shouldBeTrue && selectedAnswers[stmtIndex] !== true) {
-                            allCorrect = false;
-                            break;
-                        }
-                    }
-                    isCorrect = allCorrect;
+                    isCorrect = checkKategoriAnswerReview(userAnswer, question);
                 } else {
                     isCorrect = userAnswer === correctAnswer;
                 }
@@ -269,16 +251,17 @@
             } else if (question.question_type === 'PGK Kategori') {
                 try {
                     const selectedAnswers = typeof answer === 'string' ? JSON.parse(answer) : answer;
-                    const selectedStatements = Object.keys(selectedAnswers).filter(key => selectedAnswers[key] === true);
-                    if (question.category_options) {
-                        let statements = question.category_options;
-                        if (typeof statements === 'string') {
-                            statements = JSON.parse(statements);
-                        }
-                        const selectedTexts = selectedStatements.map(index => statements[parseInt(index)]).filter(Boolean);
-                        return selectedTexts.join('<br>') || 'Tidak ada yang dipilih';
+                    let statements = question.category_options || question.category_statements || [];
+                    if (!Array.isArray(statements)) {
+                        statements = typeof statements === 'string' ? JSON.parse(statements) : [];
                     }
-                    return selectedStatements.join('<br>');
+                    if (statements.length === 0) return 'Tidak ada data pernyataan';
+                    const lines = statements.map((stmt, idx) => {
+                        const val = selectedAnswers[idx];
+                        const label = val === true ? '✔ Benar' : val === false ? '✘ Salah' : '— Tidak dijawab';
+                        return `${idx + 1}. ${stmt} → <strong>${label}</strong>`;
+                    });
+                    return lines.join('<br>');
                 } catch (e) {
                     return 'Format jawaban tidak valid';
                 }
@@ -306,16 +289,21 @@
                     const correctMapping = typeof question.category_mapping === 'string'
                         ? JSON.parse(question.category_mapping)
                         : question.category_mapping;
-                    const correctStatements = Object.keys(correctMapping).filter(key => correctMapping[key] === true);
-                    if (question.category_options) {
-                        let statements = question.category_options;
-                        if (typeof statements === 'string') {
-                            statements = JSON.parse(statements);
-                        }
-                        const correctTexts = correctStatements.map(index => statements[parseInt(index)]).filter(Boolean);
-                        return correctTexts.join('<br>') || 'Tidak ada yang benar';
+                    let statements = question.category_options || question.category_statements || [];
+                    if (!Array.isArray(statements)) {
+                        statements = typeof statements === 'string' ? JSON.parse(statements) : [];
                     }
-                    return correctStatements.join('<br>');
+                    if (statements.length === 0) return 'Tidak ada data pernyataan';
+                    // correctMapping key = teks pernyataan, value = boolean
+                    const lines = statements.map((stmt, idx) => {
+                        const stmtTrimmed = typeof stmt === 'string' ? stmt.trim() : stmt;
+                        const isTrue = correctMapping.hasOwnProperty(stmtTrimmed)
+                            ? correctMapping[stmtTrimmed]
+                            : correctMapping[String(idx)];
+                        const label = isTrue === true ? '✔ Benar' : '✘ Salah';
+                        return `${idx + 1}. ${stmt} → <strong>${label}</strong>`;
+                    });
+                    return lines.join('<br>');
                 } catch (e) {
                     return 'Format jawaban tidak valid';
                 }
@@ -323,6 +311,45 @@
                 const optionKey = `option_${question.correct_answer.toLowerCase()}`;
                 const optionText = question[optionKey];
                 return optionText ? `${question.correct_answer}. ${optionText}` : question.correct_answer;
+            }
+        }
+
+        // Helper: cek jawaban PGK Kategori (key mapping = teks pernyataan, index jawaban = angka)
+        function checkKategoriAnswerReview(answer, question) {
+            try {
+                if (!answer) return false;
+                const selectedAnswers = typeof answer === 'string' ? JSON.parse(answer) : answer;
+                if (!selectedAnswers || Object.keys(selectedAnswers).length === 0) return false;
+
+                let statements = question.category_options || question.category_statements || [];
+                if (!Array.isArray(statements)) {
+                    statements = typeof statements === 'string' ? JSON.parse(statements) : [];
+                }
+
+                let correctMapping = question.category_mapping || {};
+                if (typeof correctMapping === 'string') correctMapping = JSON.parse(correctMapping);
+                if (!correctMapping || Object.keys(correctMapping).length === 0) return false;
+
+                // Bangun map berbasis index dari teks pernyataan
+                const indexCorrectMap = {};
+                statements.forEach((stmt, idx) => {
+                    const t = typeof stmt === 'string' ? stmt.trim() : stmt;
+                    if (correctMapping.hasOwnProperty(t)) {
+                        indexCorrectMap[idx] = correctMapping[t];
+                    } else if (correctMapping.hasOwnProperty(String(idx))) {
+                        indexCorrectMap[idx] = correctMapping[String(idx)];
+                    }
+                });
+
+                for (let idx = 0; idx < statements.length; idx++) {
+                    const correct = indexCorrectMap[idx];
+                    if (correct === undefined) continue;
+                    if (selectedAnswers[idx] !== correct) return false;
+                }
+                return true;
+            } catch (e) {
+                console.error('checkKategoriAnswerReview error:', e);
+                return false;
             }
         }
 
