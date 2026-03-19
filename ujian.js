@@ -1274,7 +1274,7 @@ async function saveCurrentAnswer() {
                 time_taken_seconds: timeTaken,
                 is_doubtful: doubtfulQuestions[currentQuestionIndex],
                 answered_at: new Date().toISOString()
-            });
+            }, { onConflict: 'exam_session_id,question_id' });
 
         if (error) {
             console.error('Error saving answer:', error);
@@ -1341,11 +1341,81 @@ async function confirmSubmit() {
     }
 }
 
+// Simpan SEMUA jawaban ke database sekaligus (dipanggil saat ujian selesai)
+async function saveAllAnswers() {
+    try {
+        if (!examSessionId) return;
+
+        const upsertPayload = [];
+
+        for (let i = 0; i < questions.length; i++) {
+            const answer = answers[i];
+            if (answer === null || answer === undefined) continue;
+
+            const question = questions[i];
+
+            let answerValue = answer;
+            if (question.question_type === 'PGK Kategori') {
+                answerValue = typeof answer === 'object' ? JSON.stringify(answer) : answer;
+            }
+
+            let isCorrect = false;
+            if (question.question_type === 'PGK MCMA') {
+                const sel = (answerValue || '').split(',').sort();
+                const cor = Array.isArray(question.correct_answers)
+                    ? question.correct_answers.sort()
+                    : (question.correct_answers || '').split(',').sort();
+                isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
+            } else if (question.question_type === 'PGK Kategori') {
+                isCorrect = checkKategoriAnswer(answer, question);
+            } else {
+                isCorrect = answerValue === question.correct_answer;
+            }
+
+            upsertPayload.push({
+                exam_session_id: examSessionId,
+                question_id: question.id,
+                selected_answer: answerValue,
+                user_answer: answerValue,
+                is_correct: isCorrect,
+                time_taken_seconds: 0,
+                is_doubtful: doubtfulQuestions[i] || false,
+                answered_at: new Date().toISOString()
+            });
+        }
+
+        if (upsertPayload.length === 0) {
+            console.log('saveAllAnswers: tidak ada jawaban untuk disimpan');
+            return;
+        }
+
+        // Upsert dalam batch (chunk 50 agar tidak melebihi batas Supabase)
+        const chunkSize = 50;
+        for (let i = 0; i < upsertPayload.length; i += chunkSize) {
+            const chunk = upsertPayload.slice(i, i + chunkSize);
+            const { error } = await supabase
+                .from('exam_answers')
+                .upsert(chunk, { onConflict: 'exam_session_id,question_id' });
+            if (error) {
+                console.error('Error batch saving answers (chunk ' + i + '):', error);
+            }
+        }
+
+        console.log(`saveAllAnswers: ${upsertPayload.length} jawaban berhasil disimpan`);
+
+    } catch (error) {
+        console.error('Error in saveAllAnswers:', error);
+    }
+}
+
 // Complete exam and calculate score
 // Sistem penilaian fleksibel: selalu menghasilkan nilai 0-100 terlepas dari jumlah soal
 async function completeExam(isExpired = false) {
     try {
         clearInterval(timerInterval);
+
+        // Simpan semua jawaban terlebih dahulu sebelum menghitung nilai
+        await saveAllAnswers();
 
         const totalTime = Math.floor((Date.now() - examStartTime) / 1000);
 

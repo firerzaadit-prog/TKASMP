@@ -77,22 +77,31 @@ async function loadExamResults() {
         const { data: answersData, error: answersError } = await supabase
             .from('exam_answers')
             .select('*')
-            .eq('exam_session_id', examSessionId)
-            .order('question_id');
+            .eq('exam_session_id', examSessionId);
 
         if (answersError) {
             console.warn('Could not load answers:', answersError);
         }
 
-        // Build answers array
+        console.log('Raw answers from DB:', answersData ? answersData.length : 0, 'records');
+
+        // Build answers array — cocokkan question_id ke index soal
         answers = new Array(questions.length).fill(null);
-        if (answersData) {
+        if (answersData && answersData.length > 0) {
+            let matched = 0;
             answersData.forEach(answerRecord => {
                 const questionIndex = questions.findIndex(q => q.id === answerRecord.question_id);
                 if (questionIndex !== -1) {
-                    answers[questionIndex] = answerRecord.selected_answer;
+                    // Gunakan selected_answer, fallback ke user_answer
+                    answers[questionIndex] = answerRecord.selected_answer ?? answerRecord.user_answer ?? null;
+                    matched++;
+                } else {
+                    console.warn('question_id tidak ditemukan di daftar soal:', answerRecord.question_id);
                 }
             });
+            console.log(`Matched ${matched} dari ${answersData.length} jawaban ke soal`);
+        } else {
+            console.warn('Tidak ada jawaban ditemukan di exam_answers untuk session ini:', examSessionId);
         }
 
         console.log('Loaded questions:', questions.length);
