@@ -1226,68 +1226,88 @@ function selectCategoryAnswer(statementIndex, value) {
 async function saveCurrentAnswer() {
     try {
         const answer = answers[currentQuestionIndex];
-        if (answer === null) return; 
-
+        if (answer === null || answer === undefined) return;
         const question = questions[currentQuestionIndex];
-        
+        if (!question || !question.id) return;
+        await saveOneAnswer(currentQuestionIndex, question, answer);
+        window.questionStartTime = Date.now();
+    } catch (error) {
+        console.error('Error in saveCurrentAnswer:', error);
+    }
+}
+
+// Simpan satu jawaban — cek dulu ada atau tidak, lalu UPDATE atau INSERT
+async function saveOneAnswer(index, question, answer) {
+    try {
         let answerValue = answer;
         if (question.question_type === 'PGK Kategori') {
-            answerValue = JSON.stringify(answer);
+            answerValue = typeof answer === 'object' ? JSON.stringify(answer) : answer;
         }
+        const timeTaken = window.questionStartTime
+            ? Math.floor((Date.now() - window.questionStartTime) / 1000) : 0;
 
-        // Calculate time taken for this question
-        const timeTaken = window.questionStartTime ? 
-            Math.floor((Date.now() - window.questionStartTime) / 1000) : 0;
-
-        // Check if answer is correct
         let isCorrect = false;
         if (question.question_type === 'PGK MCMA') {
-            const selectedAnswers = answerValue.split(',').sort();
-            const correctAnswers = Array.isArray(question.correct_answers)
-                ? question.correct_answers.sort()
+            const sel = (answerValue || '').split(',').sort();
+            const cor = Array.isArray(question.correct_answers)
+                ? [...question.correct_answers].sort()
                 : (question.correct_answers || '').split(',').sort();
-            isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
+            isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
         } else if (question.question_type === 'PGK Kategori') {
-            const selectedAnswers = typeof answerValue === 'string' ? JSON.parse(answerValue) : answerValue;
-            const correctMapping = typeof question.category_mapping === 'string'
-                ? JSON.parse(question.category_mapping)
-                : question.category_mapping;
-            isCorrect = true;
-            for (const [stmtIndex, isTrue] of Object.entries(selectedAnswers || {})) {
-                if (correctMapping[stmtIndex] !== isTrue) {
-                    isCorrect = false;
-                    break;
-                }
-            }
+            isCorrect = checkKategoriAnswer(answer, question);
         } else {
             isCorrect = answerValue === question.correct_answer;
         }
 
-        const { error } = await supabase
+        const payload = {
+            exam_session_id: examSessionId,
+            question_id: question.id,
+            selected_answer: answerValue,
+            user_answer: answerValue,
+            is_correct: isCorrect,
+            time_taken_seconds: timeTaken,
+            is_doubtful: doubtfulQuestions[index] || false,
+            answered_at: new Date().toISOString()
+        };
+
+        // Cek apakah sudah ada record untuk soal ini
+        const { data: existing } = await supabase
             .from('exam_answers')
-            .upsert({
-                exam_session_id: examSessionId,
-                question_id: question.id,
-                selected_answer: answerValue,
-                user_answer: answerValue,
-                is_correct: isCorrect,
-                time_taken_seconds: timeTaken,
-                is_doubtful: doubtfulQuestions[currentQuestionIndex],
-                answered_at: new Date().toISOString()
-            }, { onConflict: 'exam_session_id,question_id' });
+            .select('id')
+            .eq('exam_session_id', examSessionId)
+            .eq('question_id', question.id)
+            .maybeSingle();
 
-        if (error) {
-            console.error('Error saving answer:', error);
+        if (existing && existing.id) {
+            const { error } = await supabase
+                .from('exam_answers')
+                .update(payload)
+                .eq('id', existing.id);
+            if (error) console.error('[saveOneAnswer] UPDATE error soal ' + (index+1) + ':', error);
         } else {
-            console.log('Answer saved successfully for real-time monitoring');
+            const { error } = await supabase
+                .from('exam_answers')
+                .insert([payload]);
+            if (error) console.error('[saveOneAnswer] INSERT error soal ' + (index+1) + ':', error);
         }
-
-        // Reset question start time for next question
-        window.questionStartTime = Date.now();
-
     } catch (error) {
-        console.error('Error in saveCurrentAnswer:', error);
+        console.error('[saveOneAnswer] Exception soal ' + (index+1) + ':', error);
     }
+}
+
+// Simpan SEMUA jawaban ke database (dipanggil saat ujian selesai)
+async function saveAllAnswers() {
+    console.log('[saveAllAnswers] Mulai menyimpan semua jawaban...');
+    let savedCount = 0;
+    for (let i = 0; i < questions.length; i++) {
+        const answer = answers[i];
+        if (answer === null || answer === undefined) continue;
+        const question = questions[i];
+        if (!question || !question.id) continue;
+        await saveOneAnswer(i, question, answer);
+        savedCount++;
+    }
+    console.log('[saveAllAnswers] Selesai. ' + savedCount + ' jawaban disimpan dari ' + questions.length + ' soal.');
 }
 
 // Setup navigation listeners
@@ -1341,80 +1361,13 @@ async function confirmSubmit() {
     }
 }
 
-// Simpan SEMUA jawaban ke database sekaligus (dipanggil saat ujian selesai)
-async function saveAllAnswers() {
-    try {
-        if (!examSessionId) return;
-
-        const upsertPayload = [];
-
-        for (let i = 0; i < questions.length; i++) {
-            const answer = answers[i];
-            if (answer === null || answer === undefined) continue;
-
-            const question = questions[i];
-
-            let answerValue = answer;
-            if (question.question_type === 'PGK Kategori') {
-                answerValue = typeof answer === 'object' ? JSON.stringify(answer) : answer;
-            }
-
-            let isCorrect = false;
-            if (question.question_type === 'PGK MCMA') {
-                const sel = (answerValue || '').split(',').sort();
-                const cor = Array.isArray(question.correct_answers)
-                    ? question.correct_answers.sort()
-                    : (question.correct_answers || '').split(',').sort();
-                isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
-            } else if (question.question_type === 'PGK Kategori') {
-                isCorrect = checkKategoriAnswer(answer, question);
-            } else {
-                isCorrect = answerValue === question.correct_answer;
-            }
-
-            upsertPayload.push({
-                exam_session_id: examSessionId,
-                question_id: question.id,
-                selected_answer: answerValue,
-                user_answer: answerValue,
-                is_correct: isCorrect,
-                time_taken_seconds: 0,
-                is_doubtful: doubtfulQuestions[i] || false,
-                answered_at: new Date().toISOString()
-            });
-        }
-
-        if (upsertPayload.length === 0) {
-            console.log('saveAllAnswers: tidak ada jawaban untuk disimpan');
-            return;
-        }
-
-        // Upsert dalam batch (chunk 50 agar tidak melebihi batas Supabase)
-        const chunkSize = 50;
-        for (let i = 0; i < upsertPayload.length; i += chunkSize) {
-            const chunk = upsertPayload.slice(i, i + chunkSize);
-            const { error } = await supabase
-                .from('exam_answers')
-                .upsert(chunk, { onConflict: 'exam_session_id,question_id' });
-            if (error) {
-                console.error('Error batch saving answers (chunk ' + i + '):', error);
-            }
-        }
-
-        console.log(`saveAllAnswers: ${upsertPayload.length} jawaban berhasil disimpan`);
-
-    } catch (error) {
-        console.error('Error in saveAllAnswers:', error);
-    }
-}
-
 // Complete exam and calculate score
 // Sistem penilaian fleksibel: selalu menghasilkan nilai 0-100 terlepas dari jumlah soal
 async function completeExam(isExpired = false) {
     try {
         clearInterval(timerInterval);
 
-        // Simpan semua jawaban terlebih dahulu sebelum menghitung nilai
+        // Simpan semua jawaban ke DB sebelum menghitung nilai
         await saveAllAnswers();
 
         const totalTime = Math.floor((Date.now() - examStartTime) / 1000);
