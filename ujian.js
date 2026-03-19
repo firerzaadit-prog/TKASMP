@@ -833,15 +833,24 @@ async function showQuestion(index) {
         `;
     }
 
-    if (question.question_type === 'PGK MCMA') {
-        console.log('Rendering MCMA question:', question.id, 'Type:', question.question_type);
-        questionHTML += renderMCMAOptions(question, index);
-    } else if (question.question_type === 'PGK Kategori') {
-        console.log('Rendering Kategori question:', question.id, 'Type:', question.question_type, 'Statements:', question.category_statements);
-        questionHTML += renderCategoryOptions(question, index);
-    } else {
-        console.log('Rendering regular question:', question.id, 'Type:', question.question_type);
-        questionHTML += renderMultipleChoiceOptions(question, index);
+    // Render options based on question type
+    const questionType = question.question_type || 'Pilihan Ganda';
+    console.log('Rendering question type:', questionType);
+    
+    switch (questionType) {
+        case 'PGK MCMA':
+            questionHTML += renderMCMAOptions(question, index);
+            break;
+            
+        case 'PGK Kategori':
+            questionHTML += renderCategoryOptions(question, index);
+            break;
+            
+        case 'PG':
+        case 'Pilihan Ganda':
+        default:
+            questionHTML += renderMultipleChoiceOptions(question, index);
+            break;
     }
 
     const isDoubtful = doubtfulQuestions[index];
@@ -887,7 +896,17 @@ async function showQuestion(index) {
 
 // Render multiple choice options
 function renderMultipleChoiceOptions(question, questionIndex) {
-    const options = ['A', 'B', 'C', 'D', 'E'].filter(opt => question[`option_${opt.toLowerCase()}`]);
+    // Filter options A-E that have content
+    const options = ['A', 'B', 'C', 'D', 'E'].filter(opt => {
+        const optKey = `option_${opt.toLowerCase()}`;
+        return question[optKey] && question[optKey].trim() !== '';
+    });
+    
+    if (!options || options.length === 0) {
+        console.error('No options found for question:', question.id);
+        return '<div class="error-message">Data opsi tidak tersedia. Silakan hubungi admin.</div>';
+    }
+    
     const currentAnswer = answers[questionIndex];
 
     let html = '<div class="options">';
