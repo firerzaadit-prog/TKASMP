@@ -1202,3 +1202,292 @@
                 max-height: 150px;
             }
         }
+
+        /* ============================================================
+           PGK KATEGORI — TABLE LAYOUT
+        ============================================================ */
+        .pgk-kategori-wrapper {
+            margin-top: 0.5rem;
+        }
+
+        .pgk-kategori-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 0.85rem 1.25rem;
+            border-radius: 14px 14px 0 0;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .pgk-header-left {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .pgk-progress-pill {
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 0.3rem 0.9rem;
+            border-radius: 20px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+
+        .pgk-instruction {
+            background: rgba(102, 126, 234, 0.07);
+            border-left: 4px solid #667eea;
+            margin: 0;
+            padding: 0.75rem 1.1rem;
+            font-size: 0.9rem;
+            color: #374151;
+            line-height: 1.5;
+        }
+
+        .pgk-instruction i {
+            color: #667eea;
+            margin-right: 0.4rem;
+        }
+
+        .pgk-table-container {
+            border: 1.5px solid #e5e7eb;
+            border-top: none;
+            border-radius: 0 0 14px 14px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.12);
+        }
+
+        .pgk-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            table-layout: fixed;
+        }
+
+        /* Column widths */
+        .pgk-th-no       { width: 52px; }
+        .pgk-th-statement { /* auto */ }
+        .pgk-th-benar,
+        .pgk-th-salah    { width: 110px; }
+
+        .pgk-table thead tr {
+            background: #f8fafc;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        .pgk-table th {
+            padding: 0.85rem 0.75rem;
+            text-align: center;
+            font-size: 0.82rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: #6b7280;
+        }
+
+        .pgk-th-statement {
+            text-align: left;
+        }
+
+        /* Rows */
+        .pgk-row {
+            border-bottom: 1px solid #f1f5f9;
+            transition: background 0.25s ease;
+        }
+
+        .pgk-row:last-child {
+            border-bottom: none;
+        }
+
+        .pgk-row:hover {
+            background: rgba(102, 126, 234, 0.03);
+        }
+
+        .pgk-row-benar {
+            background: rgba(16, 185, 129, 0.05) !important;
+        }
+
+        .pgk-row-salah {
+            background: rgba(239, 68, 68, 0.04) !important;
+        }
+
+        /* No. cell */
+        .pgk-td-no {
+            text-align: center;
+            vertical-align: middle;
+            padding: 1rem 0.5rem;
+        }
+
+        .pgk-no-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50%;
+            font-size: 0.8rem;
+            font-weight: 700;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.35);
+        }
+
+        .pgk-row-benar .pgk-no-badge {
+            background: linear-gradient(135deg, #10b981, #059669);
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
+        }
+
+        .pgk-row-salah .pgk-no-badge {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.35);
+        }
+
+        /* Statement cell */
+        .pgk-td-statement {
+            padding: 1rem 0.85rem;
+            vertical-align: middle;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #1e293b;
+        }
+
+        /* Choice cell */
+        .pgk-td-choice {
+            text-align: center;
+            vertical-align: middle;
+            padding: 0.75rem 0.5rem;
+        }
+
+        /* Choice buttons */
+        .pgk-choice-btn {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            width: 80px;
+            padding: 0.6rem 0.4rem;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            background: white;
+            cursor: pointer;
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #9ca3af;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            user-select: none;
+        }
+
+        .pgk-choice-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .pgk-choice-btn i {
+            font-size: 1rem;
+        }
+
+        /* Radio ring indicator */
+        .pgk-radio-ring {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid currentColor;
+            display: block;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+
+        .pgk-radio-ring.filled {
+            background: currentColor;
+            box-shadow: 0 0 0 3px rgba(currentColor, 0.2);
+        }
+
+        /* Benar button */
+        .pgk-btn-benar {
+            color: #6b7280;
+        }
+
+        .pgk-btn-benar:hover {
+            border-color: #10b981;
+            color: #10b981;
+            background: rgba(16, 185, 129, 0.06);
+        }
+
+        .pgk-btn-benar.active {
+            border-color: #10b981;
+            background: linear-gradient(135deg, rgba(16,185,129,0.12), rgba(5,150,105,0.08));
+            color: #059669;
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18),
+                        0 4px 12px rgba(16, 185, 129, 0.2);
+        }
+
+        .pgk-btn-benar.active .pgk-btn-label {
+            color: #059669;
+        }
+
+        /* Salah button */
+        .pgk-btn-salah {
+            color: #6b7280;
+        }
+
+        .pgk-btn-salah:hover {
+            border-color: #ef4444;
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.06);
+        }
+
+        .pgk-btn-salah.active {
+            border-color: #ef4444;
+            background: linear-gradient(135deg, rgba(239,68,68,0.12), rgba(220,38,38,0.08));
+            color: #dc2626;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18),
+                        0 4px 12px rgba(239, 68, 68, 0.2);
+        }
+
+        .pgk-btn-salah.active .pgk-btn-label {
+            color: #dc2626;
+        }
+
+        .pgk-btn-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+        }
+
+        /* Mobile responsive */
+        @media (max-width: 600px) {
+            .pgk-th-benar,
+            .pgk-th-salah { width: 76px; }
+
+            .pgk-choice-btn {
+                width: 60px;
+                padding: 0.5rem 0.25rem;
+                font-size: 0.7rem;
+            }
+
+            .pgk-choice-btn i { font-size: 0.85rem; }
+
+            .pgk-td-statement {
+                font-size: 0.88rem;
+                padding: 0.85rem 0.6rem;
+            }
+
+            .pgk-no-badge {
+                width: 26px;
+                height: 26px;
+                font-size: 0.72rem;
+            }
+
+            .pgk-kategori-header {
+                font-size: 0.85rem;
+                padding: 0.7rem 1rem;
+            }
+        }

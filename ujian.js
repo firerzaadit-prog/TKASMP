@@ -1001,13 +1001,45 @@ function renderCategoryOptions(question, questionIndex) {
         selectedAnswers = {};
     }
 
-    let html = '<div class="category-instruction"><i class="fas fa-info-circle"></i> Tentukan benar atau salah untuk setiap pernyataan</div>';
-    html += '<div class="category-options">';
-    
+    // Count answered
+    const answeredCount = Object.keys(selectedAnswers).length;
+    const totalCount = statements.length;
+
+    let html = `
+        <div class="pgk-kategori-wrapper">
+            <div class="pgk-kategori-header">
+                <div class="pgk-header-left">
+                    <i class="fas fa-table"></i>
+                    <span>Soal PGK Kategori</span>
+                </div>
+                <div class="pgk-header-right">
+                    <div class="pgk-progress-pill">
+                        <span id="pgk-answered-count">${answeredCount}</span>/<span>${totalCount}</span> dijawab
+                    </div>
+                </div>
+            </div>
+            <p class="pgk-instruction">
+                <i class="fas fa-info-circle"></i>
+                Tentukan nilai kebenaran setiap pernyataan berikut dengan memilih <strong>Benar</strong> atau <strong>Salah</strong>.
+            </p>
+            <div class="pgk-table-container">
+                <table class="pgk-table">
+                    <thead>
+                        <tr>
+                            <th class="pgk-th-no">No.</th>
+                            <th class="pgk-th-statement">Pernyataan</th>
+                            <th class="pgk-th-benar">Benar</th>
+                            <th class="pgk-th-salah">Salah</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+
     statements.forEach((statement, idx) => {
-        const isTrue = selectedAnswers[idx] === true;
+        const isTrue  = selectedAnswers[idx] === true;
         const isFalse = selectedAnswers[idx] === false;
-        
+        const isAnswered = isTrue || isFalse;
+
         // Render LaTeX if present
         let displayStatement = statement;
         if (statement && typeof statement === 'string' && statement.includes('\\(')) {
@@ -1015,31 +1047,54 @@ function renderCategoryOptions(question, questionIndex) {
                 displayStatement = statement.replace(/\\\((.+?)\\\)/g, (match, latex) => {
                     try {
                         return window.katex.renderToString(latex, { displayMode: false });
-                    } catch (e) {
-                        return match; // Return original if LaTeX fails
-                    }
+                    } catch (e) { return match; }
                 });
-            } catch (error) {
-                displayStatement = statement;
-            }
+            } catch (error) { displayStatement = statement; }
         }
-        
+
+        const rowClass = isAnswered
+            ? (isTrue ? 'pgk-row pgk-row-benar' : 'pgk-row pgk-row-salah')
+            : 'pgk-row';
+
         html += `
-            <div class="category-item">
-                <div class="category-statement">${displayStatement}</div>
-                <div class="category-buttons">
-                    <button class="category-btn ${isTrue ? 'selected' : ''}" onclick="selectCategoryAnswer(${idx}, true)">
-                        <i class="fas fa-check"></i> Benar
+            <tr class="${rowClass}" id="pgk-row-${idx}">
+                <td class="pgk-td-no">
+                    <span class="pgk-no-badge">${idx + 1}</span>
+                </td>
+                <td class="pgk-td-statement">${displayStatement}</td>
+                <td class="pgk-td-choice">
+                    <button 
+                        class="pgk-choice-btn pgk-btn-benar ${isTrue ? 'active' : ''}"
+                        onclick="selectCategoryAnswer(${idx}, true)"
+                        title="Benar"
+                    >
+                        <span class="pgk-radio-ring ${isTrue ? 'filled' : ''}"></span>
+                        <i class="fas fa-check"></i>
+                        <span class="pgk-btn-label">Benar</span>
                     </button>
-                    <button class="category-btn ${isFalse ? 'selected' : ''}" onclick="selectCategoryAnswer(${idx}, false)">
-                        <i class="fas fa-times"></i> Salah
+                </td>
+                <td class="pgk-td-choice">
+                    <button 
+                        class="pgk-choice-btn pgk-btn-salah ${isFalse ? 'active' : ''}"
+                        onclick="selectCategoryAnswer(${idx}, false)"
+                        title="Salah"
+                    >
+                        <span class="pgk-radio-ring ${isFalse ? 'filled' : ''}"></span>
+                        <i class="fas fa-times"></i>
+                        <span class="pgk-btn-label">Salah</span>
                     </button>
-                </div>
-            </div>
+                </td>
+            </tr>
         `;
     });
-    
-    html += '</div>';
+
+    html += `
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+
     return html;
 }
 
@@ -1125,12 +1180,46 @@ function toggleMCMA(option) {
 // Select category answer
 function selectCategoryAnswer(statementIndex, value) {
     const currentAnswer = answers[currentQuestionIndex];
-    const selectedAnswers = currentAnswer ? (typeof currentAnswer === 'string' ? JSON.parse(currentAnswer) : currentAnswer) : {};
-    
+    const selectedAnswers = currentAnswer
+        ? (typeof currentAnswer === 'string' ? JSON.parse(currentAnswer) : { ...currentAnswer })
+        : {};
+
     selectedAnswers[statementIndex] = value;
     answers[currentQuestionIndex] = selectedAnswers;
-    
-    showQuestion(currentQuestionIndex); 
+
+    // --- Smart DOM update (no full re-render) ---
+    const row = document.getElementById(`pgk-row-${statementIndex}`);
+    if (row) {
+        // Update row highlight class
+        row.className = value ? 'pgk-row pgk-row-benar' : 'pgk-row pgk-row-salah';
+
+        // Update Benar button
+        const btnBenar = row.querySelector('.pgk-btn-benar');
+        const ringBenar = btnBenar?.querySelector('.pgk-radio-ring');
+        if (btnBenar) { btnBenar.classList.toggle('active', value === true); }
+        if (ringBenar) { ringBenar.classList.toggle('filled', value === true); }
+
+        // Update Salah button
+        const btnSalah = row.querySelector('.pgk-btn-salah');
+        const ringSalah = btnSalah?.querySelector('.pgk-radio-ring');
+        if (btnSalah) { btnSalah.classList.toggle('active', value === false); }
+        if (ringSalah) { ringSalah.classList.toggle('filled', value === false); }
+    }
+
+    // Update answered counter pill
+    const counterEl = document.getElementById('pgk-answered-count');
+    if (counterEl) {
+        counterEl.textContent = Object.keys(selectedAnswers).length;
+    }
+
+    // Update overall progress bar & nav (lightweight)
+    const answeredCount = answers.filter(a => a !== null).length;
+    const progress = (answeredCount / questions.length) * 100;
+    if (progressFill) progressFill.style.width = `${progress}%`;
+    const progressText = document.getElementById('progressText');
+    if (progressText) progressText.textContent = `${Math.round(progress)}%`;
+
+    renderQuestionNav();
 }
 
 // Save current answer to database
