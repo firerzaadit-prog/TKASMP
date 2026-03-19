@@ -208,7 +208,8 @@ async function loadExamQuestions() {
     try {
         console.log('Loading exam questions for type:', assignedQuestionType);
 
-        const { data: questionsData, error } = await supabase
+        // First try with question_type_variant filter
+        let { data: questionsData, error } = await supabase
             .from('questions')
             .select('*')
             .eq('subject', 'Matematika')
@@ -216,21 +217,52 @@ async function loadExamQuestions() {
             .eq('is_active', true)
             .order('created_at');
 
+        // If no questions found with variant filter, try without it
+        if (!questionsData || questionsData.length === 0) {
+            console.log('No questions with variant filter, trying without it...');
+            const { data: questionsData2, error: error2 } = await supabase
+                .from('questions')
+                .select('*')
+                .eq('subject', 'Matematika')
+                .eq('is_active', true)
+                .order('created_at');
+            
+            if (error2) {
+                console.error('Error loading questions:', error2);
+                alert('Gagal memuat soal ujian: ' + error2.message);
+                return;
+            }
+            questionsData = questionsData2;
+        }
+
         if (error) {
             console.error('Error loading questions:', error);
-            alert('Gagal memuat soal ujian: ' + error.message);
-            return;
         }
 
         if (!questionsData || questionsData.length === 0) {
             console.log('No questions found for type:', assignedQuestionType);
-            alert(`Belum ada soal matematika tipe ${assignedQuestionType} yang tersedia. Silakan hubungi admin.`);
+            alert(`Belum ada soal matematika yang tersedia. Silakan hubungi admin.`);
             window.location.href = 'halamanpertama.html';
             return;
         }
 
         questions = shuffleArray([...questionsData]);
         console.log(`Loaded and shuffled ${questions.length} questions of type ${assignedQuestionType}`);
+        
+        // Debug: Show question types in loaded questions
+        const questionTypes = {};
+        questions.forEach(q => {
+            const type = q.question_type || 'unknown';
+            questionTypes[type] = (questionTypes[type] || 0) + 1;
+        });
+        console.log('Question types loaded:', questionTypes);
+        
+        // Debug: Show sample question fields for first question
+        if (questions.length > 0) {
+            console.log('Sample question fields:', Object.keys(questions[0]));
+            console.log('First question type:', questions[0].question_type);
+            console.log('First question category_statements:', questions[0].category_statements);
+        }
 
         answers = new Array(questions.length).fill(null);
         doubtfulQuestions = new Array(questions.length).fill(false);
@@ -289,6 +321,7 @@ async function startExamSession() {
         examStartTime = Date.now();
         startTimer();
         renderQuestionNav();
+        setupNavigationListeners();
         await showQuestion(0);
 
         // Initialize security features
@@ -801,10 +834,13 @@ async function showQuestion(index) {
     }
 
     if (question.question_type === 'PGK MCMA') {
+        console.log('Rendering MCMA question:', question.id, 'Type:', question.question_type);
         questionHTML += renderMCMAOptions(question, index);
     } else if (question.question_type === 'PGK Kategori') {
+        console.log('Rendering Kategori question:', question.id, 'Type:', question.question_type, 'Statements:', question.category_statements);
         questionHTML += renderCategoryOptions(question, index);
     } else {
+        console.log('Rendering regular question:', question.id, 'Type:', question.question_type);
         questionHTML += renderMultipleChoiceOptions(question, index);
     }
 
@@ -875,8 +911,19 @@ function renderMultipleChoiceOptions(question, questionIndex) {
 // Render MCMA (Multiple Choice Multiple Answer) options
 function renderMCMAOptions(question, questionIndex) {
     const options = ['A', 'B', 'C', 'D', 'E'].filter(opt => question[`option_${opt.toLowerCase()}`]);
-    const currentAnswer = answers[questionIndex];
-    const selectedOptions = currentAnswer ? currentAnswer.split(',') : [];
+    
+    if (!options || options.length === 0) {
+        return '<div class="error-message">Data opsi tidak tersedia. Silakan hubungi admin.</div>';
+    }
+    
+    let selectedOptions = [];
+    try {
+        const currentAnswer = answers[questionIndex];
+        selectedOptions = currentAnswer ? currentAnswer.split(',') : [];
+    } catch (e) {
+        console.error('Error parsing MCMA answer:', e);
+        selectedOptions = [];
+    }
 
     let html = '<div class="mcma-instruction"><i class="fas fa-info-circle"></i> Pilih satu atau lebih jawaban yang benar</div>';
     html += '<div class="options mcma-options">';
@@ -902,9 +949,27 @@ function renderMCMAOptions(question, questionIndex) {
 
 // Render category options
 function renderCategoryOptions(question, questionIndex) {
-    const statements = JSON.parse(question.category_statements || '[]');
-    const currentAnswer = answers[questionIndex];
-    const selectedAnswers = currentAnswer ? (typeof currentAnswer === 'string' ? JSON.parse(currentAnswer) : currentAnswer) : {};
+    let statements = [];
+    try {
+        statements = JSON.parse(question.category_statements || '[]');
+    } catch (e) {
+        console.error('Error parsing category_statements:', e);
+        statements = [];
+    }
+    
+    if (!statements || statements.length === 0) {
+        return '<div class="error-message">Data kategori tidak tersedia. Silakan hubungi admin.</div>';
+    }
+    
+    let currentAnswer = null;
+    let selectedAnswers = {};
+    try {
+        currentAnswer = answers[questionIndex];
+        selectedAnswers = currentAnswer ? (typeof currentAnswer === 'string' ? JSON.parse(currentAnswer) : currentAnswer) : {};
+    } catch (e) {
+        console.error('Error parsing current answer:', e);
+        selectedAnswers = {};
+    }
 
     let html = '<div class="category-instruction"><i class="fas fa-info-circle"></i> Tentukan benar atau salah untuk setiap pernyataan</div>';
     html += '<div class="category-options">';
