@@ -970,15 +970,24 @@ function renderMCMAOptions(question, questionIndex) {
 function renderCategoryOptions(question, questionIndex) {
     let statements = [];
     try {
-        // Admin uses 'category_options' field, not 'category_statements'
-        statements = JSON.parse(question.category_options || question.category_statements || '[]');
+        // Admin uses 'category_options' field, data may already be an array (JSONB) or a JSON string
+        const rawOptions = question.category_options || question.category_statements;
+        if (!rawOptions) {
+            statements = [];
+        } else if (Array.isArray(rawOptions)) {
+            statements = rawOptions;
+        } else if (typeof rawOptions === 'string') {
+            statements = JSON.parse(rawOptions);
+        } else {
+            statements = [];
+        }
     } catch (e) {
         console.error('Error parsing category_options:', e);
         statements = [];
     }
     
     if (!statements || statements.length === 0) {
-        console.log('Category options is empty for question:', question.id);
+        console.log('Category options is empty for question:', question.id, '| category_options:', question.category_options);
         return '<div class="error-message">Data kategori tidak tersedia. Silakan hubungi admin.</div>';
     }
     
@@ -1032,6 +1041,64 @@ function renderCategoryOptions(question, questionIndex) {
     
     html += '</div>';
     return html;
+}
+
+// Helper: Check if PGK Kategori answer is correct
+// Admin stores category_mapping with statement TEXT as keys,
+// but student answers use numeric INDEX as keys.
+// We convert by matching index to statement text via category_options.
+function checkKategoriAnswer(answer, question) {
+    try {
+        const selectedAnswers = typeof answer === 'string' ? JSON.parse(answer) : answer;
+        if (!selectedAnswers || Object.keys(selectedAnswers).length === 0) return false;
+
+        // Parse category_options (statements array)
+        let statements = question.category_options || question.category_statements || [];
+        if (!Array.isArray(statements)) {
+            statements = typeof statements === 'string' ? JSON.parse(statements) : [];
+        }
+
+        // Parse category_mapping (key = statement text, value = boolean)
+        let correctMapping = question.category_mapping || {};
+        if (typeof correctMapping === 'string') {
+            correctMapping = JSON.parse(correctMapping);
+        }
+
+        // If category_mapping is empty, cannot validate
+        if (!correctMapping || Object.keys(correctMapping).length === 0) return false;
+
+        // Build index-based correct map by matching statement text
+        const indexCorrectMap = {};
+        statements.forEach((stmt, idx) => {
+            const stmtTrimmed = typeof stmt === 'string' ? stmt.trim() : stmt;
+            if (correctMapping.hasOwnProperty(stmtTrimmed)) {
+                indexCorrectMap[idx] = correctMapping[stmtTrimmed];
+            } else {
+                // Fallback: try string index key (old format)
+                if (correctMapping.hasOwnProperty(String(idx))) {
+                    indexCorrectMap[idx] = correctMapping[String(idx)];
+                }
+            }
+        });
+
+        // Compare each statement
+        for (let idx = 0; idx < statements.length; idx++) {
+            const selected = selectedAnswers[idx];
+            const correct = indexCorrectMap[idx];
+            if (correct === undefined) continue; // skip if no mapping
+            if (selected !== correct) return false;
+        }
+
+        // Also check all required correct answers are present
+        for (const [idxStr, shouldBeTrue] of Object.entries(indexCorrectMap)) {
+            if (shouldBeTrue && selectedAnswers[parseInt(idxStr)] !== true) return false;
+        }
+
+        return true;
+    } catch (e) {
+        console.error('Error in checkKategoriAnswer:', e);
+        return false;
+    }
 }
 
 // Select answer for regular multiple choice
@@ -1210,27 +1277,7 @@ async function completeExam(isExpired = false) {
                         : (question.correct_answers || '').split(',').sort();
                     isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
                 } else if (question.question_type === 'PGK Kategori') {
-                    const selectedAnswers = typeof answer === 'string' ? JSON.parse(answer) : answer;
-                    const correctMapping = typeof question.category_mapping === 'string'
-                        ? JSON.parse(question.category_mapping)
-                        : question.category_mapping;
-
-                    let allCorrect = true;
-                    for (const [stmtIndex, isTrue] of Object.entries(selectedAnswers || {})) {
-                        if (correctMapping[stmtIndex] !== isTrue) {
-                            allCorrect = false;
-                            break;
-                        }
-                    }
-
-                    for (const [stmtIndex, shouldBeTrue] of Object.entries(correctMapping || {})) {
-                        if (shouldBeTrue && selectedAnswers[stmtIndex] !== true) {
-                            allCorrect = false;
-                            break;
-                        }
-                    }
-
-                    isCorrect = allCorrect;
+                    isCorrect = checkKategoriAnswer(answer, question);
                 } else {
                     isCorrect = answer === question.correct_answer;
                 }
@@ -1321,27 +1368,7 @@ async function updateStudentAnalyticsAfterExam() {
                     : (question.correct_answers || '').split(',').sort();
                 isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
             } else if (question.question_type === 'PGK Kategori') {
-                const selectedAnswers = typeof answer === 'string' ? JSON.parse(answer) : answer;
-                const correctMapping = typeof question.category_mapping === 'string'
-                    ? JSON.parse(question.category_mapping)
-                    : question.category_mapping;
-
-                let allCorrect = true;
-                for (const [stmtIndex, isTrue] of Object.entries(selectedAnswers || {})) {
-                    if (correctMapping[stmtIndex] !== isTrue) {
-                        allCorrect = false;
-                        break;
-                    }
-                }
-
-                for (const [stmtIndex, shouldBeTrue] of Object.entries(correctMapping || {})) {
-                    if (shouldBeTrue && selectedAnswers[stmtIndex] !== true) {
-                        allCorrect = false;
-                        break;
-                    }
-                }
-
-                isCorrect = allCorrect;
+                isCorrect = checkKategoriAnswer(answer, question);
             } else {
                 isCorrect = answer === question.correct_answer;
             }
