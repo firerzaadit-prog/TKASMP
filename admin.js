@@ -6,11 +6,43 @@ import {
     getAllStudentsAnalytics
 } from './exam_analytics_system.js';
 
-// Admin credentials (in production, use proper authentication)
-const ADMIN_CREDENTIALS = {
-    username: 'admin',
-    password: 'admin123'
-};
+// KEAMANAN: Admin authentication sekarang menggunakan Supabase Auth
+// Tidak lagi menggunakan hardcoded credentials
+
+// Fungsi untuk cek apakah user saat ini adalah admin
+async function checkIsAdmin() {
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return false;
+        
+        // Cek role di tabel admin_users
+        const { data: adminData } = await supabase
+            .from('admin_users')
+            .select('role, is_admin')
+            .eq('id', session.user.id)
+            .maybeSingle();
+        
+        if (adminData && (adminData.is_admin === true || adminData.role === 'admin')) {
+            return true;
+        }
+        
+        // Alternatif: Cek di profiles dengan field role
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', session.user.id)
+            .maybeSingle();
+        
+        return profile?.role === 'admin';
+    } catch (error) {
+        console.error('Error checking admin status:', error);
+        return false;
+    }
+}
+
+// Admin credentials - DIHAPUS karena tidak aman
+// Sekarang menggunakan Supabase Auth
+// const ADMIN_CREDENTIALS = { ... }
 
 // DOM Elements - will be initialized after DOM load
 let adminLoginSection, adminDashboard, adminLoginForm, adminLogoutBtn, usersTableBody;
@@ -126,21 +158,45 @@ document.addEventListener('DOMContentLoaded', () => {
             const username = document.getElementById('adminUsername').value;
             const password = document.getElementById('adminPassword').value;
 
-            // Simple authentication (in production, use proper auth)
-            if (username === ADMIN_CREDENTIALS.username && password === ADMIN_CREDENTIALS.password) {
-                localStorage.setItem('adminLoggedIn', 'true');
-                // Redirect to admin.html after successful login
-                window.location.href = 'admin.html';
-            } else {
-                alert('Username atau password admin salah!');
+            // KEAMANAN: Verifikasi menggunakan Supabase Auth
+            // Bukan lagi hardcoded credentials
+            try {
+                // Login dengan email (username adalah email)
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email: username,
+                    password: password
+                });
+
+                if (error) {
+                    alert('Login gagal: ' + error.message);
+                    return;
+                }
+
+                // Cek apakah user adalah admin
+                const isAdmin = await checkIsAdmin();
+                
+                if (isAdmin) {
+                    localStorage.setItem('adminLoggedIn', 'true');
+                    localStorage.setItem('adminUserId', data.user.id);
+                    window.location.href = 'admin.html';
+                } else {
+                    // logout jika bukan admin
+                    await supabase.auth.signOut();
+                    alert('Akses ditolak. Hanya admin yang dapat mengakses panel ini.');
+                }
+            } catch (err) {
+                alert('Terjadi kesalahan: ' + err.message);
             }
         });
     }
 
     // Admin logout handler
     if (adminLogoutBtn) {
-        adminLogoutBtn.addEventListener('click', () => {
+        adminLogoutBtn.addEventListener('click', async () => {
             localStorage.removeItem('adminLoggedIn');
+            localStorage.removeItem('adminUserId');
+            // Logout from Supabase Auth
+            await supabase.auth.signOut();
             // Redirect to login page after logout
             window.location.href = 'indexadmin.html';
         });
@@ -486,27 +542,55 @@ async function loadUsersData() {
     }
 }
 
-// Fallback function to load from profiles table menggunakan ADMIN KEY
+// Fallback function to load from profiles table menggunakan Edge Function
+// KEAMANAN: Tidak lagi menggunakan service_role_key di client-side
 async function loadUsersFromProfiles() {
     try {
-        // Menggunakan window.supabase (berisi service_role_key) agar tembus keamanan RLS
-        const adminSupabase = window.supabase || supabase;
+        // Dapatkan session dari user yang login
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        // Memanggil data dengan lengkap termasuk phone dan school
-        const { data: profiles, error } = await adminSupabase
-            .from('profiles')
-            .select('id, nama_lengkap, email, phone, school, created_at')
-            .order('created_at', { ascending: false });
-
-        if (error) {
-            console.error('Error loading profiles data:', error);
+        if (sessionError || !session) {
+            console.error('No active session. Please login first.');
+            if (usersTableBody) {
+                usersTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="7" style="text-align: center; padding: 2rem; color: #666;">
+                            <i class="fas fa-exclamation-triangle" style="font-size: 2rem; margin-bottom: 1rem; color: #f39c12;"></i><br>
+                            <p>Silakan login terlebih dahulu untuk mengakses data siswa.</p>
+                        </td>
+                    </tr>
+                `;
+            }
             return;
         }
 
-        // Clear existing table rows
-        if (usersTableBody) usersTableBody.innerHTML = '';
+        // Panggil Edge Function untuk mendapatkan data users
+        // Service role key hanya ada di server (Edge Function), tidak di client
+        const edgeFunctionUrl = 'https://tsgldkyuktqpsbeuevsn.supabase.co/functions/v1/admin-get-users';
+        
+        const response = await fetch(edgeFunctionUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            }
+        });
 
-        // Show message if no users found
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+            console.error('Edge Function error:', errorData.error || response.status);
+            
+            if (response.status === 403) {
+                alert('Akses ditolak. Hanya admin yang dapat mengakses data siswa.');
+            } else if (response.status === 401) {
+                alert('Sesi Anda telah berakhir. Silakan login kembali.');
+            }
+            return;
+        }
+
+        const result = await response.json();
+        const profiles = result.users;
+
         if (!profiles || profiles.length === 0) {
             if (usersTableBody) {
                 usersTableBody.innerHTML = `
@@ -520,6 +604,9 @@ async function loadUsersFromProfiles() {
             }
             return;
         }
+
+        // Clear existing table rows
+        if (usersTableBody) usersTableBody.innerHTML = '';
 
         // Populate table with user data
         profiles.forEach(profile => {

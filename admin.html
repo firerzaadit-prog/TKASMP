@@ -23,11 +23,13 @@
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
     <script type="module">
-        // Import and make supabase available globally immediately
+        // KEAMANAN: Sekarang menggunakan Anon Key saja, tidak lagi service role key
+        // Service role key sekarang hanya di server (Edge Functions)
         import('https://esm.sh/@supabase/supabase-js@2').then(({ createClient }) => {
             const supabaseUrl = 'https://tsgldkyuktqpsbeuevsn.supabase.co';
-            const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzY5MTE5OSwiZXhwIjoyMDc5MjY3MTk5fQ.0ovVI04BphGbSCSZE6EhHI6_rtZCPSZReiaM9dKYcIA';
-            window.supabase = createClient(supabaseUrl, supabaseServiceKey);
+            // Hanya menggunakan ANON KEY untuk client-side
+            const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2OTExOTksImV4cCI6MjA3OTI2NzE5OX0.C0g6iZcwd02ZFmuGFluYXScX9uuahntJtkPvHt5g1FE';
+            window.supabase = createClient(supabaseUrl, supabaseAnonKey);
         });
     </script>
     <script type="module" src="admin.js"></script>
@@ -1410,12 +1412,13 @@
         
         // Load exam history when analytics tab is opened
         async function loadStudentExamHistory() {
-            // Initialize supabase if not available
+            // Initialize supabase if not available - KEAMANAN: Gunakan Anon Key
             if (!window.supabase) {
                 const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
                 const supabaseUrl = 'https://tsgldkyuktqpsbeuevsn.supabase.co';
-                const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzY5MTE5OSwiZXhwIjoyMDc5MjY3MTk5fQ.0ovVI04BphGbSCSZE6EhHI6_rtZCPSZReiaM9dKYcIA';
-                window.supabase = createClient(supabaseUrl, supabaseServiceKey);
+                // Hanya ANON KEY - service role sekarang di Edge Functions
+                const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2OTExOTksImV4cCI6MjA3OTI2NzE5OX0.C0g6iZcwd02ZFmuGFluYXScX9uuahntJtkPvHt5g1FE';
+                window.supabase = createClient(supabaseUrl, supabaseAnonKey);
             }
             
             const tableBody = document.getElementById('studentExamTable');
@@ -1541,12 +1544,13 @@
         }
         
         async function viewExamDetail(sessionId) {
-            // Initialize supabase if not available
+            // Initialize supabase if not available - KEAMANAN: Gunakan Anon Key
             if (!window.supabase) {
                 const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
                 const supabaseUrl = 'https://tsgldkyuktqpsbeuevsn.supabase.co';
-                const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzY5MTE5OSwiZXhwIjoyMDc5MjY3MTk5fQ.0ovVI04BphGbSCSZE6EhHI6_rtZCPSZReiaM9dKYcIA';
-                window.supabase = createClient(supabaseUrl, supabaseServiceKey);
+                // Hanya ANON KEY - service role sekarang di Edge Functions
+                const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2OTExOTksImV4cCI6MjA3OTI2NzE5OX0.C0g6iZcwd02ZFmuGFluYXScX9uuahntJtkPvHt5g1FE';
+                window.supabase = createClient(supabaseUrl, supabaseAnonKey);
             }
             
             const modal = document.getElementById('examDetailModal');

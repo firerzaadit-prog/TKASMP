@@ -1,7 +1,7 @@
 {
-  "name": "gemini-chat",
+  "name": "admin-get-users",
   "version": "1.0.0",
-  "description": "Edge Function untuk Gemini AI chat",
+  "description": "Edge Function untuk admin operations - get all users",
   "imports": {
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.39.0",
     "std": "https://deno.land/std@0.208.0"
