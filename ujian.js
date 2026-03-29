@@ -791,6 +791,31 @@ function renderQuestionNav() {
 }
 
 // Show question
+// =============================================================
+// Helper: render LaTeX \(...\) dan \[...\] pada string
+// Identik dengan fungsi di admin preview dan materi siswa
+// =============================================================
+function renderLatexString(content) {
+    if (!content || !window.katex) return content;
+    let result = content;
+
+    // Inline \(...\)
+    result = result.replace(/\\\(([^]*?)\\\)/g, (match, latex) => {
+        try {
+            return window.katex.renderToString(latex, { displayMode: false, throwOnError: false });
+        } catch (e) { return match; }
+    });
+
+    // Display mode \[...\]
+    result = result.replace(/\\\[([^]*?)\\\]/g, (match, latex) => {
+        try {
+            return window.katex.renderToString(latex, { displayMode: true, throwOnError: false });
+        } catch (e) { return match; }
+    });
+
+    return result;
+}
+
 async function showQuestion(index) {
     if (currentQuestionIndex !== index) {
         await saveCurrentAnswer();
@@ -809,6 +834,11 @@ async function showQuestion(index) {
     progressFill.style.width = `${progress}%`;
     document.getElementById('progressText').textContent = `${Math.round(progress)}%`;
 
+    // Pre-process: newline → <br>, LaTeX → KaTeX HTML (sama dengan admin preview)
+    const processedQuestionText = renderLatexString(
+        (question.question_text || '').replace(/\n/g, '<br>')
+    );
+
     let questionHTML = `
         <div class="question-header">
             <div class="question-number">
@@ -821,7 +851,7 @@ async function showQuestion(index) {
         </div>
         
         <div class="question-text">
-            ${question.question_text}
+            ${processedQuestionText}
         </div>
     `;
 
@@ -879,18 +909,23 @@ async function showQuestion(index) {
 
     renderQuestionNav();
 
+    // LaTeX sudah dirender via renderLatexString() sebelum innerHTML diset,
+    // sehingga tidak perlu renderMathInElement lagi.
+    // Tapi tetap jalankan sebagai fallback untuk konten lama yang mungkin masih pakai $...$
     if (window.renderMathInElement) {
         setTimeout(() => {
-            renderMathInElement(questionCard, {
-                delimiters: [
-                    {left: "$$", right: "$$", display: true},
-                    {left: "\\[", right: "\\]", display: true},
-                    {left: "$", right: "$", display: false},
-                    {left: "\\(", right: "\\)", display: false}
-                ],
-                throwOnError: false
-            });
-        }, 100);
+            try {
+                renderMathInElement(questionCard, {
+                    delimiters: [
+                        {left: "$$", right: "$$", display: true},
+                        {left: "\\[", right: "\\]", display: true},
+                        {left: "$", right: "$", display: false}
+                    ],
+                    throwOnError: false,
+                    ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code', 'span']
+                });
+            } catch(e) { /* ignore */ }
+        }, 50);
     }
 }
 
@@ -912,7 +947,9 @@ function renderMultipleChoiceOptions(question, questionIndex) {
     let html = '<div class="options">';
     
     options.forEach(option => {
-        const optionText = question[`option_${option.toLowerCase()}`];
+        const rawOptionText = question[`option_${option.toLowerCase()}`] || '';
+        // Render LaTeX dalam teks pilihan (sama dengan admin preview)
+        const optionText = renderLatexString(rawOptionText.replace(/\n/g, '<br>'));
         const isSelected = currentAnswer === option;
         
         html += `
@@ -948,7 +985,9 @@ function renderMCMAOptions(question, questionIndex) {
     html += '<div class="options mcma-options">';
     
     options.forEach(option => {
-        const optionText = question[`option_${option.toLowerCase()}`];
+        const rawOptionText = question[`option_${option.toLowerCase()}`] || '';
+        // Render LaTeX dalam teks pilihan (sama dengan admin preview)
+        const optionText = renderLatexString(rawOptionText.replace(/\n/g, '<br>'));
         const isSelected = selectedOptions.includes(option);
         
         html += `
@@ -1040,17 +1079,10 @@ function renderCategoryOptions(question, questionIndex) {
         const isFalse = selectedAnswers[idx] === false;
         const isAnswered = isTrue || isFalse;
 
-        // Render LaTeX if present
-        let displayStatement = statement;
-        if (statement && typeof statement === 'string' && statement.includes('\\(')) {
-            try {
-                displayStatement = statement.replace(/\\\((.+?)\\\)/g, (match, latex) => {
-                    try {
-                        return window.katex.renderToString(latex, { displayMode: false });
-                    } catch (e) { return match; }
-                });
-            } catch (error) { displayStatement = statement; }
-        }
+        // Render LaTeX menggunakan fungsi terpusat (identik dengan admin preview)
+        const displayStatement = renderLatexString(
+            typeof statement === 'string' ? statement.replace(/\n/g, '<br>') : String(statement || '')
+        );
 
         const rowClass = isAnswered
             ? (isTrue ? 'pgk-row pgk-row-benar' : 'pgk-row pgk-row-salah')

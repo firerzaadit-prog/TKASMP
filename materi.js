@@ -365,6 +365,22 @@
 
                 ${attachmentHtml}
             `;
+
+            // Fallback: jika KaTeX belum siap saat processContent dipanggil,
+            // render ulang LaTeX setelah innerHTML diset
+            if (!window.katex) {
+                const waitForKatex = setInterval(() => {
+                    if (window.katex) {
+                        clearInterval(waitForKatex);
+                        const body = document.getElementById('materiDetailBody');
+                        if (body && body.innerHTML) {
+                            body.innerHTML = renderLatexString(body.innerHTML);
+                        }
+                    }
+                }, 100);
+                // Stop waiting after 5 seconds
+                setTimeout(() => clearInterval(waitForKatex), 5000);
+            }
         }
 
         // Render sections for detail view

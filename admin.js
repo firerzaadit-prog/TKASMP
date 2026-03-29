@@ -4003,15 +4003,23 @@ function updateQuestionPreview() {
         // 3. Masukkan ke preview
         previewArea.innerHTML = content;
 
-        // 3. Render ulang LaTeX (menggunakan KaTeX yang sudah ada)
+        // 4. Render ulang LaTeX — gunakan [^]*? agar support multiline
         if (window.katex) {
             try {
-                // Render LaTeX expressions found in the text
-                let renderedText = content.replace(/\\\(.+?\\\)/g, (match) => {
+                // Inline \(...\)
+                let renderedText = content.replace(/\\\(([^]*?)\\\)/g, (match, latex) => {
                     try {
-                        return window.katex.renderToString(match.slice(2, -2), { displayMode: false });
+                        return window.katex.renderToString(latex, { displayMode: false, throwOnError: false });
                     } catch (e) {
                         return match; // Return original if LaTeX fails
+                    }
+                });
+                // Display mode \[...\]
+                renderedText = renderedText.replace(/\\\[([^]*?)\\\]/g, (match, latex) => {
+                    try {
+                        return window.katex.renderToString(latex, { displayMode: true, throwOnError: false });
+                    } catch (e) {
+                        return match;
                     }
                 });
                 previewArea.innerHTML = renderedText;
@@ -5486,21 +5494,27 @@ function toggleSummaryLatex() {
     const help = document.getElementById('summaryLatexHelp');
     const textarea = document.getElementById('materialSummary');
 
+    // Always remove existing event listener first to avoid duplicates
     textarea.removeEventListener('input', updateSummaryLatexPreview);
 
     if (checkbox && checkbox.checked) {
+        // Enable LaTeX mode
         if (toolbar) toolbar.style.display = 'flex';
         if (preview) preview.style.display = 'block';
         if (help) help.style.display = 'block';
         if (textarea) textarea.placeholder = 'Masukkan konten materi dengan LaTeX...';
-        textarea.addEventListener('input', updateSummaryLatexPreview);
-        updateSummaryLatexPreview();
     } else {
+        // Disable LaTeX mode
         if (toolbar) toolbar.style.display = 'none';
         if (help) help.style.display = 'none';
-        if (preview) preview.style.display = 'none'; // sembunyikan saat nonaktif
+        // Keep preview visible (sama dengan soal) agar tampilan konsisten
+        if (preview) preview.style.display = 'block';
         if (textarea) textarea.placeholder = 'Masukkan konten ringkasan materi...';
     }
+
+    // Always add event listener for preview and update
+    textarea.addEventListener('input', updateSummaryLatexPreview);
+    updateSummaryLatexPreview(); // Update immediately
 }
 
 function insertLatexIntoSummary(symbol) {
@@ -5713,25 +5727,30 @@ function updateSummaryLatexPreview() {
     const previewArea = document.getElementById('summaryLatexPreview');
 
     if (inputArea && previewArea) {
+        // 1. Ambil teks
         let content = inputArea.value;
 
-        // Replace line breaks with <br> for preview
+        // 2. Ganti line breaks dengan <br> untuk preview
         content = content.replace(/\n/g, '<br>');
 
+        // 3. Masukkan ke preview
         previewArea.innerHTML = content;
 
+        // 4. Render LaTeX — identik dengan updateQuestionPreview
         if (window.katex) {
             try {
-                let renderedText = content.replace(/\\\((.+?)\\\)/g, (match) => {
+                // Inline \(...\) — gunakan [^]* untuk multiline
+                let renderedText = content.replace(/\\\(([^]*?)\\\)/g, (match, latex) => {
                     try {
-                        return window.katex.renderToString(match.slice(2, -2), { displayMode: false, throwOnError: false });
+                        return window.katex.renderToString(latex, { displayMode: false, throwOnError: false });
                     } catch (e) {
                         return match;
                     }
                 });
-                renderedText = renderedText.replace(/\\\[(.+?)\\\]/g, (match) => {
+                // Display mode \[...\]
+                renderedText = renderedText.replace(/\\\[([^]*?)\\\]/g, (match, latex) => {
                     try {
-                        return window.katex.renderToString(match.slice(2, -2), { displayMode: true, throwOnError: false });
+                        return window.katex.renderToString(latex, { displayMode: true, throwOnError: false });
                     } catch (e) {
                         return match;
                     }
@@ -5744,15 +5763,12 @@ function updateSummaryLatexPreview() {
     }
 }
 
-// Summary latex preview also initializes on textarea input event
+// Summary latex preview — selalu update preview saat ada input (sama dengan soal)
 document.addEventListener('DOMContentLoaded', function() {
     const summaryTextarea = document.getElementById('materialSummary');
     if (summaryTextarea) {
         summaryTextarea.addEventListener('input', function() {
-            const checkbox = document.getElementById('enableSummaryLatex');
-            if (checkbox && checkbox.checked) {
-                updateSummaryLatexPreview();
-            }
+            updateSummaryLatexPreview();
         });
     }
 });
