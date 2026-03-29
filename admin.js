@@ -7152,3 +7152,30 @@ function clearFileDisplays() {
 // Export file display functions
 window.updateFileDisplay = updateFileDisplay;
 window.clearFileDisplays = clearFileDisplays;
+
+// ==========================================
+// Logika Google Sheet Embed
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+    const btnViewSheet = document.getElementById('btnViewSheet');
+    const btnCloseSheet = document.getElementById('btnCloseSheet');
+    const sheetContainer = document.getElementById('sheetContainer');
+
+    if (btnViewSheet && btnCloseSheet && sheetContainer) {
+        btnViewSheet.addEventListener('click', () => {
+            if (sheetContainer.style.display === 'none') {
+                sheetContainer.style.display = 'block';
+                sheetContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                btnViewSheet.innerHTML = '<i class="fas fa-eye-slash"></i> Sembunyikan Google Sheet';
+            } else {
+                sheetContainer.style.display = 'none';
+                btnViewSheet.innerHTML = '<i class="fas fa-table"></i> Lihat Data Google Sheet';
+            }
+        });
+
+        btnCloseSheet.addEventListener('click', () => {
+            sheetContainer.style.display = 'none';
+            btnViewSheet.innerHTML = '<i class="fas fa-table"></i> Lihat Data Google Sheet';
+        });
+    }
+});

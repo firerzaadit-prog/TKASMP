@@ -3964,3 +3964,94 @@ body::before {
         gap: 0.25rem;
     }
 }
+
+/* ==========================================
+   Google Sheet Embed Styles
+   ========================================== */
+.sheet-toggle-bar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 1rem;
+    margin-top: 0.5rem;
+}
+
+.sheet-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1.2rem;
+    background: #16a34a;
+    color: white;
+    border: none;
+    border-radius: var(--admin-radius-md, 8px);
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(22, 163, 74, 0.3);
+}
+
+.sheet-toggle-btn:hover {
+    background: #15803d;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(22, 163, 74, 0.4);
+}
+
+.sheet-toggle-btn i {
+    font-size: 1rem;
+}
+
+.sheet-container {
+    margin-bottom: 1.5rem;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    border: 1px solid var(--admin-border, #e5e7eb);
+}
+
+.sheet-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: #1f2937;
+    color: white;
+}
+
+.sheet-header h6 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.sheet-header h6 i {
+    color: #4ade80;
+}
+
+.sheet-close-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.75rem;
+    background: #dc2626;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: background 0.2s ease;
+}
+
+.sheet-close-btn:hover {
+    background: #b91c1c;
+}
+
+.sheet-container iframe {
+    display: block;
+    width: 100%;
+    border: none;
+}
