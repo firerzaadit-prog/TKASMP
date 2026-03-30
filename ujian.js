@@ -872,6 +872,12 @@ async function showQuestion(index) {
                     <td class="info-sep">:</td>
                     <td class="info-value">${question.proses_berpikir || '-'}</td>
                 </tr>
+                ${question.competence ? `
+                <tr>
+                    <td class="info-label">Kompetensi Dasar</td>
+                    <td class="info-sep">:</td>
+                    <td class="info-value">${question.competence}</td>
+                </tr>` : ''}
             </table>
         </div>
         
