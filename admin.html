@@ -734,6 +734,28 @@
                             <textarea id="competence" rows="2" placeholder="Deskripsikan kompetensi dasar yang diuji dalam soal ini..."></textarea>
                         </div>
                         <div class="form-group">
+                            <label for="levelKognitif">Level Kognitif:</label>
+                            <select id="levelKognitif">
+                                <option value="">-- Pilih Level Kognitif --</option>
+                                <option value="Level 1 (Pengetahuan dan Pemahaman)">Level 1 (Pengetahuan dan Pemahaman)</option>
+                                <option value="Level 2 (Aplikasi)">Level 2 (Aplikasi)</option>
+                                <option value="Level 3 (Penalaran)">Level 3 (Penalaran)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="prosesBerpikir">Proses Berpikir:</label>
+                            <select id="prosesBerpikir">
+                                <option value="">-- Pilih Proses Berpikir --</option>
+                                <option value="Mengingat">Mengingat</option>
+                                <option value="Memahami">Memahami</option>
+                                <option value="Menghitung">Menghitung</option>
+                                <option value="Mengaplikasikan">Mengaplikasikan</option>
+                                <option value="Menganalisis">Menganalisis</option>
+                                <option value="Mengevaluasi">Mengevaluasi</option>
+                                <option value="Mencipta">Mencipta</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
                             <label for="difficulty">Tingkat Kesulitan:</label>
                             <select id="difficulty" onchange="updateScoringWeight()">
                                 <option value="Mudah">Mudah</option>

@@ -849,6 +849,31 @@ async function showQuestion(index) {
                 <i class="fas fa-file-alt"></i> Tipe ${assignedQuestionType}
             </div>
         </div>
+
+        <div class="question-info-table">
+            <table>
+                <tr>
+                    <td class="info-label">Elemen</td>
+                    <td class="info-sep">:</td>
+                    <td class="info-value">${question.chapter || '-'}</td>
+                </tr>
+                <tr>
+                    <td class="info-label">Sub-elemen</td>
+                    <td class="info-sep">:</td>
+                    <td class="info-value">${question.sub_chapter || '-'}</td>
+                </tr>
+                <tr>
+                    <td class="info-label">Level Kognitif</td>
+                    <td class="info-sep">:</td>
+                    <td class="info-value">${question.level_kognitif || '-'}</td>
+                </tr>
+                <tr>
+                    <td class="info-label">Proses Berpikir</td>
+                    <td class="info-sep">:</td>
+                    <td class="info-value">${question.proses_berpikir || '-'}</td>
+                </tr>
+            </table>
+        </div>
         
         <div class="question-text">
             ${processedQuestionText}

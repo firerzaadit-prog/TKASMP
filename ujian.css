@@ -1491,3 +1491,72 @@
                 padding: 0.7rem 1rem;
             }
         }
+
+        /* ============================================
+           Tabel Info Soal (Elemen, Sub-elemen, dll)
+           ============================================ */
+        .question-info-table {
+            margin-bottom: 1.5rem;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        }
+
+        .question-info-table table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92rem;
+        }
+
+        .question-info-table tr {
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .question-info-table tr:last-child {
+            border-bottom: none;
+        }
+
+        .question-info-table tr:nth-child(even) {
+            background: #f8fafc;
+        }
+
+        .question-info-table tr:nth-child(odd) {
+            background: #ffffff;
+        }
+
+        .question-info-table td {
+            padding: 0.55rem 1rem;
+            vertical-align: middle;
+            color: #374151;
+            line-height: 1.4;
+        }
+
+        .question-info-table .info-label {
+            font-weight: 600;
+            color: #1e293b;
+            width: 160px;
+            white-space: nowrap;
+        }
+
+        .question-info-table .info-sep {
+            width: 20px;
+            color: #94a3b8;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .question-info-table .info-value {
+            color: #4b5563;
+        }
+
+        @media (max-width: 480px) {
+            .question-info-table .info-label {
+                width: 120px;
+                font-size: 0.82rem;
+            }
+            .question-info-table td {
+                padding: 0.45rem 0.75rem;
+                font-size: 0.82rem;
+            }
+        }

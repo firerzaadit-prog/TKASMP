@@ -1057,6 +1057,12 @@ function resetQuestionForm() {
     // Clear competence field
     const competenceEl = document.getElementById('competence');
     if (competenceEl) competenceEl.value = '';
+
+    // Clear level kognitif dan proses berpikir
+    const levelKognitifEl = document.getElementById('levelKognitif');
+    if (levelKognitifEl) levelKognitifEl.value = '';
+    const prosesBerpikirEl = document.getElementById('prosesBerpikir');
+    if (prosesBerpikirEl) prosesBerpikirEl.value = '';
 }
 
 // Update scoring weight based on difficulty
@@ -1284,6 +1290,8 @@ const baseFormData = {
         chapter: chapterEl.value,
         sub_chapter: subChapterEl.value,
         competence: document.getElementById('competence')?.value.trim() || null,
+        level_kognitif: document.getElementById('levelKognitif')?.value || null,
+        proses_berpikir: document.getElementById('prosesBerpikir')?.value || null,
         time_limit_minutes: parseInt(timeLimitEl.value),
         subject: 'Matematika', // Force to Mathematics for TKA
         difficulty: difficultyEl.value,
@@ -2034,6 +2042,12 @@ async function editQuestion(questionId) {
         document.getElementById('competence').value = question.competence || '';
         document.getElementById('timeLimit').value = question.time_limit_minutes;
         document.getElementById('difficulty').value = question.difficulty;
+
+        // Populate level kognitif dan proses berpikir
+        const levelKognitifEl = document.getElementById('levelKognitif');
+        if (levelKognitifEl) levelKognitifEl.value = question.level_kognitif || '';
+        const prosesBerpikirEl = document.getElementById('prosesBerpikir');
+        if (prosesBerpikirEl) prosesBerpikirEl.value = question.proses_berpikir || '';
 
         // Update sub-chapters based on selected chapter
         updateSubChapters();
