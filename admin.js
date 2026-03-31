@@ -1838,17 +1838,26 @@ const baseFormData = {
 
         if (currentEditingQuestionId) {
             console.log('Updating existing question with ID:', currentEditingQuestionId);
-            // Update existing question
+            // Update existing question — pakai .select() agar bisa deteksi RLS silent block
             result = await supabase
                 .from('questions')
                 .update(formData)
-                .eq('id', currentEditingQuestionId);
+                .eq('id', currentEditingQuestionId)
+                .select();
+
+            // Cek apakah update benar-benar berhasil (bukan silent RLS block)
+            if (!result.error && (!result.data || result.data.length === 0)) {
+                console.error('Update silent fail: RLS memblokir atau soal tidak ditemukan');
+                alert('Gagal menyimpan perubahan!\n\nKemungkinan penyebab:\n1. RLS (Row Level Security) di Supabase memblokir operasi UPDATE\n2. Soal tidak ditemukan\n\nSOLUSI:\nBuka Supabase Dashboard → Table Editor → questions → Policies\nPastikan ada policy yang mengizinkan admin melakukan UPDATE.\n\nAtau jalankan SQL ini di Supabase SQL Editor:\nALTER TABLE questions DISABLE ROW LEVEL SECURITY;\n(sementara untuk testing)');
+                return;
+            }
         } else {
             console.log('Creating new question');
             // Create new question
             result = await supabase
                 .from('questions')
-                .insert([formData]);
+                .insert([formData])
+                .select();
         }
 
         console.log('Database operation result:', result);
@@ -2303,7 +2312,7 @@ async function deleteQuestion(questionId) {
     }
 
     try {
-        // First, delete all related exam answers
+        // Hapus exam_answers terkait (abaikan error jika tabel tidak ada / tidak ada data)
         console.log('Deleting related exam answers for question:', questionId);
         const { error: answersError } = await supabase
             .from('exam_answers')
@@ -2311,27 +2320,42 @@ async function deleteQuestion(questionId) {
             .eq('question_id', questionId);
 
         if (answersError) {
-            console.error('Error deleting related exam answers:', answersError);
-            alert('Gagal menghapus jawaban terkait soal. Silakan coba lagi.');
-            return;
+            // Jika bukan karena tabel tidak ada, log saja tapi tetap lanjutkan
+            console.warn('Warning deleting exam_answers (non-fatal):', answersError.message);
         }
 
-        // Then delete the question itself
+        // Hapus soal — gunakan .select() agar Supabase mengembalikan data yang terhapus
+        // Jika RLS memblokir, data yang dikembalikan akan kosong (silent block terdeteksi)
         console.log('Deleting question:', questionId);
-        const { error } = await supabase
+        const { data: deletedData, error: deleteError } = await supabase
             .from('questions')
             .delete()
-            .eq('id', questionId);
+            .eq('id', questionId)
+            .select();
 
-        if (error) {
-            console.error('Error deleting question:', error);
-            alert('Gagal menghapus soal: ' + error.message);
+        if (deleteError) {
+            console.error('Error deleting question:', deleteError);
+            // Cek apakah RLS yang memblokir
+            if (deleteError.message.includes('permission') ||
+                deleteError.message.includes('RLS') ||
+                deleteError.code === '42501') {
+                alert('Gagal menghapus soal: Tidak ada izin (RLS).\n\nSOLUSI: Buka Supabase Dashboard → Authentication → Policies → tabel "questions" → tambahkan policy DELETE untuk admin.');
+            } else {
+                alert('Gagal menghapus soal: ' + deleteError.message);
+            }
             return;
         }
 
+        // Cek apakah soal benar-benar terhapus (bukan silent RLS block)
+        if (!deletedData || deletedData.length === 0) {
+            console.error('Delete silent fail: RLS memblokir atau soal tidak ditemukan');
+            alert('Gagal menghapus soal!\n\nKemungkinan penyebab:\n1. RLS (Row Level Security) di Supabase memblokir operasi DELETE\n2. Soal tidak ditemukan\n\nSOLUSI:\nBuka Supabase Dashboard → Table Editor → questions → Policies\nPastikan ada policy yang mengizinkan admin melakukan DELETE.\n\nAtau jalankan SQL ini di Supabase SQL Editor:\nALTER TABLE questions DISABLE ROW LEVEL SECURITY;\n(sementara untuk testing)');
+            return;
+        }
+
+        console.log('Question deleted successfully:', deletedData);
         alert('Soal berhasil dihapus!');
 
-        // Add activity to recent activities
         addActivity(
             'fas fa-trash',
             'Soal dihapus',
@@ -2346,7 +2370,7 @@ async function deleteQuestion(questionId) {
 
     } catch (error) {
         console.error('Error in deleteQuestion:', error);
-        alert('Terjadi kesalahan saat menghapus soal.');
+        alert('Terjadi kesalahan saat menghapus soal: ' + error.message);
     }
 }
 
