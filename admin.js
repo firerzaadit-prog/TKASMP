@@ -2960,14 +2960,14 @@ function updateCategoryStatement(index, field, value) {
             }
             if (value) {
                 try {
-                    let rendered = value.replace(/\\(([^]*?)\\)/g, (match, latex) => {
+                    let rendered = value.replace(/\\\(([^]*?)\\\)/g, (match, latex) => {
                         try {
                             return window.katex
                                 ? window.katex.renderToString(latex, { displayMode: false, throwOnError: false })
                                 : match;
                         } catch (e) { return match; }
                     });
-                    rendered = rendered.replace(/\\[([^]*?)\\]/g, (match, latex) => {
+                    rendered = rendered.replace(/\\\[([^]*?)\\\]/g, (match, latex) => {
                         try {
                             return window.katex
                                 ? window.katex.renderToString(latex, { displayMode: true, throwOnError: false })
