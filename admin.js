@@ -2852,26 +2852,32 @@ function updateCategoryStatementsTable() {
         window.categoryStatements = [{ statement: '', isTrue: null }];
     }
 
+    const enableLatex = document.getElementById('enableStatementsLatex')?.checked;
+
     let html = '';
 
     window.categoryStatements.forEach((item, index) => {
-        // Check if LaTeX is enabled and render accordingly
-        const enableLatex = document.getElementById('enableStatementsLatex')?.checked;
-        let displayText = item.statement;
-
-        if (enableLatex && window.katex && item.statement) {
+        // Render LaTeX preview untuk baris ini jika mode LaTeX aktif
+        let previewHtml = '';
+        if (enableLatex && item.statement) {
             try {
-                // Render LaTeX expressions in the statement
-                displayText = item.statement.replace(/\\\(.+?\\\)/g, (match) => {
+                let rendered = item.statement.replace(/\\\(([^]*?)\\\)/g, (match, latex) => {
                     try {
-                        return window.katex.renderToString(match.slice(2, -2), { displayMode: false });
-                    } catch (e) {
-                        return match; // Return original if LaTeX fails
-                    }
+                        return window.katex
+                            ? window.katex.renderToString(latex, { displayMode: false, throwOnError: false })
+                            : match;
+                    } catch (e) { return match; }
                 });
-            } catch (error) {
-                // If rendering fails, use plain text
-                displayText = item.statement;
+                rendered = rendered.replace(/\\\[([^]*?)\\\]/g, (match, latex) => {
+                    try {
+                        return window.katex
+                            ? window.katex.renderToString(latex, { displayMode: true, throwOnError: false })
+                            : match;
+                    } catch (e) { return match; }
+                });
+                previewHtml = `<div class="statement-latex-preview">${rendered}</div>`;
+            } catch (e) {
+                previewHtml = '';
             }
         }
 
@@ -2880,9 +2886,12 @@ function updateCategoryStatementsTable() {
                 <td>
                     <input type="text"
                            class="statement-input"
-                           placeholder="Masukkan pernyataan..."
-                           value="${item.statement}"
-                           oninput="updateCategoryStatement(${index}, 'statement', this.value)">
+                           data-index="${index}"
+                           placeholder="${enableLatex ? 'Ketik teks + \\\\( rumus \\\\) untuk LaTeX...' : 'Masukkan pernyataan...'}"
+                           value="${item.statement.replace(/"/g, '&quot;')}"
+                           oninput="updateCategoryStatement(${index}, 'statement', this.value)"
+                           onfocus="window.lastFocusedStatementInput = this">
+                    ${previewHtml}
                 </td>
                 <td style="text-align: center;">
                     <input type="radio"
@@ -2906,7 +2915,23 @@ function updateCategoryStatementsTable() {
     });
 
     tableBody.innerHTML = html;
+
+    // Restore focus ke input yang terakhir aktif (agar tidak hilang setelah re-render)
+    if (window.lastFocusedStatementInput) {
+        const lastIndex = window.lastFocusedStatementInput.dataset?.index;
+        if (lastIndex !== undefined) {
+            const restored = tableBody.querySelector(`.statement-input[data-index="${lastIndex}"]`);
+            if (restored) {
+                // Set cursor ke akhir teks
+                const len = restored.value.length;
+                restored.focus();
+                restored.setSelectionRange(len, len);
+                window.lastFocusedStatementInput = restored;
+            }
+        }
+    }
 }
+
 
 // Update a category statement
 function updateCategoryStatement(index, field, value) {
@@ -2918,19 +2943,51 @@ function updateCategoryStatement(index, field, value) {
         window.categoryStatements[index] = { statement: '', isTrue: null };
     }
 
-    if (field === 'isTrue') {
-        window.categoryStatements[index][field] = value;
-    } else {
-        window.categoryStatements[index][field] = value;
-    }
+    window.categoryStatements[index][field] = value;
 
-    // Only re-render the table if LaTeX is enabled (to update rendering)
+    // Jika LaTeX aktif dan field adalah 'statement', update preview baris ini saja
+    // tanpa re-render seluruh tabel (agar fokus tidak hilang)
     const enableLatex = document.getElementById('enableStatementsLatex')?.checked;
-    if (enableLatex) {
+    if (enableLatex && field === 'statement') {
+        // Update preview di baris yang sedang diedit saja
+        const input = document.querySelector(`.statement-input[data-index="${index}"]`);
+        if (input) {
+            let previewEl = input.parentElement.querySelector('.statement-latex-preview');
+            if (!previewEl) {
+                previewEl = document.createElement('div');
+                previewEl.className = 'statement-latex-preview';
+                input.parentElement.appendChild(previewEl);
+            }
+            if (value) {
+                try {
+                    let rendered = value.replace(/\\(([^]*?)\\)/g, (match, latex) => {
+                        try {
+                            return window.katex
+                                ? window.katex.renderToString(latex, { displayMode: false, throwOnError: false })
+                                : match;
+                        } catch (e) { return match; }
+                    });
+                    rendered = rendered.replace(/\\[([^]*?)\\]/g, (match, latex) => {
+                        try {
+                            return window.katex
+                                ? window.katex.renderToString(latex, { displayMode: true, throwOnError: false })
+                                : match;
+                        } catch (e) { return match; }
+                    });
+                    previewEl.innerHTML = rendered;
+                } catch (e) {
+                    previewEl.innerHTML = '';
+                }
+            } else {
+                previewEl.innerHTML = '';
+            }
+        }
+    } else if (field === 'isTrue') {
+        // isTrue berubah → re-render tabel untuk update radio state
         updateCategoryStatementsTable();
     }
-    // If LaTeX is not enabled, no need to re-render as the input value is already updated
 }
+
 
 // Remove a category statement
 function removeCategoryStatement(index) {
@@ -3885,93 +3942,69 @@ function toggleStatementsLatexMode() {
     const checkbox = document.getElementById('enableStatementsLatex');
     const toolbar = document.getElementById('statementsLatexToolbar');
     const preview = document.getElementById('statementsLatexPreview');
-    const textarea = document.getElementById('categoryStatements');
 
-    // Check if elements exist before using them
-    if (!checkbox || !toolbar || !preview) {
+    if (!checkbox || !toolbar) {
         console.warn('LaTeX elements not found, skipping toggle');
         return;
     }
 
-    // Remove existing event listener if textarea exists
-    if (textarea) {
-        textarea.removeEventListener('input', updateStatementsLatexPreview);
-    }
-
     if (checkbox.checked) {
-        // Enable LaTeX mode
         toolbar.style.display = 'flex';
-        preview.style.display = 'block';
-        if (textarea) {
-            textarea.placeholder = 'Masukkan pernyataan dengan LaTeX...';
-            // Add event listener for preview
-            textarea.addEventListener('input', updateStatementsLatexPreview);
-            updateStatementsLatexPreview(); // Update immediately
-        }
+        if (preview) preview.style.display = 'none'; // preview per-baris, bukan global
     } else {
-        // Disable LaTeX mode
         toolbar.style.display = 'none';
-        preview.style.display = 'none';
-        if (textarea) {
-            textarea.placeholder = 'Masukkan pernyataan, satu per baris\nContoh:\n2 adalah bilangan genap\n3 adalah bilangan ganjil\n4 adalah bilangan prima';
-        }
-
-        // Clear preview
-        preview.innerHTML = '';
+        if (preview) preview.style.display = 'none';
     }
+
+    // Re-render tabel agar setiap baris menampilkan/menyembunyikan preview LaTeX
+    updateCategoryStatementsTable();
 }
 
 function insertLatexIntoStatements(symbol) {
-    const textarea = document.getElementById('categoryStatements');
-    if (!textarea) return;
-
+    // Cari input yang sedang difokus (lastFocusedStatementInput),
+    // atau fallback ke input pertama yang ada
     const latexSymbols = {
-        'fraction': '\\frac{a}{b}',
-        'sqrt': '\\sqrt{x}',
-        'power': 'x^{2}',
-        'integral': '\\int',
-        'sum': '\\sum',
-        'alpha': '\\alpha',
-        'beta': '\\beta',
-        'gamma': '\\gamma'
+        'fraction': '\\( \\frac{a}{b} \\)',
+        'sqrt':     '\\( \\sqrt{x} \\)',
+        'power':    '\\( x^{2} \\)',
+        'integral': '\\( \\int \\)',
+        'sum':      '\\( \\sum \\)',
+        'alpha':    '\\( \\alpha \\)',
+        'beta':     '\\( \\beta \\)',
+        'gamma':    '\\( \\gamma \\)'
     };
 
-    const latex = latexSymbols[symbol] || symbol;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const text = textarea.value;
-    const before = text.substring(0, start);
-    const after = text.substring(end, text.length);
+    const latex = latexSymbols[symbol] || ('\\( ' + symbol + ' \\)');
 
-    textarea.value = before + latex + after;
-    textarea.selectionStart = textarea.selectionEnd = start + latex.length;
-    textarea.focus();
+    // Gunakan input yang terakhir difokus
+    const input = window.lastFocusedStatementInput
+        || document.querySelector('.statement-input');
 
-    updateStatementsLatexPreview();
-}
+    if (!input) return;
 
-function updateStatementsLatexPreview() {
-    const statementsText = document.getElementById('categoryStatements').value;
-    const preview = document.getElementById('statementsLatexPreview');
+    const start = input.selectionStart;
+    const end   = input.selectionEnd;
+    const before = input.value.substring(0, start);
+    const after  = input.value.substring(end);
 
-    if (statementsText && window.katex) {
-        try {
-            // Render LaTeX expressions found in the statements
-            const renderedText = statementsText.replace(/\\\(.+?\\\)/g, (match) => {
-                try {
-                    return window.katex.renderToString(match.slice(2, -2), { displayMode: false });
-                } catch (e) {
-                    return match; // Return original if LaTeX fails
-                }
-            });
-            preview.innerHTML = renderedText.replace(/\n/g, '<br>');
-        } catch (error) {
-            preview.innerHTML = '<span style="color: red;">LaTeX Error</span>';
-        }
-    } else {
-        preview.innerHTML = '';
+    input.value = before + latex + after;
+    input.selectionStart = input.selectionEnd = start + latex.length;
+    input.focus();
+
+    // Update data dan re-render preview
+    const index = parseInt(input.dataset.index);
+    if (!isNaN(index)) {
+        updateCategoryStatement(index, 'statement', input.value);
     }
 }
+
+
+function updateStatementsLatexPreview() {
+    // Preview sekarang ditampilkan per baris di updateCategoryStatementsTable()
+    // Fungsi ini dipertahankan agar tidak error jika masih dipanggil
+    updateCategoryStatementsTable();
+}
+
 
 function toggleQuestionLatexMode() {
     const checkbox = document.getElementById('enableQuestionLatex');

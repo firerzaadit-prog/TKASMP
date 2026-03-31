@@ -1494,15 +1494,20 @@ body::before {
 }
 
 .statement-latex-preview {
+    margin-top: 0.35rem;
+    padding: 0.35rem 0.6rem;
     font-size: 0.9rem;
-    color: var(--admin-text);
-    line-height: 1.5;
+    color: var(--admin-text-primary);
+    line-height: 1.6;
     word-break: break-word;
+    background: var(--admin-bg-secondary);
+    border-radius: var(--admin-radius-sm);
+    border-left: 3px solid var(--admin-primary);
+    min-height: 1.4rem;
 }
 
-.statement-latex-preview:empty::before {
-    content: '-';
-    color: var(--admin-text-muted);
+.statement-latex-preview:empty {
+    display: none;
 }
 
 .category-options-table input[type="radio"] {
