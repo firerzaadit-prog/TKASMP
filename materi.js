@@ -1,4 +1,3 @@
-        // Import Supabase client
         import { supabase } from './clientSupabase.js';
 
         // Global variables
