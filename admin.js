@@ -4817,80 +4817,193 @@ async function showStudentDetail(userId) {
             return;
         }
 
+        // Ambil analisis AI dari tabel gemini_analyses
+        let aiAnalyses = [];
+        try {
+            const sessionIds = analytics.exams.map(e => e.sessionId);
+            if (sessionIds.length > 0) {
+                const { data: answerIds } = await supabase
+                    .from('exam_answers')
+                    .select('id, question_id')
+                    .in('exam_session_id', sessionIds)
+                    .limit(50);
+
+                if (answerIds && answerIds.length > 0) {
+                    const { data: geminiData } = await supabase
+                        .from('gemini_analyses')
+                        .select('*')
+                        .in('answer_id', answerIds.map(a => a.id))
+                        .limit(20);
+                    aiAnalyses = geminiData || [];
+                }
+            }
+        } catch (e) {
+            console.warn('Could not load AI analyses:', e);
+        }
+
+        // Siapkan data radar chart per bab
+        const chapterLabels = analytics.chapterPerformance.map(c => c.chapter);
+        const chapterAccuracy = analytics.chapterPerformance.map(c => Math.round(c.accuracy || 0));
+
+        // Ringkasan AI
+        let aiSummary = '<p style="color:#6b7280;">Belum ada analisis AI untuk siswa ini.</p>';
+        if (aiAnalyses.length > 0) {
+            const strengths = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.strengths || []))].slice(0, 3);
+            const weaknesses = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.weaknesses || []))].slice(0, 3);
+            const suggestions = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.learningSuggestions || []))].slice(0, 3);
+
+            aiSummary = `
+                <div style="margin-bottom:1rem;">
+                    <strong style="color:#10b981;">💪 Kelebihan:</strong>
+                    <ul style="margin:0.5rem 0 0 1rem;color:#374151;">
+                        ${strengths.length > 0 ? strengths.map(s => `<li>${s}</li>`).join('') : '<li>Data belum tersedia</li>'}
+                    </ul>
+                </div>
+                <div style="margin-bottom:1rem;">
+                    <strong style="color:#ef4444;">⚠️ Area Perbaikan:</strong>
+                    <ul style="margin:0.5rem 0 0 1rem;color:#374151;">
+                        ${weaknesses.length > 0 ? weaknesses.map(w => `<li>${w}</li>`).join('') : '<li>Data belum tersedia</li>'}
+                    </ul>
+                </div>
+                <div>
+                    <strong style="color:#3b82f6;">📚 Rekomendasi Belajar:</strong>
+                    <ul style="margin:0.5rem 0 0 1rem;color:#374151;">
+                        ${suggestions.length > 0 ? suggestions.map(s => `<li>${s}</li>`).join('') : '<li>Data belum tersedia</li>'}
+                    </ul>
+                </div>
+            `;
+        }
+
+        const uniqueId = 'radar_' + userId.replace(/-/g, '').slice(0, 10);
+
         const modal = document.createElement('div');
         modal.className = 'analytics-modal';
         modal.innerHTML = `
-            <div class="modal-content">
+            <div class="modal-content" style="max-width:900px;width:95%;">
                 <div class="modal-header">
-                    <h2>Detail Analytics: ${analytics.student.nama_lengkap}</h2>
-                    <button onclick="this.closest('.analytics-modal').remove()" class="close-btn">&times;</button>
+                    <div>
+                        <h2>${analytics.student.nama_lengkap || 'Siswa'}</h2>
+                        <p style="margin:0;color:#6b7280;font-size:0.9rem;">Update: ${new Date().toLocaleDateString('id-ID')}</p>
+                    </div>
+                    <div style="display:flex;gap:0.5rem;align-items:center;">
+                        <button onclick="exportStudentToExcel('${userId}')" class="add-btn" style="font-size:0.85rem;padding:0.5rem 1rem;">
+                            <i class="fas fa-file-excel"></i> Export
+                        </button>
+                        <button onclick="exportStudentToGoogleSheet('${userId}')" class="add-btn" style="font-size:0.85rem;padding:0.5rem 1rem;background:#059669;">
+                            <i class="fas fa-table"></i> Google Sheet
+                        </button>
+                        <button onclick="this.closest('.analytics-modal').remove()" class="cancel-btn" style="font-size:0.85rem;padding:0.5rem 1rem;">✕ Tutup</button>
+                    </div>
                 </div>
-                <div class="modal-body">
-                    <div class="student-summary">
-                        <div class="summary-card">
-                            <h3>Ringkasan</h3>
-                            <div class="summary-grid">
-                                <div class="summary-item">
-                                    <span class="label">Total Ujian:</span>
-                                    <span class="value">${analytics.summary.totalExams}</span>
-                                </div>
-                                <div class="summary-item">
-                                    <span class="label">Rata-rata Skor:</span>
-                                    <span class="value">${analytics.summary.averageScore}</span>
-                                </div>
-                                <div class="summary-item">
-                                    <span class="label">Skor Tertinggi:</span>
-                                    <span class="value">${analytics.summary.highestScore}</span>
-                                </div>
-                                <div class="summary-item">
-                                    <span class="label">Tingkat Kelulusan:</span>
-                                    <span class="value">${analytics.summary.passRate}%</span>
-                                </div>
+                <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;padding:1.5rem;">
+
+                    <!-- Kiri: Summary + Peta Kompetensi -->
+                    <div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem;">
+                            <div style="background:#f0fdf4;border-radius:10px;padding:1rem;text-align:center;">
+                                <div style="font-size:0.8rem;color:#6b7280;">RATA-RATA</div>
+                                <div style="font-size:2rem;font-weight:700;color:#10b981;">${analytics.summary.averageScore}</div>
+                            </div>
+                            <div style="background:#eff6ff;border-radius:10px;padding:1rem;text-align:center;">
+                                <div style="font-size:0.8rem;color:#6b7280;">TERTINGGI</div>
+                                <div style="font-size:2rem;font-weight:700;color:#3b82f6;">${analytics.summary.highestScore || 0}</div>
+                            </div>
+                            <div style="background:#fefce8;border-radius:10px;padding:1rem;text-align:center;">
+                                <div style="font-size:0.8rem;color:#6b7280;">TOTAL UJIAN</div>
+                                <div style="font-size:2rem;font-weight:700;color:#f59e0b;">${analytics.summary.totalExams}</div>
+                            </div>
+                            <div style="background:#fdf4ff;border-radius:10px;padding:1rem;text-align:center;">
+                                <div style="font-size:0.8rem;color:#6b7280;">KELULUSAN</div>
+                                <div style="font-size:2rem;font-weight:700;color:#8b5cf6;">${analytics.summary.passRate}%</div>
                             </div>
                         </div>
 
-                        <div class="summary-card">
-                            <h3>Performa per Bab</h3>
-                            <div class="chapter-performance">
-                                ${analytics.chapterPerformance.map(chapter => `
-                                    <div class="chapter-item">
-                                        <span class="chapter-name">${chapter.chapter}</span>
-                                        <div class="chapter-stats">
-                                            <span>${chapter.correctAnswers}/${chapter.totalQuestions}</span>
-                                            <span>${Math.round(chapter.accuracy)}%</span>
+                        <!-- Peta Kompetensi Radar Chart -->
+                        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:1rem;">
+                            <h4 style="margin:0 0 1rem;color:#374151;font-size:0.95rem;">
+                                <i class="fas fa-chart-radar" style="color:#667eea;"></i> Peta Kompetensi
+                            </h4>
+                            <div style="position:relative;height:250px;">
+                                <canvas id="${uniqueId}"></canvas>
+                            </div>
+                            ${chapterLabels.length === 0 ? '<p style="text-align:center;color:#9ca3af;font-size:0.85rem;margin-top:0.5rem;">Belum ada data ujian</p>' : ''}
+                        </div>
+                    </div>
+
+                    <!-- Kanan: Analisis AI + Performa per Bab -->
+                    <div>
+                        <!-- Analisis Cerdas AI -->
+                        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:1rem;margin-bottom:1.5rem;">
+                            <h4 style="margin:0 0 1rem;color:#374151;font-size:0.95rem;">
+                                <i class="fas fa-robot" style="color:#8b5cf6;"></i> Analisis Cerdas AI
+                                <span style="font-size:0.75rem;color:#6b7280;margin-left:0.5rem;">(${aiAnalyses.length} analisis)</span>
+                            </h4>
+                            <div style="font-size:0.88rem;line-height:1.6;">${aiSummary}</div>
+                        </div>
+
+                        <!-- Performa per Bab -->
+                        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:1rem;">
+                            <h4 style="margin:0 0 1rem;color:#374151;font-size:0.95rem;">
+                                <i class="fas fa-chart-bar" style="color:#10b981;"></i> Performa per Bab
+                            </h4>
+                            ${analytics.chapterPerformance.length === 0
+                                ? '<p style="text-align:center;color:#9ca3af;font-size:0.85rem;">Belum ada data</p>'
+                                : analytics.chapterPerformance.map(c => `
+                                    <div style="margin-bottom:0.75rem;">
+                                        <div style="display:flex;justify-content:space-between;margin-bottom:0.25rem;">
+                                            <span style="font-size:0.85rem;color:#374151;">${c.chapter}</span>
+                                            <span style="font-size:0.85rem;font-weight:600;color:${Math.round(c.accuracy||0) >= 70 ? '#10b981' : '#ef4444'};">${Math.round(c.accuracy||0)}%</span>
                                         </div>
+                                        <div style="height:6px;background:#f3f4f6;border-radius:3px;">
+                                            <div style="height:6px;border-radius:3px;width:${Math.round(c.accuracy||0)}%;background:${Math.round(c.accuracy||0) >= 70 ? '#10b981' : '#ef4444'};"></div>
+                                        </div>
+                                        <div style="font-size:0.75rem;color:#9ca3af;">${c.correctAnswers}/${c.totalQuestions} soal benar</div>
                                     </div>
-                                `).join('')}
-                            </div>
+                                `).join('')
+                            }
                         </div>
                     </div>
-
-                    <div class="exam-history">
-                        <h3>Riwayat Ujian</h3>
-                        <div class="exam-list">
-                            ${analytics.exams.map(exam => `
-                                <div class="exam-item">
-                                    <div class="exam-date">${new Date(exam.date).toLocaleDateString('id-ID')}</div>
-                                    <div class="exam-score">${exam.correctAnswers}/${exam.totalQuestions} soal benar</div>
-                                    <div class="exam-time">${Math.round(exam.timeSpent / 60)} menit</div>
-                                    <div class="exam-status ${exam.isPassed ? 'passed' : 'failed'}">
-                                        ${exam.isPassed ? 'LULUS' : 'TIDAK LULUS'}
-                                    </div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button onclick="exportStudentToExcel('${userId}')" class="add-btn">
-                        <i class="fas fa-file-excel"></i> Export ke Excel
-                    </button>
-                    <button onclick="this.closest('.analytics-modal').remove()" class="cancel-btn">Tutup</button>
                 </div>
             </div>
         `;
 
         document.body.appendChild(modal);
+
+        // Render radar chart setelah modal ada di DOM
+        if (chapterLabels.length > 0 && window.Chart) {
+            setTimeout(() => {
+                const canvas = document.getElementById(uniqueId);
+                if (!canvas) return;
+                new Chart(canvas.getContext('2d'), {
+                    type: 'radar',
+                    data: {
+                        labels: chapterLabels,
+                        datasets: [{
+                            label: 'Akurasi (%)',
+                            data: chapterAccuracy,
+                            backgroundColor: 'rgba(102, 126, 234, 0.2)',
+                            borderColor: 'rgba(102, 126, 234, 1)',
+                            borderWidth: 2,
+                            pointBackgroundColor: 'rgba(102, 126, 234, 1)',
+                            pointRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            r: {
+                                beginAtZero: true,
+                                max: 100,
+                                ticks: { stepSize: 20, font: { size: 10 } },
+                                pointLabels: { font: { size: 11 } }
+                            }
+                        },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            }, 100);
+        }
 
     } catch (error) {
         console.error('Error showing student detail:', error);
@@ -4899,75 +5012,211 @@ async function showStudentDetail(userId) {
 }
 
 // Export satu siswa ke Excel
+// Helper: build CSV row data lengkap sesuai format yang diminta
+async function buildStudentExportData(userId) {
+    const analytics = await getDetailedStudentAnalytics(userId);
+    if (!analytics) return null;
+
+    // Ambil AI analyses
+    let aiStrengths = '-', aiWeaknesses = '-', aiSuggestions = '-';
+    try {
+        const sessionIds = analytics.exams.map(e => e.sessionId);
+        if (sessionIds.length > 0) {
+            const { data: answerIds } = await supabase
+                .from('exam_answers').select('id').in('exam_session_id', sessionIds).limit(50);
+            if (answerIds && answerIds.length > 0) {
+                const { data: geminiData } = await supabase
+                    .from('gemini_analyses').select('analysis_data')
+                    .in('answer_id', answerIds.map(a => a.id)).limit(20);
+                if (geminiData && geminiData.length > 0) {
+                    aiStrengths = [...new Set(geminiData.flatMap(g => g.analysis_data?.strengths || []))].slice(0,3).join('; ') || '-';
+                    aiWeaknesses = [...new Set(geminiData.flatMap(g => g.analysis_data?.weaknesses || []))].slice(0,3).join('; ') || '-';
+                    aiSuggestions = [...new Set(geminiData.flatMap(g => g.analysis_data?.learningSuggestions || []))].slice(0,3).join('; ') || '-';
+                }
+            }
+        }
+    } catch(e) {}
+
+    // Peta Kompetensi per bab
+    const petaKompetensi = analytics.chapterPerformance
+        .map(c => `${c.chapter}: ${Math.round(c.accuracy||0)}%`)
+        .join(' | ') || '-';
+
+    const rows = [];
+    if (analytics.exams.length === 0) {
+        // Siswa belum ujian
+        rows.push([
+            analytics.student.nama_lengkap || '-',
+            analytics.student.email || '-',
+            analytics.student.class_name || analytics.student.school || '-',
+            '-', '-', '-', '-', '-', petaKompetensi,
+            0, 0, aiWeaknesses, aiSuggestions
+        ]);
+    } else {
+        analytics.exams.forEach(exam => {
+            const startTime = exam.date ? new Date(exam.date) : null;
+            const endTime = exam.date && exam.timeSpent
+                ? new Date(new Date(exam.date).getTime() + exam.timeSpent * 1000) : null;
+            const durasiMenit = exam.timeSpent ? Math.round(exam.timeSpent / 60) + ' menit' : '-';
+            rows.push([
+                analytics.student.nama_lengkap || '-',
+                analytics.student.email || '-',
+                analytics.student.class_name || analytics.student.school || '-',
+                startTime ? startTime.toLocaleDateString('id-ID') : '-',
+                startTime ? startTime.toLocaleTimeString('id-ID') : '-',
+                endTime ? endTime.toLocaleTimeString('id-ID') : '-',
+                durasiMenit,
+                exam.totalScore || 0,
+                petaKompetensi,
+                exam.correctAnswers || 0,
+                (exam.totalQuestions || 0) - (exam.correctAnswers || 0),
+                aiWeaknesses,
+                aiSuggestions
+            ]);
+        });
+    }
+    return rows;
+}
+
+// Helper: download CSV
+function downloadCSV(csvContent, filename) {
+    const BOM = '\uFEFF'; // UTF-8 BOM for Excel
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.setAttribute('href', URL.createObjectURL(blob));
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
 async function exportStudentToExcel(userId) {
     try {
-        const analytics = await getDetailedStudentAnalytics(userId);
-        if (!analytics) {
-            alert('Data analytics tidak ditemukan.');
-            return;
-        }
+        const rows = await buildStudentExportData(userId);
+        if (!rows) { alert('Data tidak ditemukan.'); return; }
 
-        const success = exportStudentAnalyticsToExcel(analytics);
-        if (success) {
-            alert('Data berhasil diekspor ke Excel!');
-        } else {
-            alert('Gagal mengekspor data.');
-        }
+        const header = ['Nama Lengkap','Email Siswa','Kelas','Tanggal Ujian',
+            'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan','Nilai Akhir (Skor)',
+            'Peta Kompetensi','Jumlah Benar','Jumlah Salah',
+            'Ringkasan Kemampuan','Rekomendasi Belajar'];
+
+        const csvRows = [header, ...rows];
+        const csvContent = csvRows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+
+        const name = rows[0]?.[0] || 'siswa';
+        downloadCSV(csvContent, `hasil_ujian_${name}_${new Date().toISOString().split('T')[0]}.csv`);
+        alert('Data berhasil diekspor!');
     } catch (error) {
-        console.error('Error exporting student analytics:', error);
-        alert('Error exporting data.');
+        console.error('Error exporting student:', error);
+        alert('Error exporting data: ' + error.message);
     }
 }
 
-// Export semua siswa ke Excel
+// Export semua siswa ke Excel — format lengkap
 async function exportAllStudentsToExcel() {
     try {
         const students = await getAllStudentsAnalytics();
+        if (students.length === 0) { alert('Tidak ada data siswa.'); return; }
 
-        if (students.length === 0) {
-            alert('Tidak ada data siswa untuk diekspor.');
-            return;
+        alert(`Mengekspor data ${students.length} siswa... Mohon tunggu.`);
+
+        const header = ['Nama Lengkap','Email Siswa','Kelas','Tanggal Ujian',
+            'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan','Nilai Akhir (Skor)',
+            'Peta Kompetensi','Jumlah Benar','Jumlah Salah',
+            'Ringkasan Kemampuan','Rekomendasi Belajar'];
+
+        let allRows = [header];
+        for (const student of students) {
+            const rows = await buildStudentExportData(student.id);
+            if (rows) allRows = allRows.concat(rows);
         }
 
-        // Siapkan data untuk Excel
-        const excelData = [];
-        excelData.push(['LAPORAN ANALYTICS SISWA - TKA MATEMATIKA']);
-        excelData.push(['Tanggal Export', new Date().toLocaleDateString('id-ID')]);
-        excelData.push(['']);
-        excelData.push(['DAFTAR SISWA']);
-        excelData.push(['Nama Lengkap', 'Email', 'Sekolah', 'Total Ujian', 'Rata-rata Mastery (%)']);
-
-        students.forEach(student => {
-            excelData.push([
-                student.nama_lengkap,
-                student.email || 'N/A',
-                student.school || 'N/A',
-                student.totalExams,
-                student.averageMastery
-            ]);
-        });
-
-        // Convert ke CSV
-        const csvContent = excelData.map(row =>
-            row.map(cell => `"${cell}"`).join(',')
-        ).join('\n');
-
-        // Download
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', `semua_siswa_analytics_${new Date().toISOString().split('T')[0]}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        alert('Data semua siswa berhasil diekspor ke Excel!');
-
+        const csvContent = allRows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+        downloadCSV(csvContent, `semua_siswa_tka_${new Date().toISOString().split('T')[0]}.csv`);
+        alert('Semua data berhasil diekspor!');
     } catch (error) {
         console.error('Error exporting all students:', error);
-        alert('Error exporting data.');
+        alert('Error: ' + error.message);
+    }
+}
+
+// Export ke Google Sheet (copy-paste friendly: buka dialog dengan data)
+async function exportStudentToGoogleSheet(userId) {
+    try {
+        const rows = await buildStudentExportData(userId);
+        if (!rows) { alert('Data tidak ditemukan.'); return; }
+
+        const header = ['Nama Lengkap','Email Siswa','Kelas','Tanggal Ujian',
+            'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan','Nilai Akhir (Skor)',
+            'Peta Kompetensi','Jumlah Benar','Jumlah Salah',
+            'Ringkasan Kemampuan','Rekomendasi Belajar'];
+
+        // Format tab-separated untuk langsung paste ke Google Sheet
+        const tsvRows = [header, ...rows];
+        const tsvContent = tsvRows.map(r => r.map(c => String(c).replace(/\t/g,' ')).join('\t')).join('\n');
+
+        // Tampilkan dialog dengan instruksi
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;';
+        modal.innerHTML = `
+            <div style="background:#fff;border-radius:16px;padding:2rem;max-width:600px;width:95%;max-height:90vh;overflow-y:auto;">
+                <h3 style="margin:0 0 1rem;color:#1f2937;">
+                    <i class="fas fa-table" style="color:#16a34a;"></i> Export ke Google Sheet
+                </h3>
+                <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:1rem;margin-bottom:1rem;font-size:0.9rem;color:#166534;">
+                    <strong>Cara menggunakan:</strong><br>
+                    1. Klik tombol "Salin Data" di bawah<br>
+                    2. Buka <a href="https://sheets.google.com" target="_blank" style="color:#16a34a;">Google Sheets</a><br>
+                    3. Klik sel A1, lalu tekan <strong>Ctrl+V</strong> (Paste)<br>
+                    4. Data akan otomatis mengisi kolom-kolom yang benar
+                </div>
+                <textarea id="gsheetData" style="width:100%;height:150px;font-size:0.75rem;font-family:monospace;border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem;resize:none;" readonly>${tsvContent}</textarea>
+                <div style="display:flex;gap:0.75rem;margin-top:1rem;">
+                    <button onclick="
+                        const ta = document.getElementById('gsheetData');
+                        ta.select();
+                        document.execCommand('copy');
+                        this.textContent='✅ Tersalin!';
+                        this.style.background='#16a34a';
+                        setTimeout(()=>{this.textContent='📋 Salin Data';this.style.background='#059669';},2000);
+                    " style="flex:1;padding:0.75rem;background:#059669;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:0.9rem;">
+                        📋 Salin Data
+                    </button>
+                    <button onclick="
+                        const BOM='\\uFEFF';
+                        const csv='${header.join(',')}\n'+[${JSON.stringify(rows)}][0].map(r=>r.map(c=>'\"'+String(c).replace(/\"/g,'\"\"')+'\"').join(',')).join('\n');
+                        const blob=new Blob([BOM+csv],{type:'text/csv'});
+                        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='export_gsheet.csv';a.click();
+                    " style="padding:0.75rem 1rem;background:#3b82f6;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:0.9rem;">
+                        💾 Download CSV
+                    </button>
+                    <button onclick="this.closest('div[style*=\"position:fixed\"]').remove()" style="padding:0.75rem 1rem;background:#6b7280;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem;">
+                        Tutup
+                    </button>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+    } catch (error) {
+        console.error('Error preparing Google Sheet export:', error);
+        alert('Error: ' + error.message);
+    }
+}
+
+// Export semua siswa ke Google Sheet
+async function exportAllToGoogleSheet() {
+    try {
+        const students = await getAllStudentsAnalytics();
+        if (students.length === 0) { alert('Tidak ada data siswa.'); return; }
+        // Gunakan exportAllStudentsToExcel sebagai CSV yang bisa di-import ke Google Sheet
+        await exportAllStudentsToExcel();
+        setTimeout(() => {
+            alert('File CSV berhasil diunduh.\n\nUntuk import ke Google Sheet:\n1. Buka Google Sheets\n2. File → Import → Upload → pilih file CSV\n3. Pilih "Replace spreadsheet" atau "Insert new sheet(s)"');
+        }, 500);
+    } catch (error) {
+        alert('Error: ' + error.message);
     }
 }
 
@@ -5871,9 +6120,211 @@ window.loadTodaysPerformance = loadTodaysPerformance;
 window.checkDashboardSystemStatus = checkDashboardSystemStatus;
 window.loadAnalytics = loadAnalytics;
 window.loadStudentsList = loadStudentsList;
+
+// ==========================================
+// LIVE MONITOR FUNCTIONS
+// ==========================================
+let monitoringInterval = null;
+let isMonitoring = false;
+let liveAnswerFeedData = [];
+
+async function startMonitoring() {
+    isMonitoring = true;
+    const startBtn = document.getElementById('startMonitoringBtn');
+    const stopBtn = document.getElementById('stopMonitoringBtn');
+    const liveBadge = document.getElementById('liveBadge');
+    const liveIndicator = document.getElementById('liveIndicator');
+
+    if (startBtn) startBtn.style.display = 'none';
+    if (stopBtn) stopBtn.style.display = 'inline-flex';
+    if (liveBadge) liveBadge.style.display = 'inline-flex';
+    if (liveIndicator) liveIndicator.style.display = 'inline-block';
+
+    // Load segera
+    await refreshMonitoringData();
+
+    // Auto-refresh setiap 5 detik
+    monitoringInterval = setInterval(async () => {
+        if (isMonitoring) await refreshMonitoringData();
+    }, 5000);
+}
+
+function stopMonitoring() {
+    isMonitoring = false;
+    if (monitoringInterval) {
+        clearInterval(monitoringInterval);
+        monitoringInterval = null;
+    }
+    const startBtn = document.getElementById('startMonitoringBtn');
+    const stopBtn = document.getElementById('stopMonitoringBtn');
+    const liveBadge = document.getElementById('liveBadge');
+    const liveIndicator = document.getElementById('liveIndicator');
+
+    if (startBtn) startBtn.style.display = 'inline-flex';
+    if (stopBtn) stopBtn.style.display = 'none';
+    if (liveBadge) liveBadge.style.display = 'none';
+    if (liveIndicator) liveIndicator.style.display = 'none';
+}
+
+async function refreshMonitoringData() {
+    try {
+        // 1. Ambil sesi ujian yang sedang aktif (in_progress)
+        const { data: activeSessions, error: sessionsError } = await supabase
+            .from('exam_sessions')
+            .select(`
+                id, user_id, started_at, status, question_type_variant, total_time_seconds,
+                profiles!inner(nama_lengkap, email, class_name)
+            `)
+            .eq('status', 'in_progress')
+            .order('started_at', { ascending: false });
+
+        if (sessionsError) {
+            console.warn('Error loading active sessions:', sessionsError);
+        }
+
+        const sessions = activeSessions || [];
+
+        // 2. Update stat: Siswa Aktif
+        const activeStudentsEl = document.getElementById('activeStudentsCount');
+        if (activeStudentsEl) activeStudentsEl.textContent = sessions.length;
+
+        // 3. Ambil jawaban terbaru (30 menit terakhir)
+        const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+        const { data: recentAnswers, error: answersError } = await supabase
+            .from('exam_answers')
+            .select(`
+                id, selected_answer, is_correct, created_at, time_taken_seconds,
+                questions!inner(question_text, chapter),
+                exam_sessions!inner(
+                    profiles!inner(nama_lengkap)
+                )
+            `)
+            .gte('created_at', thirtyMinAgo)
+            .order('created_at', { ascending: false })
+            .limit(50);
+
+        const answers = recentAnswers || [];
+
+        // 4. Hitung stats
+        const totalAnswersEl = document.getElementById('totalAnswersCount');
+        if (totalAnswersEl) totalAnswersEl.textContent = answers.length;
+
+        const correctAnswers = answers.filter(a => a.is_correct);
+        const correctRateEl = document.getElementById('correctRate');
+        if (correctRateEl) {
+            correctRateEl.textContent = answers.length > 0
+                ? Math.round((correctAnswers.length / answers.length) * 100) + '%'
+                : '-';
+        }
+
+        const avgTimeEl = document.getElementById('avgResponseTime');
+        if (avgTimeEl && answers.length > 0) {
+            const avgTime = answers.reduce((s, a) => s + (a.time_taken_seconds || 0), 0) / answers.length;
+            avgTimeEl.textContent = Math.round(avgTime) + 's';
+        }
+
+        // 5. Render active sessions cards
+        const container = document.getElementById('activeSessionsContainer');
+        if (container) {
+            if (sessions.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state" style="text-align:center;padding:2rem;color:#6b7280;grid-column:1/-1;">
+                        <i class="fas fa-hourglass-start" style="font-size:2rem;margin-bottom:0.5rem;"></i>
+                        <p>Belum ada sesi ujian aktif saat ini</p>
+                    </div>`;
+            } else {
+                container.innerHTML = sessions.map(session => {
+                    const name = session.profiles?.nama_lengkap || 'Siswa';
+                    const email = session.profiles?.email || '-';
+                    const kelas = session.profiles?.class_name || '-';
+                    const startTime = new Date(session.started_at).toLocaleTimeString('id-ID');
+                    const elapsed = Math.floor((Date.now() - new Date(session.started_at)) / 60000);
+                    return `
+                        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:1rem;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+                            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;">
+                                <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:1rem;">
+                                    ${name.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                    <div style="font-weight:600;color:#1f2937;font-size:0.95rem;">${name}</div>
+                                    <div style="font-size:0.8rem;color:#6b7280;">${email}</div>
+                                </div>
+                                <span style="margin-left:auto;background:#dcfce7;color:#16a34a;padding:0.25rem 0.6rem;border-radius:20px;font-size:0.75rem;font-weight:600;">
+                                    <span style="display:inline-block;width:6px;height:6px;background:#16a34a;border-radius:50%;margin-right:4px;animation:pulse 1s infinite;"></span>
+                                    LIVE
+                                </span>
+                            </div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.82rem;color:#374151;">
+                                <div><i class="fas fa-graduation-cap" style="color:#667eea;margin-right:4px;"></i>Tipe: <strong>${session.question_type_variant || '-'}</strong></div>
+                                <div><i class="fas fa-school" style="color:#10b981;margin-right:4px;"></i>Kelas: <strong>${kelas}</strong></div>
+                                <div><i class="fas fa-clock" style="color:#f59e0b;margin-right:4px;"></i>Mulai: ${startTime}</div>
+                                <div><i class="fas fa-hourglass-half" style="color:#8b5cf6;margin-right:4px;"></i>Durasi: ${elapsed} menit</div>
+                            </div>
+                        </div>`;
+                }).join('');
+            }
+        }
+
+        // 6. Render live answer feed
+        const feedEl = document.getElementById('liveAnswerFeed');
+        if (feedEl) {
+            if (answers.length === 0) {
+                feedEl.innerHTML = `
+                    <div class="empty-state" style="text-align:center;padding:2rem;color:#6b7280;">
+                        <i class="fas fa-inbox" style="font-size:2rem;margin-bottom:0.5rem;"></i>
+                        <p>Belum ada jawaban masuk dalam 30 menit terakhir</p>
+                    </div>`;
+            } else {
+                feedEl.innerHTML = answers.map(a => {
+                    const studentName = a.exam_sessions?.profiles?.nama_lengkap || 'Siswa';
+                    const chapter = a.questions?.chapter || '-';
+                    const questionSnippet = (a.questions?.question_text || '').substring(0, 60) + '...';
+                    const time = new Date(a.created_at).toLocaleTimeString('id-ID');
+                    const isCorrect = a.is_correct;
+                    return `
+                        <div style="display:flex;align-items:center;gap:1rem;padding:0.75rem 1rem;border-bottom:1px solid #f3f4f6;">
+                            <div style="width:32px;height:32px;border-radius:50%;background:${isCorrect ? '#dcfce7' : '#fee2e2'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                                <i class="fas fa-${isCorrect ? 'check' : 'times'}" style="color:${isCorrect ? '#16a34a' : '#dc2626'};font-size:0.9rem;"></i>
+                            </div>
+                            <div style="flex:1;min-width:0;">
+                                <div style="font-size:0.85rem;font-weight:600;color:#374151;">${studentName}</div>
+                                <div style="font-size:0.8rem;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${chapter} — ${questionSnippet}</div>
+                            </div>
+                            <div style="text-align:right;flex-shrink:0;">
+                                <div style="font-size:0.75rem;color:#9ca3af;">${time}</div>
+                                <div style="font-size:0.75rem;color:${isCorrect ? '#16a34a' : '#dc2626'};font-weight:600;">${isCorrect ? 'Benar' : 'Salah'}</div>
+                            </div>
+                        </div>`;
+                }).join('');
+            }
+        }
+
+    } catch (error) {
+        console.error('Error refreshing monitoring data:', error);
+    }
+}
+
+// Setup monitoring button event listeners
+document.addEventListener('DOMContentLoaded', () => {
+    const startBtn = document.getElementById('startMonitoringBtn');
+    const stopBtn = document.getElementById('stopMonitoringBtn');
+    const refreshBtn = document.getElementById('refreshMonitoringBtn');
+
+    if (startBtn) startBtn.addEventListener('click', startMonitoring);
+    if (stopBtn) stopBtn.addEventListener('click', stopMonitoring);
+    if (refreshBtn) refreshBtn.addEventListener('click', refreshMonitoringData);
+});
+
+window.startMonitoring = startMonitoring;
+window.stopMonitoring = stopMonitoring;
+window.refreshMonitoringData = refreshMonitoringData;
+
+
 window.showStudentDetail = showStudentDetail;
 window.exportStudentToExcel = exportStudentToExcel;
 window.exportAllStudentsToExcel = exportAllStudentsToExcel;
+window.exportStudentToGoogleSheet = exportStudentToGoogleSheet;
+window.exportAllToGoogleSheet = exportAllToGoogleSheet;
 window.checkDatabaseSetup = checkDatabaseSetup;
 window.checkFormElements = checkFormElements;
 

@@ -495,7 +495,7 @@ export async function getDetailedStudentAnalytics(userId) {
         // Ambil data profil siswa
         const { data: profile, error: profileError } = await supabase
             .from('profiles')
-            .select('*')
+            .select('id, nama_lengkap, email, school, class_name')
             .eq('id', userId)
             .single();
 
@@ -508,7 +508,7 @@ export async function getDetailedStudentAnalytics(userId) {
         try {
             const { data: sessions, error: sessionsError } = await supabase
                 .from('exam_sessions')
-                .select('*')
+                .select('id, user_id, started_at, completed_at, total_score, total_time_seconds, status, is_passed, question_type_variant')
                 .eq('user_id', userId)
                 .eq('status', 'completed')
                 .order('completed_at', { ascending: false });
@@ -602,11 +602,13 @@ export async function getDetailedStudentAnalytics(userId) {
                 const sessionStats = {
                     sessionId: session.id,
                     date: session.completed_at,
+                    startedAt: session.started_at,
                     totalQuestions: answers?.length || 0,
                     correctAnswers: answers?.filter(a => a.is_correct).length || 0,
                     totalScore: session.total_score || 0,
                     timeSpent: session.total_time_seconds || 0,
-                    isPassed: session.is_passed || false
+                    isPassed: session.is_passed || false,
+                    questionTypeVariant: session.question_type_variant || '-'
                 };
 
                 const questionDetails = answers?.map(answer => ({
