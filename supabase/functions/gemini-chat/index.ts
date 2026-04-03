@@ -14,21 +14,21 @@ serve(async (req: Request) => {
   try {
     const { message } = await req.json()
 
-    // Ambil Key GROQ
-    const apiKey = Deno.env.get('GROQ_API_KEY')
-    if (!apiKey) throw new Error('API Key Groq belum disetting di Supabase')
+    // 1. Ambil Key GEMINI dari Supabase Secrets
+    const apiKey = Deno.env.get('GEMINI_API_KEY')
+    if (!apiKey) throw new Error('API Key Gemini belum disetting di Supabase')
 
-    // Kirim ke GROQ (Gunakan Model TERBARU: llama-3.3-70b-versatile)
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    // 2. Kirim ke GEMINI menggunakan endpoint yang kompatibel dengan OpenAI
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile", // Model terbaru & aktif
+        model: "gemini-1.5-flash", // Model murni Gemini
         messages: [
-          { role: "system", content: "Anda adalah asisten guru matematika yang ahli. Berikan output JSON valid." },
+          { role: "system", content: "Anda adalah asisten guru matematika yang ahli. Berikan HANYA output JSON yang valid tanpa markdown tambahan." },
           { role: "user", content: message }
         ],
         temperature: 0.5
@@ -38,7 +38,7 @@ serve(async (req: Request) => {
     const data = await response.json()
 
     if (data.error) {
-      console.error("Groq Error:", data.error)
+      console.error("Gemini Error:", data.error)
       throw new Error(data.error.message)
     }
 

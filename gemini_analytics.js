@@ -1,9 +1,8 @@
-// gemini_analytics.js - Menggunakan GROQ AI (Llama 3)
+// gemini_analytics.js - Murni menggunakan Google Gemini
 import { supabase } from './clientSupabase.js';
 
 // KONFIGURASI
 const FUNCTION_URL = 'https://tsgldkyuktqpsbeuevsn.supabase.co/functions/v1/gemini-chat';
-// Gunakan Anon Key Anda (Tetap sama)
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2OTExOTksImV4cCI6MjA3OTI2NzE5OX0.C0g6iZcwd02ZFmuGFluYXScX9uuahntJtkPvHt5g1FE';
 
 class GeminiAnalytics {
@@ -19,7 +18,7 @@ class GeminiAnalytics {
             const cacheKey = `${answerData.id}_${questionData.id}`;
             if (this.cache.has(cacheKey)) return this.cache.get(cacheKey);
 
-            console.log(`[AI] Menganalisis jawaban ID: ${answerData.id}...`);
+            console.log(`[Gemini AI] Menganalisis jawaban ID: ${answerData.id}...`);
             const prompt = this.buildAnalysisPrompt(answerData, questionData);
 
             const responseText = await this.callEdgeFunction(prompt);
@@ -30,12 +29,11 @@ class GeminiAnalytics {
 
             return analysis;
         } catch (error) {
-            console.error('[AI] Gagal menganalisis:', error);
+            console.error('[Gemini AI] Gagal menganalisis:', error);
 
-            // Check if it's a rate limit error
-            if (error.message && error.message.includes('Rate limit reached')) {
-                console.warn('[AI] Rate limit reached, re-throwing for retry logic');
-                throw error; // Re-throw rate limit errors for retry handling
+            if (error.message && error.message.includes('Rate limit')) {
+                console.warn('[Gemini AI] Rate limit tercapai, mencoba lagi...');
+                throw error; 
             }
 
             return this.getFallbackAnalysis(answerData, questionData);
@@ -107,11 +105,11 @@ Format JSON:
                 throw new Error(data.error || `HTTP Error ${response.status}`);
             }
 
-            // PERUBAHAN UTAMA: Format Groq (OpenAI Compatible)
+            // Membaca balasan Gemini yang diformat ala OpenAI
             if (data.choices && data.choices.length > 0) {
                 return data.choices[0].message.content;
             } else {
-                throw new Error("AI tidak memberikan jawaban.");
+                throw new Error("Gemini AI tidak memberikan jawaban.");
             }
 
         } catch (error) {
@@ -119,7 +117,6 @@ Format JSON:
         }
     }
 
-    // FUNGSI PENTING: Batch Analysis
     async batchAnalyzeAnswers(answersData, questionsMap) {
         const results = [];
         for (const answer of answersData) {
@@ -131,8 +128,8 @@ Format JSON:
             }
 
             if (question) {
-                // Increased delay to prevent rate limiting (30 RPM limit)
-                await new Promise(r => setTimeout(r, 2500)); // 2.5 seconds between requests
+                // Jeda 3 detik untuk mencegah error Rate Limit dari Gemini
+                await new Promise(r => setTimeout(r, 3000)); 
                 const analysis = await this.analyzeStudentAnswer(answer, question);
                 results.push({ answerId: answer.id, analysis: analysis });
             }
@@ -140,7 +137,6 @@ Format JSON:
         return results;
     }
 
-    // FUNGSI PENTING: Capability Report
     async generateCapabilityReport(studentId, analyses) {
         try {
             const prompt = `Buat laporan ringkas JSON (overallCapability, mainStrengths, areasForImprovement) dari ${analyses.length} data ini.`;
@@ -151,10 +147,8 @@ Format JSON:
         }
     }
 
-    // Parsing JSON dari AI (Pembersihan Markdown)
     parseAIResponse(responseText) {
         try {
-            // Bersihkan format markdown ```json jika ada
             const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
             if (jsonMatch) return JSON.parse(jsonMatch[0]);
@@ -212,7 +206,6 @@ export const geminiAnalytics = new GeminiAnalytics();
 export function isGeminiAvailable() { return true; }
 export async function getGeminiStatus() {
     try {
-        // Test connection by making a simple request
         const response = await fetch(FUNCTION_URL, {
             method: 'POST',
             headers: {
@@ -232,7 +225,7 @@ export async function getGeminiStatus() {
                 responseTime: Date.now() - performance.now(),
                 apiConfigured: true,
                 cacheSize: geminiAnalytics.cache.size,
-                totalAnalyses: 0, // Would need to query DB for this
+                totalAnalyses: 0,
                 lastTest: new Date()
             };
         } else {
