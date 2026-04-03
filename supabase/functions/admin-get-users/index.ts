@@ -1,5 +1,7 @@
 // @ts-ignore
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+// @ts-ignore
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,43 +9,36 @@ const corsHeaders = {
 }
 
 serve(async (req: Request) => {
+  // Tangani request OPTIONS untuk CORS (menghindari error di browser)
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { message } = await req.json()
+    // 1. Buat koneksi Supabase menggunakan Kunci Admin (Service Role Key)
+    // Ini wajib agar fungsi ini memiliki izin untuk melihat daftar semua user
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    )
 
-    // 1. Ambil Key GEMINI dari Supabase Secrets
-    const apiKey = Deno.env.get('GEMINI_API_KEY')
-    if (!apiKey) throw new Error('API Key Gemini belum disetting di Supabase')
+    // 2. Ambil data seluruh akun siswa dari Supabase Authentication
+    const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers()
 
-    // 2. Kirim ke GEMINI menggunakan endpoint yang kompatibel dengan OpenAI
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: "gemini-1.5-flash", // Menggunakan model Gemini yang cepat dan efisien
-        messages: [
-          { role: "system", content: "Anda adalah asisten guru matematika yang ahli. Berikan output JSON valid." },
-          { role: "user", content: message }
-        ],
-        temperature: 0.5
-      })
-    })
-
-    const data = await response.json()
-
-    if (data.error) {
-      console.error("Gemini Error:", data.error)
-      throw new Error(data.error.message)
+    if (error) {
+      throw error
     }
 
-    return new Response(JSON.stringify(data), {
+    // 3. Kirimkan daftar siswa kembali ke halaman Admin
+    return new Response(JSON.stringify(users), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
     })
 
   } catch (error: any) {
