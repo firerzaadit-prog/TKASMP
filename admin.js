@@ -5050,7 +5050,7 @@ async function buildStudentExportData(userId) {
             analytics.student.email || '-',
             analytics.student.class_name || analytics.student.school || '-',
             '-', '-', '-', '-', '-', petaKompetensi,
-            0, 0, aiWeaknesses, aiSuggestions
+            0, 0, aiStrengths, aiWeaknesses, aiSuggestions
         ]);
     } else {
         analytics.exams.forEach(exam => {
@@ -5070,6 +5070,7 @@ async function buildStudentExportData(userId) {
                 petaKompetensi,
                 exam.correctAnswers || 0,
                 (exam.totalQuestions || 0) - (exam.correctAnswers || 0),
+                aiStrengths,
                 aiWeaknesses,
                 aiSuggestions
             ]);
@@ -5099,7 +5100,7 @@ async function exportStudentToExcel(userId) {
         const header = ['Nama Lengkap','Email Siswa','Kelas','Tanggal Ujian',
             'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan','Nilai Akhir (Skor)',
             'Peta Kompetensi','Jumlah Benar','Jumlah Salah',
-            'Ringkasan Kemampuan','Rekomendasi Belajar'];
+            'Kekuatan (AI)','Kelemahan (AI)','Rekomendasi Belajar (AI)'];
 
         const csvRows = [header, ...rows];
         const csvContent = csvRows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
@@ -5124,7 +5125,7 @@ async function exportAllStudentsToExcel() {
         const header = ['Nama Lengkap','Email Siswa','Kelas','Tanggal Ujian',
             'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan','Nilai Akhir (Skor)',
             'Peta Kompetensi','Jumlah Benar','Jumlah Salah',
-            'Ringkasan Kemampuan','Rekomendasi Belajar'];
+            'Kekuatan (AI)','Kelemahan (AI)','Rekomendasi Belajar (AI)'];
 
         let allRows = [header];
         for (const student of students) {
@@ -5150,7 +5151,7 @@ async function exportStudentToGoogleSheet(userId) {
         const header = ['Nama Lengkap','Email Siswa','Kelas','Tanggal Ujian',
             'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan','Nilai Akhir (Skor)',
             'Peta Kompetensi','Jumlah Benar','Jumlah Salah',
-            'Ringkasan Kemampuan','Rekomendasi Belajar'];
+            'Kekuatan (AI)','Kelemahan (AI)','Rekomendasi Belajar (AI)'];
 
         // Format tab-separated untuk langsung paste ke Google Sheet
         const tsvRows = [header, ...rows];
