@@ -4444,7 +4444,7 @@ async function updateStudentAnalyticsFromExams() {
                     .select(`
                         selected_answer,
                         is_correct,
-                        questions!inner (
+                        questions (
                             chapter,
                             sub_chapter,
                             scoring_weight

@@ -286,7 +286,7 @@ export async function updateStudentAnalyticsFromExams() {
                     .select(`
                         selected_answer,
                         is_correct,
-                        questions!inner (
+                        questions (
                             chapter,
                             sub_chapter,
                             scoring_weight
@@ -580,7 +580,7 @@ export async function getDetailedStudentAnalytics(userId) {
                         selected_answer,
                         is_correct,
                         time_taken_seconds,
-                        questions!inner (
+                        questions (
                             id,
                             question_text,
                             question_type,
