@@ -483,11 +483,18 @@ async function triggerAIAnalysis(session) {
     try {
         console.log('Starting AI analysis for exam session:', examSessionId);
 
-        // Get all answers for this session that haven't been analyzed yet
+        // Ambil HANYA jawaban untuk soal yang benar-benar dikerjakan (sesuai questions yang sudah difilter)
+        const answeredQuestionIds = questions.map(q => q.id);
+        if (answeredQuestionIds.length === 0) {
+            console.log('No questions to analyze');
+            return;
+        }
+
         const { data: answersData, error: answersError } = await supabase
             .from('exam_answers')
             .select('*')
-            .eq('exam_session_id', examSessionId);
+            .eq('exam_session_id', examSessionId)
+            .in('question_id', answeredQuestionIds);
 
         if (answersError) {
             console.warn('Could not load answers for AI analysis:', answersError);
@@ -499,8 +506,8 @@ async function triggerAIAnalysis(session) {
             return;
         }
 
-        // Check which answers haven't been analyzed yet
-        const { data: existingAnalyses, error: analysesError } = await supabase
+        // Cek jawaban yang belum dianalisis
+        const { data: existingAnalyses } = await supabase
             .from('gemini_analyses')
             .select('answer_id')
             .in('answer_id', answersData.map(a => a.id));
@@ -518,43 +525,39 @@ async function triggerAIAnalysis(session) {
 
         console.log(`Analyzing ${answersToAnalyze.length} new answers with AI...`);
 
-        // Create questions map for quick lookup
+        // Buat map soal untuk lookup cepat
         const questionsMap = new Map();
         questions.forEach(q => questionsMap.set(q.id, q));
 
-        // Analyze answers in batches to avoid rate limits
-        const batchSize = 1; // Process one at a time to be safe
         let completedAnalyses = 0;
 
-        for (let i = 0; i < answersToAnalyze.length; i += batchSize) {
-            const batch = answersToAnalyze.slice(i, i + batchSize);
-            console.log(`Processing batch ${Math.floor(i/batchSize) + 1} of ${Math.ceil(answersToAnalyze.length/batchSize)}`);
+        for (let i = 0; i < answersToAnalyze.length; i++) {
+            const answer = answersToAnalyze[i];
+            const question = questionsMap.get(answer.question_id);
+            if (!question) continue;
 
             try {
-                // Analyze each answer in the batch
-                for (const answer of batch) {
-                    const question = questionsMap.get(answer.question_id);
-                    if (question) {
-                        await geminiAnalytics.analyzeStudentAnswer(answer, question);
-                        completedAnalyses++;
-                        console.log(`Analyzed answer ${completedAnalyses}/${answersToAnalyze.length}`);
-                    }
-                }
+                await geminiAnalytics.analyzeStudentAnswer(answer, question);
+                completedAnalyses++;
+                console.log(`Analyzed answer ${completedAnalyses}/${answersToAnalyze.length}`);
 
-                // Small delay between batches
-                if (i + batchSize < answersToAnalyze.length) {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                // Jeda 4 detik antar soal untuk hindari rate limit
+                if (i < answersToAnalyze.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 4000));
                 }
-
             } catch (error) {
-                console.error('Error analyzing batch:', error);
-                // Continue with next batch even if one fails
+                // Jika rate limit, hentikan — jangan terus coba
+                if (error.message && error.message.includes('Rate limit')) {
+                    console.warn(`[AI] Rate limit tercapai setelah ${completedAnalyses} jawaban. Berhenti sementara.`);
+                    break;
+                }
+                console.error('Error analyzing answer:', error);
+                // Error lain: lanjut ke jawaban berikutnya
             }
         }
 
         console.log(`AI analysis completed: ${completedAnalyses} answers analyzed`);
 
-        // Show notification to user that AI analysis is ready
         if (completedAnalyses > 0) {
             showAIAnalysisNotification(completedAnalyses);
         }
