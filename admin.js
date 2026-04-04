@@ -5050,7 +5050,7 @@ async function buildStudentExportData(userId) {
             analytics.student.email || '-',
             analytics.student.class_name || analytics.student.school || '-',
             '-', '-', '-', '-', '-', petaKompetensi,
-            0, 0, aiStrengths, aiWeaknesses, aiSuggestions
+            0, 0, aiWeaknesses, aiSuggestions
         ]);
     } else {
         analytics.exams.forEach(exam => {
@@ -5070,7 +5070,6 @@ async function buildStudentExportData(userId) {
                 petaKompetensi,
                 exam.correctAnswers || 0,
                 (exam.totalQuestions || 0) - (exam.correctAnswers || 0),
-                aiStrengths,
                 aiWeaknesses,
                 aiSuggestions
             ]);
@@ -5100,7 +5099,7 @@ async function exportStudentToExcel(userId) {
         const header = ['Nama Lengkap','Email Siswa','Kelas','Tanggal Ujian',
             'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan','Nilai Akhir (Skor)',
             'Peta Kompetensi','Jumlah Benar','Jumlah Salah',
-            'Kekuatan (AI)','Kelemahan (AI)','Rekomendasi Belajar (AI)'];
+            'Ringkasan Kemampuan','Rekomendasi Belajar'];
 
         const csvRows = [header, ...rows];
         const csvContent = csvRows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
@@ -5125,7 +5124,7 @@ async function exportAllStudentsToExcel() {
         const header = ['Nama Lengkap','Email Siswa','Kelas','Tanggal Ujian',
             'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan','Nilai Akhir (Skor)',
             'Peta Kompetensi','Jumlah Benar','Jumlah Salah',
-            'Kekuatan (AI)','Kelemahan (AI)','Rekomendasi Belajar (AI)'];
+            'Ringkasan Kemampuan','Rekomendasi Belajar'];
 
         let allRows = [header];
         for (const student of students) {
@@ -5151,7 +5150,7 @@ async function exportStudentToGoogleSheet(userId) {
         const header = ['Nama Lengkap','Email Siswa','Kelas','Tanggal Ujian',
             'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan','Nilai Akhir (Skor)',
             'Peta Kompetensi','Jumlah Benar','Jumlah Salah',
-            'Kekuatan (AI)','Kelemahan (AI)','Rekomendasi Belajar (AI)'];
+            'Ringkasan Kemampuan','Rekomendasi Belajar'];
 
         // Format tab-separated untuk langsung paste ke Google Sheet
         const tsvRows = [header, ...rows];
@@ -6169,13 +6168,10 @@ function stopMonitoring() {
 
 async function refreshMonitoringData() {
     try {
-        // 1. Ambil sesi ujian yang sedang aktif (in_progress)
+        // 1. Ambil sesi aktif - query sederhana tanpa join
         const { data: activeSessions, error: sessionsError } = await supabase
             .from('exam_sessions')
-            .select(`
-                id, user_id, started_at, status, question_type_variant, total_time_seconds,
-                profiles!inner(nama_lengkap, email, class_name)
-            `)
+            .select('id, user_id, started_at, status, question_type_variant, total_time_seconds')
             .eq('status', 'in_progress')
             .order('started_at', { ascending: false });
 
@@ -6183,28 +6179,61 @@ async function refreshMonitoringData() {
             console.warn('Error loading active sessions:', sessionsError);
         }
 
-        const sessions = activeSessions || [];
+        let sessions = activeSessions || [];
+
+        // Ambil profil siswa terpisah
+        if (sessions.length > 0) {
+            const userIds = [...new Set(sessions.map(s => s.user_id))];
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, nama_lengkap, email, class_name')
+                .in('id', userIds);
+            const profileMap = {};
+            (profiles || []).forEach(p => { profileMap[p.id] = p; });
+            sessions = sessions.map(s => ({ ...s, profiles: profileMap[s.user_id] || null }));
+        }
 
         // 2. Update stat: Siswa Aktif
         const activeStudentsEl = document.getElementById('activeStudentsCount');
         if (activeStudentsEl) activeStudentsEl.textContent = sessions.length;
 
-        // 3. Ambil jawaban terbaru (30 menit terakhir)
+        // 3. Ambil jawaban terbaru - query sederhana tanpa nested join
         const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
         const { data: recentAnswers, error: answersError } = await supabase
             .from('exam_answers')
-            .select(`
-                id, selected_answer, is_correct, created_at, time_taken_seconds,
-                questions!inner(question_text, chapter),
-                exam_sessions!inner(
-                    profiles!inner(nama_lengkap)
-                )
-            `)
+            .select('id, selected_answer, is_correct, created_at, time_taken_seconds, question_id, exam_session_id')
             .gte('created_at', thirtyMinAgo)
             .order('created_at', { ascending: false })
             .limit(50);
 
-        const answers = recentAnswers || [];
+        let answers = recentAnswers || [];
+
+        // Ambil data soal dan profil secara terpisah
+        if (answers.length > 0) {
+            const qIds = [...new Set(answers.map(a => a.question_id).filter(Boolean))];
+            const sIds = [...new Set(answers.map(a => a.exam_session_id).filter(Boolean))];
+
+            const [{ data: qData }, { data: sData }] = await Promise.all([
+                qIds.length > 0 ? supabase.from('questions').select('id, question_text, bab').in('id', qIds) : { data: [] },
+                sIds.length > 0 ? supabase.from('exam_sessions').select('id, user_id').in('id', sIds) : { data: [] }
+            ]);
+
+            const sessionUserIds = [...new Set((sData || []).map(s => s.user_id))];
+            const { data: pData } = sessionUserIds.length > 0
+                ? await supabase.from('profiles').select('id, nama_lengkap').in('id', sessionUserIds)
+                : { data: [] };
+
+            const qMap = {}, sMap = {}, pMap = {};
+            (qData || []).forEach(q => { qMap[q.id] = q; });
+            (sData || []).forEach(s => { sMap[s.id] = s; });
+            (pData || []).forEach(p => { pMap[p.id] = p; });
+
+            answers = answers.map(a => ({
+                ...a,
+                questions: qMap[a.question_id] || null,
+                exam_sessions: { profiles: pMap[sMap[a.exam_session_id]?.user_id] || null }
+            }));
+        }
 
         // 4. Hitung stats
         const totalAnswersEl = document.getElementById('totalAnswersCount');
@@ -6278,7 +6307,7 @@ async function refreshMonitoringData() {
             } else {
                 feedEl.innerHTML = answers.map(a => {
                     const studentName = a.exam_sessions?.profiles?.nama_lengkap || 'Siswa';
-                    const chapter = a.questions?.chapter || '-';
+                    const chapter = a.questions?.bab || '-';
                     const questionSnippet = (a.questions?.question_text || '').substring(0, 60) + '...';
                     const time = new Date(a.created_at).toLocaleTimeString('id-ID');
                     const isCorrect = a.is_correct;
