@@ -4350,6 +4350,9 @@ function renderStudentExamRows(exams) {
                     <button onclick="showStudentDetail('${userId}')" class="mini-btn" style="background: #4f46e5;" title="Lihat Detail Hasil">
                         <i class="fas fa-eye"></i>
                     </button>
+                    <button onclick="window.open('ai_viewer.html?student_id=${userId}', '_blank')" class="mini-btn" style="background: #7c3aed;" title="Lihat Analisis AI">
+                        <i class="fas fa-robot"></i>
+                    </button>
                     <button onclick="deleteStudentExamData('${userId}', '${studentName}')" class="mini-btn" style="background: #ef4444;" title="Hapus Permanen Data Ujian">
                         <i class="fas fa-trash"></i>
                     </button>
@@ -4793,6 +4796,9 @@ async function loadStudentsList() {
                                 <button onclick="event.stopPropagation(); showStudentDetail('${student.id}')" class="mini-btn" title="Lihat Detail">
                                     <i class="fas fa-eye"></i>
                                 </button>
+                                <button onclick="event.stopPropagation(); window.open('ai_viewer.html?student_id=${student.id}', '_blank')" class="mini-btn" style="background: #7c3aed;" title="Lihat Analisis AI">
+                                    <i class="fas fa-robot"></i>
+                                </button>
                                 <button onclick="event.stopPropagation(); deleteStudentExamHistory('${student.id}', '${student.nama_langelog}')" class="mini-btn" style="background: #ef4444;" title="Hapus Riwayat Ujian">
                                     <i class="fas fa-redo"></i>
                                 </button>
@@ -5017,8 +5023,8 @@ async function buildStudentExportData(userId) {
     const analytics = await getDetailedStudentAnalytics(userId);
     if (!analytics) return null;
 
-    // Ambil AI analyses
-    let aiStrengths = '-', aiWeaknesses = '-', aiSuggestions = '-';
+    // Ambil AI analyses dari gemini_analyses
+    let aiRingkasan = '-', aiKekuatan = '-', aiKelemahan = '-', aiRekomendasi = '-';
     try {
         const sessionIds = analytics.exams.map(e => e.sessionId);
         if (sessionIds.length > 0) {
@@ -5029,28 +5035,28 @@ async function buildStudentExportData(userId) {
                     .from('gemini_analyses').select('analysis_data')
                     .in('answer_id', answerIds.map(a => a.id)).limit(20);
                 if (geminiData && geminiData.length > 0) {
-                    aiStrengths = [...new Set(geminiData.flatMap(g => g.analysis_data?.strengths || []))].slice(0,3).join('; ') || '-';
-                    aiWeaknesses = [...new Set(geminiData.flatMap(g => g.analysis_data?.weaknesses || []))].slice(0,3).join('; ') || '-';
-                    aiSuggestions = [...new Set(geminiData.flatMap(g => g.analysis_data?.learningSuggestions || []))].slice(0,3).join('; ') || '-';
+                    const strengths = [...new Set(geminiData.flatMap(g => g.analysis_data?.strengths || []))].slice(0, 3);
+                    const weaknesses = [...new Set(geminiData.flatMap(g => g.analysis_data?.weaknesses || []))].slice(0, 3);
+                    const suggestions = [...new Set(geminiData.flatMap(g => g.analysis_data?.learningSuggestions || []))].slice(0, 3);
+                    const explanations = [...new Set(geminiData.flatMap(g => g.analysis_data?.explanation ? [g.analysis_data.explanation] : []))].slice(0, 2);
+
+                    aiKekuatan = strengths.join('; ') || '-';
+                    aiKelemahan = weaknesses.join('; ') || '-';
+                    aiRekomendasi = suggestions.join('; ') || '-';
+                    aiRingkasan = explanations.join(' | ') || (weaknesses.length > 0 ? `Perlu perhatian: ${weaknesses[0]}` : '-');
                 }
             }
         }
-    } catch(e) {}
-
-    // Peta Kompetensi per bab
-    const petaKompetensi = analytics.chapterPerformance
-        .map(c => `${c.chapter}: ${Math.round(c.accuracy||0)}%`)
-        .join(' | ') || '-';
+    } catch(e) { console.warn('AI data fetch error:', e); }
 
     const rows = [];
     if (analytics.exams.length === 0) {
-        // Siswa belum ujian
         rows.push([
             analytics.student.nama_lengkap || '-',
             analytics.student.email || '-',
             analytics.student.class_name || analytics.student.school || '-',
-            '-', '-', '-', '-', '-', petaKompetensi,
-            0, 0, aiWeaknesses, aiSuggestions
+            '-', '-', '-', '-', 0, 0, 0,
+            aiRingkasan, aiKekuatan, aiKelemahan, aiRekomendasi
         ]);
     } else {
         analytics.exams.forEach(exam => {
@@ -5058,20 +5064,22 @@ async function buildStudentExportData(userId) {
             const endTime = exam.date && exam.timeSpent
                 ? new Date(new Date(exam.date).getTime() + exam.timeSpent * 1000) : null;
             const durasiMenit = exam.timeSpent ? Math.round(exam.timeSpent / 60) + ' menit' : '-';
+            const jumlahSalah = (exam.totalQuestions || 0) - (exam.correctAnswers || 0);
             rows.push([
-                analytics.student.nama_lengkap || '-',
-                analytics.student.email || '-',
-                analytics.student.class_name || analytics.student.school || '-',
-                startTime ? startTime.toLocaleDateString('id-ID') : '-',
-                startTime ? startTime.toLocaleTimeString('id-ID') : '-',
-                endTime ? endTime.toLocaleTimeString('id-ID') : '-',
-                durasiMenit,
-                exam.totalScore || 0,
-                petaKompetensi,
-                exam.correctAnswers || 0,
-                (exam.totalQuestions || 0) - (exam.correctAnswers || 0),
-                aiWeaknesses,
-                aiSuggestions
+                analytics.student.nama_lengkap || '-',                           // 1. Nama Lengkap
+                analytics.student.email || '-',                                   // 2. Email Siswa
+                analytics.student.class_name || analytics.student.school || '-', // 3. Kelas
+                exam.questionTypeVariant || '-',                                  // 4. Paket Soal
+                startTime ? startTime.toLocaleString('id-ID') : '-',             // 5. Waktu Mulai
+                endTime ? endTime.toLocaleString('id-ID') : '-',                 // 6. Waktu Selesai
+                durasiMenit,                                                      // 7. Durasi Pengerjaan
+                exam.correctAnswers || 0,                                         // 8. Jumlah Benar
+                jumlahSalah >= 0 ? jumlahSalah : '-',                            // 9. Jumlah Salah
+                exam.totalScore || 0,                                             // 10. Nilai Akhir (Skor)
+                aiRingkasan,                                                      // 11. Ringkasan Kemampuan AI
+                aiKekuatan,                                                       // 12. Kekuatan Utama
+                aiKelemahan,                                                      // 13. Kelemahan Utama
+                aiRekomendasi                                                     // 14. Rekomendasi Belajar
             ]);
         });
     }
@@ -5096,10 +5104,10 @@ async function exportStudentToExcel(userId) {
         const rows = await buildStudentExportData(userId);
         if (!rows) { alert('Data tidak ditemukan.'); return; }
 
-        const header = ['Nama Lengkap','Email Siswa','Kelas','Tanggal Ujian',
-            'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan','Nilai Akhir (Skor)',
-            'Peta Kompetensi','Jumlah Benar','Jumlah Salah',
-            'Ringkasan Kemampuan','Rekomendasi Belajar'];
+        const header = ['Nama Lengkap','Email Siswa','Kelas','Paket Soal',
+            'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan',
+            'Jumlah Benar','Jumlah Salah','Nilai Akhir (Skor)',
+            'Ringkasan Kemampuan AI','Kekuatan Utama','Kelemahan Utama','Rekomendasi Belajar'];
 
         const csvRows = [header, ...rows];
         const csvContent = csvRows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
@@ -5121,10 +5129,10 @@ async function exportAllStudentsToExcel() {
 
         alert(`Mengekspor data ${students.length} siswa... Mohon tunggu.`);
 
-        const header = ['Nama Lengkap','Email Siswa','Kelas','Tanggal Ujian',
-            'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan','Nilai Akhir (Skor)',
-            'Peta Kompetensi','Jumlah Benar','Jumlah Salah',
-            'Ringkasan Kemampuan','Rekomendasi Belajar'];
+        const header = ['Nama Lengkap','Email Siswa','Kelas','Paket Soal',
+            'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan',
+            'Jumlah Benar','Jumlah Salah','Nilai Akhir (Skor)',
+            'Ringkasan Kemampuan AI','Kekuatan Utama','Kelemahan Utama','Rekomendasi Belajar'];
 
         let allRows = [header];
         for (const student of students) {
@@ -5147,10 +5155,10 @@ async function exportStudentToGoogleSheet(userId) {
         const rows = await buildStudentExportData(userId);
         if (!rows) { alert('Data tidak ditemukan.'); return; }
 
-        const header = ['Nama Lengkap','Email Siswa','Kelas','Tanggal Ujian',
-            'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan','Nilai Akhir (Skor)',
-            'Peta Kompetensi','Jumlah Benar','Jumlah Salah',
-            'Ringkasan Kemampuan','Rekomendasi Belajar'];
+        const header = ['Nama Lengkap','Email Siswa','Kelas','Paket Soal',
+            'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan',
+            'Jumlah Benar','Jumlah Salah','Nilai Akhir (Skor)',
+            'Ringkasan Kemampuan AI','Kekuatan Utama','Kelemahan Utama','Rekomendasi Belajar'];
 
         // Format tab-separated untuk langsung paste ke Google Sheet
         const tsvRows = [header, ...rows];

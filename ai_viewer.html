@@ -294,8 +294,62 @@
             }, 1000);
         }
 
+        // Auto-select siswa dari URL parameter ?student_id=...
+        async function autoSelectFromURL() {
+            const params = new URLSearchParams(window.location.search);
+            const studentId = params.get('student_id');
+            const studentName = params.get('student_name');
+
+            if (!studentId) {
+                await loadStudents();
+                return;
+            }
+
+            await loadStudents();
+
+            const option = studentSelect.querySelector(`option[value="${studentId}"]`);
+            if (option) {
+                studentSelect.value = studentId;
+                btnAnalyze.disabled = false;
+                statusMsg.textContent = `Siswa: ${option.text}`;
+
+                btnAnalyze.disabled = true;
+                btnAnalyze.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memuat Analisis...';
+                try {
+                    const waitForFn = (retries = 8) => new Promise((resolve, reject) => {
+                        if (typeof window.showStudentDetail === 'function') {
+                            resolve();
+                        } else if (retries <= 0) {
+                            reject(new Error('Fungsi belum siap, coba refresh halaman.'));
+                        } else {
+                            setTimeout(() => waitForFn(retries - 1).then(resolve).catch(reject), 400);
+                        }
+                    });
+                    await waitForFn();
+                    await window.showStudentDetail(studentId);
+                    resetBtn();
+                } catch(err) {
+                    console.error(err);
+                    alert('Gagal memuat analisis: ' + err.message);
+                    resetBtn();
+                }
+            } else {
+                const newOption = document.createElement('option');
+                newOption.value = studentId;
+                newOption.text = studentName
+                    ? decodeURIComponent(studentName)
+                    : `Siswa (${studentId.slice(0,8)}...)`;
+                studentSelect.appendChild(newOption);
+                studentSelect.value = studentId;
+                btnAnalyze.disabled = false;
+                statusMsg.textContent = studentName
+                    ? `Siswa: ${decodeURIComponent(studentName)}`
+                    : 'Siswa dipilih dari parameter URL.';
+            }
+        }
+
         // Jalankan saat load
-        loadStudents();
+        autoSelectFromURL();
     </script>
 </body>
 </html>

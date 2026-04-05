@@ -171,6 +171,9 @@ class StudentAnalyticsTable {
                     <button onclick="showStudentDetail('${student.id}')" class="action-btn detail-btn" title="Lihat detail siswa">
                         <i class="fas fa-eye"></i> Detail
                     </button>
+                    <button onclick="window.open('ai_viewer.html?student_id=${student.id}&student_name=${encodeURIComponent(student.name)}', '_blank')" class="action-btn ai-btn" title="Lihat Analisis AI" style="background: linear-gradient(135deg, #7c3aed, #4f46e5); color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 4px;">
+                        <i class="fas fa-robot"></i> Analisis AI
+                    </button>
                 </td>
             </tr>
         `;
