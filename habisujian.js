@@ -506,17 +506,33 @@ async function triggerAIAnalysis(session) {
             return;
         }
 
-        // Cek jawaban yang belum dianalisis
+        // DEDUP: Jika ada duplikat per question_id, ambil hanya 1 (yang terbaru)
+        const dedupedAnswers = [];
+        const seenQuestionIds = new Set();
+        // Sort by created_at descending agar yang terbaru diambil
+        const sortedAnswers = [...answersData].sort((a, b) =>
+            new Date(b.created_at || 0) - new Date(a.created_at || 0)
+        );
+        sortedAnswers.forEach(ans => {
+            if (!seenQuestionIds.has(ans.question_id)) {
+                seenQuestionIds.add(ans.question_id);
+                dedupedAnswers.push(ans);
+            }
+        });
+        console.log(`Dedup: ${answersData.length} records → ${dedupedAnswers.length} unik`);
+        const uniqueAnswersData = dedupedAnswers;
+
+        // Cek jawaban yang belum dianalisis (gunakan data yang sudah dedup)
         const { data: existingAnalyses } = await supabase
             .from('gemini_analyses')
             .select('answer_id')
-            .in('answer_id', answersData.map(a => a.id));
+            .in('answer_id', uniqueAnswersData.map(a => a.id));
 
         const analyzedAnswerIds = new Set(
             (existingAnalyses || []).map(a => a.answer_id)
         );
 
-        const answersToAnalyze = answersData.filter(answer => !analyzedAnswerIds.has(answer.id));
+        const answersToAnalyze = uniqueAnswersData.filter(answer => !analyzedAnswerIds.has(answer.id));
 
         if (answersToAnalyze.length === 0) {
             console.log('All answers have already been analyzed');

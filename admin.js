@@ -4346,16 +4346,18 @@ function renderStudentExamRows(exams) {
                 <td style="padding: 12px;">${skor}</td>
                 <td style="padding: 12px;"><span class="status-badge status-${exam.status}">${status}</span></td>
                 <td style="padding: 12px;">${waktu}</td>
-                <td style="padding: 12px; display: flex; gap: 5px;">
-                    <button onclick="showStudentDetail('${userId}')" class="mini-btn" style="background: #4f46e5;" title="Lihat Detail Hasil">
-                        <i class="fas fa-eye"></i>
-                    </button>
-                    <button onclick="window.open('ai_viewer.html?student_id=${userId}', '_blank')" class="mini-btn" style="background: #7c3aed;" title="Lihat Analisis AI">
-                        <i class="fas fa-robot"></i>
-                    </button>
-                    <button onclick="deleteStudentExamData('${userId}', '${studentName}')" class="mini-btn" style="background: #ef4444;" title="Hapus Permanen Data Ujian">
-                        <i class="fas fa-trash"></i>
-                    </button>
+                <td style="padding: 12px;">
+                    <div style="display:flex;gap:5px;align-items:center;">
+                        <button onclick="showStudentDetail('${userId}')" class="mini-btn" style="background: #4f46e5;" title="Lihat Detail & Peta Kompetensi">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button onclick="window.open('ai_viewer.html?student_id=${userId}', '_blank')" class="mini-btn" style="background: #7c3aed;" title="Lihat Analisis AI">
+                            <i class="fas fa-robot"></i>
+                        </button>
+                        <button onclick="deleteStudentExamData('${userId}', '${studentName}')" class="mini-btn" style="background: #ef4444;" title="Hapus Data Ujian">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;
@@ -4796,9 +4798,6 @@ async function loadStudentsList() {
                                 <button onclick="event.stopPropagation(); showStudentDetail('${student.id}')" class="mini-btn" title="Lihat Detail">
                                     <i class="fas fa-eye"></i>
                                 </button>
-                                <button onclick="event.stopPropagation(); window.open('ai_viewer.html?student_id=${student.id}', '_blank')" class="mini-btn" style="background: #7c3aed;" title="Lihat Analisis AI">
-                                    <i class="fas fa-robot"></i>
-                                </button>
                                 <button onclick="event.stopPropagation(); deleteStudentExamHistory('${student.id}', '${student.nama_langelog}')" class="mini-btn" style="background: #ef4444;" title="Hapus Riwayat Ujian">
                                     <i class="fas fa-redo"></i>
                                 </button>
@@ -5033,30 +5032,44 @@ async function buildStudentExportData(userId) {
             if (answerIds && answerIds.length > 0) {
                 const { data: geminiData } = await supabase
                     .from('gemini_analyses').select('analysis_data')
-                    .in('answer_id', answerIds.map(a => a.id)).limit(20);
+                    .in('answer_id', answerIds.map(a => a.id)).limit(30);
                 if (geminiData && geminiData.length > 0) {
                     const strengths = [...new Set(geminiData.flatMap(g => g.analysis_data?.strengths || []))].slice(0, 3);
                     const weaknesses = [...new Set(geminiData.flatMap(g => g.analysis_data?.weaknesses || []))].slice(0, 3);
                     const suggestions = [...new Set(geminiData.flatMap(g => g.analysis_data?.learningSuggestions || []))].slice(0, 3);
-                    const explanations = [...new Set(geminiData.flatMap(g => g.analysis_data?.explanation ? [g.analysis_data.explanation] : []))].slice(0, 2);
-
+                    const explanations = [...new Set(geminiData.flatMap(g => g.analysis_data?.explanation ? [g.analysis_data.explanation] : []))].slice(0, 1);
                     aiKekuatan = strengths.join('; ') || '-';
                     aiKelemahan = weaknesses.join('; ') || '-';
                     aiRekomendasi = suggestions.join('; ') || '-';
-                    aiRingkasan = explanations.join(' | ') || (weaknesses.length > 0 ? `Perlu perhatian: ${weaknesses[0]}` : '-');
+                    aiRingkasan = explanations[0] || (weaknesses.length > 0 ? 'Perlu perhatian: ' + weaknesses[0] : '-');
                 }
             }
         }
-    } catch(e) { console.warn('AI data fetch error:', e); }
+    } catch(e) { console.warn('AI data error:', e); }
+
+    // Peta Kompetensi per bab
+    const petaKompetensi = analytics.chapterPerformance
+        .map(c => `${c.chapter}: ${Math.round(c.accuracy||0)}%`)
+        .join(' | ') || '-';
 
     const rows = [];
     if (analytics.exams.length === 0) {
         rows.push([
-            analytics.student.nama_lengkap || '-',
-            analytics.student.email || '-',
-            analytics.student.class_name || analytics.student.school || '-',
-            '-', '-', '-', '-', 0, 0, 0,
-            aiRingkasan, aiKekuatan, aiKelemahan, aiRekomendasi
+            analytics.student.nama_lengkap || '-',    // 0: Nama Lengkap
+            analytics.student.email || '-',            // 1: Email
+            analytics.student.class_name || '-',       // 2: Kelas
+            '-',                                       // 3: Paket Soal
+            '-',                                       // 4: Tanggal Ujian
+            '-',                                       // 5: Waktu Mulai & Selesai
+            '-',                                       // 6: Durasi
+            0,                                         // 7: Jumlah Benar
+            petaKompetensi,                            // 8: Peta Kompetensi
+            0,                                         // 9: Skor
+            0,                                         // 10: Jumlah Salah
+            aiRingkasan,                               // 11: Ringkasan AI
+            aiKekuatan,                                // 12: Kekuatan
+            aiKelemahan,                               // 13: Kelemahan
+            aiRekomendasi                              // 14: Rekomendasi
         ]);
     } else {
         analytics.exams.forEach(exam => {
@@ -5066,20 +5079,21 @@ async function buildStudentExportData(userId) {
             const durasiMenit = exam.timeSpent ? Math.round(exam.timeSpent / 60) + ' menit' : '-';
             const jumlahSalah = (exam.totalQuestions || 0) - (exam.correctAnswers || 0);
             rows.push([
-                analytics.student.nama_lengkap || '-',                           // 1. Nama Lengkap
-                analytics.student.email || '-',                                   // 2. Email Siswa
-                analytics.student.class_name || analytics.student.school || '-', // 3. Kelas
-                exam.questionTypeVariant || '-',                                  // 4. Paket Soal
-                startTime ? startTime.toLocaleString('id-ID') : '-',             // 5. Waktu Mulai
-                endTime ? endTime.toLocaleString('id-ID') : '-',                 // 6. Waktu Selesai
-                durasiMenit,                                                      // 7. Durasi Pengerjaan
-                exam.correctAnswers || 0,                                         // 8. Jumlah Benar
-                jumlahSalah >= 0 ? jumlahSalah : '-',                            // 9. Jumlah Salah
-                exam.totalScore || 0,                                             // 10. Nilai Akhir (Skor)
-                aiRingkasan,                                                      // 11. Ringkasan Kemampuan AI
-                aiKekuatan,                                                       // 12. Kekuatan Utama
-                aiKelemahan,                                                      // 13. Kelemahan Utama
-                aiRekomendasi                                                     // 14. Rekomendasi Belajar
+                analytics.student.nama_lengkap || '-',                           // 0: Nama Lengkap
+                analytics.student.email || '-',                                   // 1: Email
+                analytics.student.class_name || analytics.student.school || '-', // 2: Kelas
+                exam.questionTypeVariant || '-',                                  // 3: Paket Soal
+                startTime ? startTime.toLocaleDateString('id-ID') : '-',         // 4: Tanggal Ujian
+                `${startTime ? startTime.toLocaleTimeString('id-ID') : '-'} → ${endTime ? endTime.toLocaleTimeString('id-ID') : '-'}`, // 5: Waktu Mulai & Selesai
+                durasiMenit,                                                      // 6: Durasi
+                exam.correctAnswers || 0,                                         // 7: Jumlah Benar
+                petaKompetensi,                                                   // 8: Peta Kompetensi
+                exam.totalScore || 0,                                             // 9: Skor
+                jumlahSalah >= 0 ? jumlahSalah : 0,                              // 10: Jumlah Salah
+                aiRingkasan,                                                      // 11: Ringkasan AI
+                aiKekuatan,                                                       // 12: Kekuatan
+                aiKelemahan,                                                      // 13: Kelemahan
+                aiRekomendasi                                                     // 14: Rekomendasi
             ]);
         });
     }
@@ -5105,8 +5119,8 @@ async function exportStudentToExcel(userId) {
         if (!rows) { alert('Data tidak ditemukan.'); return; }
 
         const header = ['Nama Lengkap','Email Siswa','Kelas','Paket Soal',
-            'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan',
-            'Jumlah Benar','Jumlah Salah','Nilai Akhir (Skor)',
+            'Tanggal Ujian','Waktu Mulai & Selesai','Durasi Pengerjaan',
+            'Jumlah Benar','Peta Kompetensi','Nilai Akhir (Skor)','Jumlah Salah',
             'Ringkasan Kemampuan AI','Kekuatan Utama','Kelemahan Utama','Rekomendasi Belajar'];
 
         const csvRows = [header, ...rows];
@@ -5130,8 +5144,8 @@ async function exportAllStudentsToExcel() {
         alert(`Mengekspor data ${students.length} siswa... Mohon tunggu.`);
 
         const header = ['Nama Lengkap','Email Siswa','Kelas','Paket Soal',
-            'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan',
-            'Jumlah Benar','Jumlah Salah','Nilai Akhir (Skor)',
+            'Tanggal Ujian','Waktu Mulai & Selesai','Durasi Pengerjaan',
+            'Jumlah Benar','Peta Kompetensi','Nilai Akhir (Skor)','Jumlah Salah',
             'Ringkasan Kemampuan AI','Kekuatan Utama','Kelemahan Utama','Rekomendasi Belajar'];
 
         let allRows = [header];
@@ -5156,8 +5170,8 @@ async function exportStudentToGoogleSheet(userId) {
         if (!rows) { alert('Data tidak ditemukan.'); return; }
 
         const header = ['Nama Lengkap','Email Siswa','Kelas','Paket Soal',
-            'Waktu Mulai','Waktu Selesai','Durasi Pengerjaan',
-            'Jumlah Benar','Jumlah Salah','Nilai Akhir (Skor)',
+            'Tanggal Ujian','Waktu Mulai & Selesai','Durasi Pengerjaan',
+            'Jumlah Benar','Peta Kompetensi','Nilai Akhir (Skor)','Jumlah Salah',
             'Ringkasan Kemampuan AI','Kekuatan Utama','Kelemahan Utama','Rekomendasi Belajar'];
 
         // Format tab-separated untuk langsung paste ke Google Sheet
@@ -5250,6 +5264,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Load analytics on page load
         loadAnalytics();
         loadStudentsList();
+        loadFullSummaryTable();
 
         // Update student analytics when exam is completed
         updateStudentAnalyticsFromExams();
@@ -6358,7 +6373,93 @@ window.stopMonitoring = stopMonitoring;
 window.refreshMonitoringData = refreshMonitoringData;
 
 
+// ============================================================
+// TABEL RINGKASAN LENGKAP 15 KOLOM
+// ============================================================
+async function loadFullSummaryTable() {
+    const tbody = document.getElementById('fullSummaryTableBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = `<tr><td colspan="15" style="padding:2rem;text-align:center;color:#6b7280;">
+        <i class="fas fa-spinner fa-spin"></i> Memuat data semua siswa...
+    </td></tr>`;
+
+    try {
+        const students = await getAllStudentsAnalytics();
+        if (!students || students.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="15" style="padding:2rem;text-align:center;color:#6b7280;">Belum ada data siswa.</td></tr>`;
+            return;
+        }
+
+        let allRows = [];
+
+        for (const student of students) {
+            try {
+                const rows = await buildStudentExportData(student.id);
+                if (rows) allRows = allRows.concat(rows);
+            } catch(e) {
+                console.warn('Error loading data for student:', student.id, e);
+            }
+        }
+
+        if (allRows.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="15" style="padding:2rem;text-align:center;color:#6b7280;">Belum ada data ujian.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = allRows.map((row, idx) => {
+            const bgColor = idx % 2 === 0 ? '#ffffff' : '#f9fafb';
+            const skor = row[9] || 0;
+            const skorColor = skor >= 70 ? '#059669' : skor >= 50 ? '#d97706' : '#dc2626';
+
+            // Potong teks panjang
+            const trim = (text, max = 60) => {
+                const str = String(text || '-');
+                return str.length > max
+                    ? `<span title="${str.replace(/"/g, '&quot;')}">${str.substring(0, max)}...</span>`
+                    : str;
+            };
+
+            return `<tr style="background:${bgColor};border-bottom:1px solid #f3f4f6;">
+                <td style="padding:8px 12px;font-weight:600;color:#1f2937;">${trim(row[0])}</td>
+                <td style="padding:8px 12px;color:#6b7280;">${trim(row[1])}</td>
+                <td style="padding:8px 12px;">${trim(row[2], 20)}</td>
+                <td style="padding:8px 12px;">
+                    <span style="background:#eef2ff;color:#4f46e5;padding:2px 8px;border-radius:12px;font-size:0.78rem;font-weight:600;">
+                        ${row[3] || '-'}
+                    </span>
+                </td>
+                <td style="padding:8px 12px;white-space:nowrap;color:#6b7280;">${String(row[4] || '-').split(',')[0]}</td>
+                <td style="padding:8px 12px;font-size:0.78rem;color:#6b7280;white-space:nowrap;">
+                    ${String(row[4] || '-').split(',')[1] || row[4] || '-'}<br>
+                    <span style="color:#9ca3af;">→ ${String(row[5] || '-').split(',')[1] || row[5] || '-'}</span>
+                </td>
+                <td style="padding:8px 12px;white-space:nowrap;">${row[6] || '-'}</td>
+                <td style="padding:8px 12px;text-align:center;">
+                    <span style="background:${skorColor};color:white;padding:3px 10px;border-radius:12px;font-weight:700;font-size:0.88rem;">
+                        ${skor}
+                    </span>
+                </td>
+                <td style="padding:8px 12px;font-size:0.78rem;color:#374151;max-width:200px;">${trim(row[8], 80)}</td>
+                <td style="padding:8px 12px;text-align:center;color:#059669;font-weight:600;">${row[7] || 0}</td>
+                <td style="padding:8px 12px;text-align:center;color:#dc2626;font-weight:600;">${row[10] !== undefined ? row[10] : '-'}</td>
+                <td style="padding:8px 12px;font-size:0.78rem;color:#374151;max-width:180px;">${trim(row[11], 80)}</td>
+                <td style="padding:8px 12px;font-size:0.78rem;color:#059669;max-width:180px;">${trim(row[12], 80)}</td>
+                <td style="padding:8px 12px;font-size:0.78rem;color:#dc2626;max-width:180px;">${trim(row[13], 80)}</td>
+                <td style="padding:8px 12px;font-size:0.78rem;color:#3b82f6;max-width:180px;">${trim(row[14] || row[13], 80)}</td>
+            </tr>`;
+        }).join('');
+
+    } catch (error) {
+        console.error('Error loading full summary table:', error);
+        tbody.innerHTML = `<tr><td colspan="15" style="padding:2rem;text-align:center;color:#ef4444;">
+            Error: ${error.message}
+        </td></tr>`;
+    }
+}
+
 window.showStudentDetail = showStudentDetail;
+window.loadFullSummaryTable = loadFullSummaryTable;
 window.exportStudentToExcel = exportStudentToExcel;
 window.exportAllStudentsToExcel = exportAllStudentsToExcel;
 window.exportStudentToGoogleSheet = exportStudentToGoogleSheet;

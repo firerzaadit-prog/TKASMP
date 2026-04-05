@@ -630,34 +630,6 @@ export async function getDetailedStudentAnalytics(userId) {
                 console.error('Error processing answers for session:', session.id, error);
                 continue;
             }
-
-            // Hitung statistik per sesi
-            const sessionStats = {
-                sessionId: session.id,
-                date: session.completed_at,
-                totalQuestions: answers?.length || 0,
-                correctAnswers: answers?.filter(a => a.is_correct).length || 0,
-                totalScore: session.total_score || 0,
-                timeSpent: session.total_time_seconds || 0,
-                isPassed: session.is_passed || false
-            };
-
-            // Detail per soal
-            const questionDetails = answers?.map(answer => ({
-                questionId: answer.questions?.id,
-                questionText: answer.questions?.question_text?.substring(0, 100) + '...',
-                questionType: answer.questions?.question_type,
-                chapter: answer.questions?.chapter,
-                subChapter: answer.questions?.sub_chapter,
-                selectedAnswer: answer.selected_answer,
-                correctAnswer: answer.questions?.correct_answer,
-                isCorrect: answer.is_correct,
-                timeTaken: answer.time_taken_seconds,
-                score: answer.is_correct ? (answer.questions?.scoring_weight || 1) : 0
-            })) || [];
-
-            detailedExams.push(sessionStats);
-            allQuestionDetails.push(...questionDetails);
         }
 
         // Hitung performa per bab
