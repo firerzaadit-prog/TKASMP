@@ -4394,7 +4394,7 @@ async function updateStudentAnalyticsFromExams() {
         // Get all completed exam sessions
         const { data: examSessions, error: sessionsError } = await supabase
             .from('exam_sessions')
-            .select('user_id, total_score, completed_at, status')
+            .select('id, user_id, total_score, completed_at, status')
             .in('status', ['completed', 'selesai', 'done', 'finished'])
             .order('completed_at', { ascending: false });
 
