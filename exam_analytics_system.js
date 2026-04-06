@@ -91,7 +91,7 @@ export async function updateStudentAnalyticsAfterExam(questions, answers, examSe
             }
 
             // Track performa per bab
-            const chapter = question.chapter;
+            const chapter = question.bab;
             if (chapter) {
                 if (!chapterPerformance[chapter]) {
                     chapterPerformance[chapter] = {
@@ -176,8 +176,8 @@ async function trackExamConceptsProgress(userId, questions, answers, examSession
                 sessionId: examSessionId,
                 metadata: {
                     questionType: question.question_type,
-                    chapter: question.chapter,
-                    subChapter: question.sub_chapter,
+                    chapter: question.bab,
+                    subChapter: question.sub_bab,
                     examSessionId: examSessionId
                 }
             });
@@ -287,8 +287,8 @@ export async function updateStudentAnalyticsFromExams() {
                         selected_answer,
                         is_correct,
                         questions (
-                            chapter,
-                            sub_chapter,
+                            bab,
+                            sub_bab,
                             scoring_weight
                         )
                     `)
@@ -307,7 +307,7 @@ export async function updateStudentAnalyticsFromExams() {
                 const chapterStats = {};
 
                 userAnswers.forEach(answer => {
-                    const chapter = answer.questions?.chapter;
+                    const chapter = answer.questions?.bab;
                     if (chapter) {
                         if (!chapterStats[chapter]) {
                             chapterStats[chapter] = {
@@ -584,8 +584,8 @@ export async function getDetailedStudentAnalytics(userId) {
                             id,
                             question_text,
                             question_type,
-                            chapter,
-                            sub_chapter,
+                            bab,
+                            sub_bab,
                             correct_answer,
                             scoring_weight
                         )
@@ -615,8 +615,8 @@ export async function getDetailedStudentAnalytics(userId) {
                     questionId: answer.questions?.id,
                     questionText: answer.questions?.question_text?.substring(0, 100) + '...',
                     questionType: answer.questions?.question_type,
-                    chapter: answer.questions?.chapter,
-                    subChapter: answer.questions?.sub_chapter,
+                    chapter: answer.questions?.bab,
+                    subChapter: answer.questions?.sub_bab,
                     selectedAnswer: answer.selected_answer,
                     correctAnswer: answer.questions?.correct_answer,
                     isCorrect: answer.is_correct,
@@ -635,7 +635,7 @@ export async function getDetailedStudentAnalytics(userId) {
         // Hitung performa per bab
         const chapterStats = {};
         allQuestionDetails.forEach(q => {
-            const chapter = q.chapter;
+            const chapter = q.bab;
             if (chapter) {
                 if (!chapterStats[chapter]) {
                     chapterStats[chapter] = {
@@ -752,7 +752,7 @@ export function exportStudentAnalyticsToExcel(studentAnalytics) {
             excelData.push(['Bab', 'Sub Bab', 'Tipe Soal', 'Jawaban Dipilih', 'Jawaban Benar', 'Benar/Salah', 'Waktu (detik)', 'Skor']);
             studentAnalytics.questionDetails.forEach(question => {
                 excelData.push([
-                    question.chapter,
+                    question.bab,
                     question.subChapter,
                     question.questionType,
                     question.selectedAnswer,

@@ -4450,8 +4450,8 @@ async function updateStudentAnalyticsFromExams() {
                         selected_answer,
                         is_correct,
                         questions (
-                            chapter,
-                            sub_chapter,
+                            bab,
+                            sub_bab,
                             scoring_weight
                         )
                     `)
@@ -4467,7 +4467,7 @@ async function updateStudentAnalyticsFromExams() {
                 const chapterStats = {};
 
                 userAnswers.forEach(answer => {
-                    const chapter = answer.questions?.chapter;
+                    const chapter = answer.questions?.bab;
                     if (chapter) {
                         if (!chapterStats[chapter]) {
                             chapterStats[chapter] = {
