@@ -510,7 +510,7 @@ export async function getDetailedStudentAnalytics(userId) {
                 .from('exam_sessions')
                 .select('id, user_id, started_at, completed_at, total_score, total_time_seconds, status, is_passed, question_type_variant')
                 .eq('user_id', userId)
-                .eq('status', 'completed')
+                .in('status', ['completed', 'selesai', 'done', 'finished'])
                 .order('completed_at', { ascending: false });
 
             if (sessionsError) {
@@ -597,20 +597,30 @@ export async function getDetailedStudentAnalytics(userId) {
                     continue;
                 }
 
+                // Dedup answers per question_id (ambil yang terbaru)
+                const dedupMap = new Map();
+                (answers || []).forEach(ans => {
+                    const qid = ans.questions?.id;
+                    if (qid && !dedupMap.has(qid)) {
+                        dedupMap.set(qid, ans);
+                    }
+                });
+                const uniqueAnswers = Array.from(dedupMap.values());
+
                 // Process answers...
                 const sessionStats = {
                     sessionId: session.id,
                     date: session.completed_at,
                     startedAt: session.started_at,
-                    totalQuestions: answers?.length || 0,
-                    correctAnswers: answers?.filter(a => a.is_correct).length || 0,
+                    totalQuestions: uniqueAnswers.length || 0,
+                    correctAnswers: uniqueAnswers.filter(a => a.is_correct).length || 0,
                     totalScore: session.total_score || 0,
                     timeSpent: session.total_time_seconds || 0,
                     isPassed: session.is_passed || false,
                     questionTypeVariant: session.question_type_variant || '-'
                 };
 
-                const questionDetails = answers?.map(answer => ({
+                const questionDetails = uniqueAnswers.map(answer => ({
                     questionId: answer.questions?.id,
                     questionText: answer.questions?.question_text?.substring(0, 100) + '...',
                     questionType: answer.questions?.question_type,
@@ -625,6 +635,7 @@ export async function getDetailedStudentAnalytics(userId) {
 
                 detailedExams.push(sessionStats);
                 allQuestionDetails.push(...questionDetails);
+                // (questionDetails sudah dari uniqueAnswers yang terdedup)
             } catch (error) {
                 console.error('Error processing answers for session:', session.id, error);
                 continue;

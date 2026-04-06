@@ -292,9 +292,14 @@
 
             <!-- Google Sheet Embed -->
             <div class="sheet-toggle-bar">
-                <button id="btnViewSheet" class="sheet-toggle-btn">
-                    <i class="fas fa-table"></i> Lihat Data Google Sheet
-                </button>
+                <div style="display:flex;gap:0.5rem;align-items:center;">
+                    <button id="btnViewSheet" class="sheet-toggle-btn">
+                        <i class="fas fa-table"></i> Lihat Data Google Sheet
+                    </button>
+                    <button onclick="pushDataToGoogleSheet()" class="add-btn" style="background:#16a34a;font-size:0.85rem;">
+                        <i class="fas fa-upload"></i> Kirim Data ke Google Sheet
+                    </button>
+                </div>
             </div>
             <div id="sheetContainer" class="sheet-container" style="display: none;">
                 <div class="sheet-header">

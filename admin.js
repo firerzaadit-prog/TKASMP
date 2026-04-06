@@ -493,7 +493,7 @@ async function loadTodaysPerformance() {
             const { count: completedCount, error: completedError } = await supabase
                 .from('exam_sessions')
                 .select('*', { count: 'exact', head: true })
-                .eq('status', 'completed')
+                .in('status', ['completed', 'selesai', 'done', 'finished'])
                 .gte('completed_at', today)
                 .lt('completed_at', tomorrow);
 
@@ -4395,7 +4395,7 @@ async function updateStudentAnalyticsFromExams() {
         const { data: examSessions, error: sessionsError } = await supabase
             .from('exam_sessions')
             .select('user_id, total_score, completed_at, status')
-            .eq('status', 'completed')
+            .in('status', ['completed', 'selesai', 'done', 'finished'])
             .order('completed_at', { ascending: false });
 
         if (sessionsError) {
@@ -5239,6 +5239,62 @@ async function exportAllToGoogleSheet() {
         }, 500);
     } catch (error) {
         alert('Error: ' + error.message);
+    }
+}
+
+// Push data ke Google Sheet via Apps Script Web App
+async function pushDataToGoogleSheet() {
+    const btn = event?.target || document.querySelector('[onclick*="pushDataToGoogleSheet"]');
+    const originalText = btn?.innerHTML || '';
+    if (btn) {
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Mengirim...';
+        btn.disabled = true;
+    }
+
+    try {
+        const students = await getAllStudentsAnalytics();
+        if (!students || students.length === 0) {
+            alert('Tidak ada data siswa.');
+            return;
+        }
+
+        let allRows = [];
+        for (const student of students) {
+            const rows = await buildStudentExportData(student.id);
+            if (rows) allRows = allRows.concat(rows);
+        }
+
+        if (allRows.length === 0) {
+            alert('Tidak ada data ujian untuk dikirim.');
+            return;
+        }
+
+        const header = ['Nama Lengkap','Email Siswa','Kelas','Paket Soal',
+            'Tanggal Ujian','Waktu Mulai & Selesai','Durasi Pengerjaan',
+            'Jumlah Benar','Peta Kompetensi','Nilai Akhir (Skor)','Jumlah Salah',
+            'Ringkasan Kemampuan AI','Kekuatan Utama','Kelemahan Utama','Rekomendasi Belajar'];
+
+        // Format TSV untuk paste ke Google Sheet
+        const tsvRows = [header, ...allRows];
+        const tsvContent = tsvRows.map(r => r.map(c => String(c || '').replace(/	/g, ' ')).join('	')).join('
+');
+
+        // Copy ke clipboard
+        await navigator.clipboard.writeText(tsvContent);
+
+        // Buka Google Sheet
+        window.open('https://docs.google.com/spreadsheets/d/1qaIXRXjDHj_rDARWT7zWYwX6rLuG6zEd1CXEGIhBjAY/edit', '_blank');
+
+        alert(`✅ Data ${allRows.length} ujian berhasil disalin!\n\nLangkah selanjutnya:\n1. Google Sheet sudah terbuka di tab baru\n2. Klik sel A1\n3. Tekan Ctrl+V untuk paste data\n4. Data akan otomatis mengisi semua kolom`);
+
+    } catch (error) {
+        console.error('Error pushing to Google Sheet:', error);
+        alert('Error: ' + error.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
     }
 }
 
@@ -6460,6 +6516,7 @@ async function loadFullSummaryTable() {
 
 window.showStudentDetail = showStudentDetail;
 window.loadFullSummaryTable = loadFullSummaryTable;
+window.pushDataToGoogleSheet = pushDataToGoogleSheet;
 window.exportStudentToExcel = exportStudentToExcel;
 window.exportAllStudentsToExcel = exportAllStudentsToExcel;
 window.exportStudentToGoogleSheet = exportStudentToGoogleSheet;
