@@ -590,8 +590,7 @@ export async function getDetailedStudentAnalytics(userId) {
                             scoring_weight
                         )
                     `)
-                    .eq('exam_session_id', session.id)
-                    .order('questions.id');
+                    .eq('exam_session_id', session.id);
 
                 if (answersError) {
                     console.error('Error loading answers for session:', session.id, answersError);
