@@ -5276,8 +5276,8 @@ async function pushDataToGoogleSheet() {
 
         // Format TSV untuk paste ke Google Sheet
         const tsvRows = [header, ...allRows];
-        const tsvContent = tsvRows.map(r => r.map(c => String(c || '').replace(/	/g, ' ')).join('	')).join('
-');
+        const tsvContent = tsvRows.map(r => r.map(c => String(c || '').replace(/\t/g, ' ')).join('\t')).join('\n');
+
 
         // Copy ke clipboard
         await navigator.clipboard.writeText(tsvContent);
