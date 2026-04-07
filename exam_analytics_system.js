@@ -238,6 +238,8 @@ export async function updateStudentAnalyticsFromExams() {
             }
 
             examSessions = sessions || [];
+            console.log(`[DEBUG] examSessions for ${userId}:`, examSessions.length, 'sessions found');
+            if (sessionsError) console.error('[DEBUG] sessionsError:', sessionsError);
         } catch (error) {
             console.log('Exam sessions table may not exist yet');
             return;
@@ -533,6 +535,8 @@ export async function getDetailedStudentAnalytics(userId) {
             }
 
             examSessions = sessions || [];
+            console.log(`[DEBUG] examSessions for ${userId}:`, examSessions.length, 'sessions found');
+            if (sessionsError) console.error('[DEBUG] sessionsError:', sessionsError);
         } catch (error) {
             console.log('Exam sessions table may not exist yet');
             return {
@@ -596,6 +600,7 @@ export async function getDetailedStudentAnalytics(userId) {
                     console.error('Error loading answers for session:', session.id, answersError);
                     continue;
                 }
+                console.log(`[DEBUG] Session ${session.id}: ${answers?.length || 0} answers loaded, bab data:`, answers?.[0]?.questions?.bab);
 
                 // Dedup answers per question_id (ambil yang terbaru)
                 const dedupMap = new Map();
@@ -816,6 +821,8 @@ export async function getAllStudentsAnalytics() {
             }
 
             examSessions = sessions || [];
+            console.log(`[DEBUG] examSessions for ${userId}:`, examSessions.length, 'sessions found');
+            if (sessionsError) console.error('[DEBUG] sessionsError:', sessionsError);
         } catch (error) {
             console.log('Exam sessions table may not exist yet');
             return [];
