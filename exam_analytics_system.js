@@ -290,7 +290,9 @@ export async function updateStudentAnalyticsFromExams() {
                         is_correct,
                         questions (
                             bab,
+                            chapter,
                             sub_bab,
+                            sub_chapter,
                             scoring_weight
                         )
                     `)
@@ -309,7 +311,7 @@ export async function updateStudentAnalyticsFromExams() {
                 const chapterStats = {};
 
                 userAnswers.forEach(answer => {
-                    const chapter = answer.questions?.bab;
+                    const chapter = answer.questions?.bab || answer.questions?.chapter;
                     if (chapter) {
                         if (!chapterStats[chapter]) {
                             chapterStats[chapter] = {
@@ -589,7 +591,9 @@ export async function getDetailedStudentAnalytics(userId) {
                             question_text,
                             question_type,
                             bab,
+                            chapter,
                             sub_bab,
+                            sub_chapter,
                             correct_answer,
                             scoring_weight
                         )
@@ -600,7 +604,7 @@ export async function getDetailedStudentAnalytics(userId) {
                     console.error('Error loading answers for session:', session.id, answersError);
                     continue;
                 }
-                console.log(`[DEBUG] Session ${session.id}: ${answers?.length || 0} answers loaded, bab data:`, answers?.[0]?.questions?.bab);
+                console.log(`[DEBUG] Session ${session.id}: ${answers?.length || 0} answers loaded, bab:`, answers?.[0]?.questions?.bab, 'chapter:', answers?.[0]?.questions?.chapter);
 
                 // Dedup answers per question_id (ambil yang terbaru)
                 const dedupMap = new Map();
@@ -629,8 +633,8 @@ export async function getDetailedStudentAnalytics(userId) {
                     questionId: answer.questions?.id,
                     questionText: answer.questions?.question_text?.substring(0, 100) + '...',
                     questionType: answer.questions?.question_type,
-                    chapter: answer.questions?.bab,
-                    subChapter: answer.questions?.sub_bab,
+                    chapter: answer.questions?.bab || answer.questions?.chapter,
+                    subChapter: answer.questions?.sub_bab || answer.questions?.sub_chapter,
                     selectedAnswer: answer.selected_answer,
                     correctAnswer: answer.questions?.correct_answer,
                     isCorrect: answer.is_correct,
@@ -650,7 +654,7 @@ export async function getDetailedStudentAnalytics(userId) {
         // Hitung performa per bab
         const chapterStats = {};
         allQuestionDetails.forEach(q => {
-            const chapter = q.bab;
+            const chapter = q.bab || q.chapter;
             if (chapter) {
                 if (!chapterStats[chapter]) {
                     chapterStats[chapter] = {
