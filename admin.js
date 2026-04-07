@@ -5032,35 +5032,53 @@ async function buildStudentExportData(userId) {
     // Fungsi helper: ambil AI per sesi tertentu
     async function getAIPerSession(sessionId) {
         try {
-            const { data: answerIds } = await supabase
-                .from('exam_answers').select('id')
-                .eq('exam_session_id', sessionId).limit(50);
-            if (!answerIds || answerIds.length === 0) return null;
+            // Ambil semua answer_id untuk sesi ini (tanpa limit)
+            const { data: allAnswers } = await supabase
+                .from('exam_answers').select('id, question_id')
+                .eq('exam_session_id', sessionId);
+            if (!allAnswers || allAnswers.length === 0) return null;
 
+            // Dedup: ambil 1 answer_id per question_id (yang pertama)
+            const seenQ = new Set();
+            const uniqueAnswerIds = [];
+            allAnswers.forEach(a => {
+                if (!seenQ.has(a.question_id)) {
+                    seenQ.add(a.question_id);
+                    uniqueAnswerIds.push(a.id);
+                }
+            });
+
+            // Ambil semua analisis AI untuk answer_id tersebut
             const { data: geminiData } = await supabase
                 .from('gemini_analyses').select('analysis_data')
-                .in('answer_id', answerIds.map(a => a.id)).limit(30);
+                .in('answer_id', uniqueAnswerIds);
             if (!geminiData || geminiData.length === 0) return null;
 
-            // Filter hanya yang punya data (bukan fallback kosong)
+            // Filter yang punya data valid (bukan fallback kosong)
             const validData = geminiData.filter(g =>
-                g.analysis_data?.strengths?.length > 0 ||
-                g.analysis_data?.weaknesses?.length > 0
+                (g.analysis_data?.strengths?.length > 0) ||
+                (g.analysis_data?.weaknesses?.length > 0) ||
+                (g.analysis_data?.explanation && g.analysis_data.explanation.length > 10)
             );
-            if (validData.length === 0) return null;
 
-            const strengths = [...new Set(validData.flatMap(g => g.analysis_data?.strengths || []))].slice(0, 3);
-            const weaknesses = [...new Set(validData.flatMap(g => g.analysis_data?.weaknesses || []))].slice(0, 3);
-            const suggestions = [...new Set(validData.flatMap(g => g.analysis_data?.learningSuggestions || []))].slice(0, 3);
-            const explanation = validData.find(g => g.analysis_data?.explanation)?.analysis_data?.explanation || '';
+            // Jika tidak ada yang valid, coba pakai semua data
+            const sourceData = validData.length > 0 ? validData : geminiData;
+
+            const strengths = [...new Set(sourceData.flatMap(g => g.analysis_data?.strengths || []))].filter(Boolean).slice(0, 3);
+            const weaknesses = [...new Set(sourceData.flatMap(g => g.analysis_data?.weaknesses || []))].filter(Boolean).slice(0, 3);
+            const suggestions = [...new Set(sourceData.flatMap(g => g.analysis_data?.learningSuggestions || []))].filter(Boolean).slice(0, 3);
+            const explanation = sourceData.find(g => g.analysis_data?.explanation?.length > 10)?.analysis_data?.explanation || '';
+
+            if (strengths.length === 0 && weaknesses.length === 0 && !explanation) return null;
 
             return {
                 ringkasan: explanation || (weaknesses.length > 0 ? weaknesses[0] : '-'),
-                kekuatan: strengths.join('; ') || '-',
-                kelemahan: weaknesses.join('; ') || '-',
-                rekomendasi: suggestions.join('; ') || '-'
+                kekuatan: strengths.length > 0 ? strengths.join('; ') : '-',
+                kelemahan: weaknesses.length > 0 ? weaknesses.join('; ') : '-',
+                rekomendasi: suggestions.length > 0 ? suggestions.join('; ') : '-'
             };
         } catch(e) {
+            console.warn('getAIPerSession error:', e);
             return null;
         }
     }
