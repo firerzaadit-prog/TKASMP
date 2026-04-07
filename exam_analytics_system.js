@@ -228,8 +228,8 @@ export async function updateStudentAnalyticsFromExams() {
         try {
             const { data: sessions, error: sessionsError } = await supabase
                 .from('exam_sessions')
-                .select('user_id, total_score, completed_at, status')
-                .eq('status', 'completed')
+                .select('id, user_id, total_score, completed_at, status')
+                .in('status', ['completed', 'selesai', 'done', 'finished'])
                 .order('completed_at', { ascending: false });
 
             if (sessionsError) {
@@ -808,7 +808,7 @@ export async function getAllStudentsAnalytics() {
             const { data: sessions, error } = await supabase
                 .from('exam_sessions')
                 .select('user_id')
-                .eq('status', 'completed');
+                .in('status', ['completed', 'selesai', 'done', 'finished']);
 
             if (error) {
                 console.error('Error loading exam sessions:', error);

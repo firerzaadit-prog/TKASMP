@@ -5022,80 +5022,84 @@ async function buildStudentExportData(userId) {
     const analytics = await getDetailedStudentAnalytics(userId);
     if (!analytics) return null;
 
-    // Ambil AI analyses dari gemini_analyses
-    let aiRingkasan = '-', aiKekuatan = '-', aiKelemahan = '-', aiRekomendasi = '-';
-    try {
-        const sessionIds = analytics.exams.map(e => e.sessionId);
-        if (sessionIds.length > 0) {
-            const { data: answerIds } = await supabase
-                .from('exam_answers').select('id').in('exam_session_id', sessionIds).limit(50);
-            if (answerIds && answerIds.length > 0) {
-                const { data: geminiData } = await supabase
-                    .from('gemini_analyses').select('analysis_data')
-                    .in('answer_id', answerIds.map(a => a.id)).limit(30);
-                if (geminiData && geminiData.length > 0) {
-                    const strengths = [...new Set(geminiData.flatMap(g => g.analysis_data?.strengths || []))].slice(0, 3);
-                    const weaknesses = [...new Set(geminiData.flatMap(g => g.analysis_data?.weaknesses || []))].slice(0, 3);
-                    const suggestions = [...new Set(geminiData.flatMap(g => g.analysis_data?.learningSuggestions || []))].slice(0, 3);
-                    const explanations = [...new Set(geminiData.flatMap(g => g.analysis_data?.explanation ? [g.analysis_data.explanation] : []))].slice(0, 1);
-                    aiKekuatan = strengths.join('; ') || '-';
-                    aiKelemahan = weaknesses.join('; ') || '-';
-                    aiRekomendasi = suggestions.join('; ') || '-';
-                    aiRingkasan = explanations[0] || (weaknesses.length > 0 ? 'Perlu perhatian: ' + weaknesses[0] : '-');
-                }
-            }
-        }
-    } catch(e) { console.warn('AI data error:', e); }
-
-    // Peta Kompetensi per bab
+    // Peta Kompetensi per bab (berlaku untuk semua sesi siswa ini)
     const petaKompetensi = analytics.chapterPerformance
         .map(c => `${c.chapter}: ${Math.round(c.accuracy||0)}%`)
         .join(' | ') || '-';
 
+    // Fungsi helper: ambil AI per sesi tertentu
+    async function getAIPerSession(sessionId) {
+        try {
+            const { data: answerIds } = await supabase
+                .from('exam_answers').select('id')
+                .eq('exam_session_id', sessionId).limit(50);
+            if (!answerIds || answerIds.length === 0) return null;
+
+            const { data: geminiData } = await supabase
+                .from('gemini_analyses').select('analysis_data')
+                .in('answer_id', answerIds.map(a => a.id)).limit(30);
+            if (!geminiData || geminiData.length === 0) return null;
+
+            // Filter hanya yang punya data (bukan fallback kosong)
+            const validData = geminiData.filter(g =>
+                g.analysis_data?.strengths?.length > 0 ||
+                g.analysis_data?.weaknesses?.length > 0
+            );
+            if (validData.length === 0) return null;
+
+            const strengths = [...new Set(validData.flatMap(g => g.analysis_data?.strengths || []))].slice(0, 3);
+            const weaknesses = [...new Set(validData.flatMap(g => g.analysis_data?.weaknesses || []))].slice(0, 3);
+            const suggestions = [...new Set(validData.flatMap(g => g.analysis_data?.learningSuggestions || []))].slice(0, 3);
+            const explanation = validData.find(g => g.analysis_data?.explanation)?.analysis_data?.explanation || '';
+
+            return {
+                ringkasan: explanation || (weaknesses.length > 0 ? weaknesses[0] : '-'),
+                kekuatan: strengths.join('; ') || '-',
+                kelemahan: weaknesses.join('; ') || '-',
+                rekomendasi: suggestions.join('; ') || '-'
+            };
+        } catch(e) {
+            return null;
+        }
+    }
+
     const rows = [];
     if (analytics.exams.length === 0) {
         rows.push([
-            analytics.student.nama_lengkap || '-',    // 0: Nama Lengkap
-            analytics.student.email || '-',            // 1: Email
-            analytics.student.class_name || '-',       // 2: Kelas
-            '-',                                       // 3: Paket Soal
-            '-',                                       // 4: Tanggal Ujian
-            '-',                                       // 5: Waktu Mulai & Selesai
-            '-',                                       // 6: Durasi
-            0,                                         // 7: Jumlah Benar
-            petaKompetensi,                            // 8: Peta Kompetensi
-            0,                                         // 9: Skor
-            0,                                         // 10: Jumlah Salah
-            aiRingkasan,                               // 11: Ringkasan AI
-            aiKekuatan,                                // 12: Kekuatan
-            aiKelemahan,                               // 13: Kelemahan
-            aiRekomendasi                              // 14: Rekomendasi
+            analytics.student.nama_lengkap || '-',
+            analytics.student.email || '-',
+            analytics.student.class_name || '-',
+            '-', '-', '-', '-', 0, petaKompetensi, 0, 0, '-', '-', '-', '-'
         ]);
     } else {
-        analytics.exams.forEach(exam => {
+        for (const exam of analytics.exams) {
             const startTime = exam.date ? new Date(exam.date) : null;
             const endTime = exam.date && exam.timeSpent
                 ? new Date(new Date(exam.date).getTime() + exam.timeSpent * 1000) : null;
             const durasiMenit = exam.timeSpent ? Math.round(exam.timeSpent / 60) + ' menit' : '-';
             const jumlahSalah = (exam.totalQuestions || 0) - (exam.correctAnswers || 0);
+
+            // Ambil AI khusus untuk sesi ini
+            const ai = await getAIPerSession(exam.sessionId);
+
             rows.push([
-                analytics.student.nama_lengkap || '-',                           // 0: Nama Lengkap
-                analytics.student.email || '-',                                   // 1: Email
-                analytics.student.class_name || analytics.student.school || '-', // 2: Kelas
-                exam.questionTypeVariant || '-',                                  // 3: Paket Soal
-                startTime ? startTime.toLocaleDateString('id-ID') : '-',         // 4: Tanggal Ujian
-                `${startTime ? startTime.toLocaleTimeString('id-ID') : '-'} → ${endTime ? endTime.toLocaleTimeString('id-ID') : '-'}`, // 5: Waktu Mulai & Selesai
-                durasiMenit,                                                      // 6: Durasi
-                exam.correctAnswers || 0,                                         // 7: Jumlah Benar
-                petaKompetensi,                                                   // 8: Peta Kompetensi
-                exam.totalScore || 0,                                             // 9: Skor
-                jumlahSalah >= 0 ? jumlahSalah : 0,                              // 10: Jumlah Salah
-                aiRingkasan,                                                      // 11: Ringkasan AI
-                aiKekuatan,                                                       // 12: Kekuatan
-                aiKelemahan,                                                      // 13: Kelemahan
-                aiRekomendasi                                                     // 14: Rekomendasi
+                analytics.student.nama_lengkap || '-',
+                analytics.student.email || '-',
+                analytics.student.class_name || analytics.student.school || '-',
+                exam.questionTypeVariant || '-',
+                startTime ? startTime.toLocaleDateString('id-ID') : '-',
+                `${startTime ? startTime.toLocaleTimeString('id-ID') : '-'} → ${endTime ? endTime.toLocaleTimeString('id-ID') : '-'}`,
+                durasiMenit,
+                exam.correctAnswers || 0,
+                petaKompetensi,
+                exam.totalScore || 0,
+                jumlahSalah >= 0 ? jumlahSalah : 0,
+                ai ? ai.ringkasan : '-',
+                ai ? ai.kekuatan : '-',
+                ai ? ai.kelemahan : '-',
+                ai ? ai.rekomendasi : '-'
             ]);
-        });
+        }
     }
     return rows;
 }
