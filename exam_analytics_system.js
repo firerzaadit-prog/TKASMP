@@ -821,10 +821,9 @@ export async function getAllStudentsAnalytics() {
             }
 
             examSessions = sessions || [];
-            console.log(`[DEBUG] examSessions for ${userId}:`, examSessions.length, 'sessions found');
-            if (sessionsError) console.error('[DEBUG] sessionsError:', sessionsError);
+            console.log('[DEBUG] getAllStudentsAnalytics: examSessions loaded:', examSessions.length);
         } catch (error) {
-            console.log('Exam sessions table may not exist yet');
+            console.error('Error loading exam sessions in getAllStudentsAnalytics:', error);
             return [];
         }
 
