@@ -3,7 +3,7 @@ import { supabase } from './clientSupabase.js';
 
 /**
  * Class untuk mengelola tabel detail siswa di dashboard analytics
- * Menampilkan: NAMA | KELAS | RATA RATA SKOR | JUMLAH UJIAN | CLUSTER | PREDIKSI SELANJUTNYA | AKSI
+ * Menampilkan: NAMA | KELAS | RATA RATA SKOR | JUMLAH UJIAN | CLUSTER | PREDIKSI SELANJUTNYA | RINGKASAN AI | KEKUATAN | KELEMAHAN | REKOMENDASI | AKSI
  */
 class StudentAnalyticsTable {
     constructor(tableId = 'studentsTable') {
@@ -23,6 +23,7 @@ class StudentAnalyticsTable {
 
     /**
      * Load data siswa dari database
+     * ✅ PERBAIKAN: Sekarang juga mengambil data gemini_analyses untuk kolom AI
      * @returns {Promise<Array>} Array data siswa
      */
     async loadStudentsData() {
@@ -46,6 +47,52 @@ class StudentAnalyticsTable {
                 return [];
             }
 
+            // ✅ BARU: Ambil semua data analisis AI dari gemini_analyses
+            // Join ke exam_answers → exam_sessions untuk mendapatkan user_id
+            const { data: aiAnalysesRaw, error: aiError } = await supabase
+                .from('gemini_analyses')
+                .select(`
+                    answer_id,
+                    analysis_data,
+                    exam_answers!inner (
+                        exam_session_id,
+                        exam_sessions!inner (
+                            user_id
+                        )
+                    )
+                `);
+
+            if (aiError) {
+                console.warn('[StudentAnalyticsTable] Gagal memuat gemini_analyses (tabel mungkin kosong):', aiError.message);
+            }
+
+            // ✅ BARU: Kelompokkan semua analisis AI per user_id
+            const aiByUser = {};
+            (aiAnalysesRaw || []).forEach(row => {
+                const userId = row.exam_answers?.exam_sessions?.user_id;
+                if (!userId || !row.analysis_data) return;
+
+                const analysis = row.analysis_data;
+
+                if (!aiByUser[userId]) {
+                    aiByUser[userId] = {
+                        summaries: [],
+                        strengths: [],
+                        weaknesses: [],
+                        suggestions: []
+                    };
+                }
+
+                if (analysis.explanation)
+                    aiByUser[userId].summaries.push(analysis.explanation);
+                if (Array.isArray(analysis.strengths))
+                    aiByUser[userId].strengths.push(...analysis.strengths);
+                if (Array.isArray(analysis.weaknesses))
+                    aiByUser[userId].weaknesses.push(...analysis.weaknesses);
+                if (Array.isArray(analysis.learningSuggestions))
+                    aiByUser[userId].suggestions.push(...analysis.learningSuggestions);
+            });
+
             // Kelompokkan berdasarkan siswa dan hitung statistik
             const studentMap = new Map();
 
@@ -62,7 +109,12 @@ class StudentAnalyticsTable {
                         avgScore: 0,
                         trend: 'stable',
                         cluster: 'unknown',
-                        lastExamDate: null
+                        lastExamDate: null,
+                        // ✅ BARU: field untuk data AI
+                        aiSummary: '-',
+                        aiStrengths: [],
+                        aiWeaknesses: [],
+                        aiSuggestions: []
                     });
                 }
 
@@ -71,14 +123,13 @@ class StudentAnalyticsTable {
                 student.totalScore += exam.total_score || 0;
                 student.examCount++;
 
-                // Track tanggal ujian terakhir
                 const examDate = new Date(exam.created_at);
                 if (!student.lastExamDate || examDate > student.lastExamDate) {
                     student.lastExamDate = examDate;
                 }
             });
 
-            // Hitung rata-rata dan tentukan cluster + trend
+            // Hitung rata-rata, tentukan cluster + trend, dan masukkan data AI
             this.studentsData = Array.from(studentMap.values()).map(student => {
                 // Hitung rata-rata skor
                 student.avgScore = student.examCount > 0 ? student.totalScore / student.examCount : 0;
@@ -99,6 +150,19 @@ class StudentAnalyticsTable {
                         .slice(0, 2);
                     const trend = recentExams[0].total_score - recentExams[1].total_score;
                     student.trend = trend > 5 ? 'improving' : trend < -5 ? 'declining' : 'stable';
+                }
+
+                // ✅ BARU: Masukkan data AI ke object student
+                const ai = aiByUser[student.id];
+                if (ai) {
+                    // Ambil ringkasan terakhir (paling relevan / terbaru)
+                    student.aiSummary = ai.summaries.length > 0
+                        ? ai.summaries[ai.summaries.length - 1]
+                        : '-';
+                    // Dedup dan batasi maksimal 3 item unik agar tabel tidak terlalu panjang
+                    student.aiStrengths   = [...new Set(ai.strengths)].slice(0, 3);
+                    student.aiWeaknesses  = [...new Set(ai.weaknesses)].slice(0, 3);
+                    student.aiSuggestions = [...new Set(ai.suggestions)].slice(0, 3);
                 }
 
                 return student;
@@ -150,12 +214,26 @@ class StudentAnalyticsTable {
 
     /**
      * Buat HTML row untuk satu siswa
+     * ✅ PERBAIKAN: Tambahkan 4 kolom AI (Ringkasan AI, Kekuatan, Kelemahan, Rekomendasi)
      * @param {Object} student - Data siswa
      * @returns {string} HTML row
      */
     createTableRow(student) {
         const predictionText = this.getPredictionText(student);
         const clusterDisplay = this.getClusterDisplay(student.cluster);
+
+        // ✅ BARU: Helper untuk merender list AI sebagai bullet points
+        const renderAiList = (items) => {
+            if (!items || items.length === 0) return '<span style="color:#9ca3af;font-style:italic;">-</span>';
+            return '<ul style="margin:0;padding-left:16px;font-size:0.78rem;color:#374151;">'
+                + items.map(i => `<li style="margin-bottom:3px;">${this.escapeHtml(i)}</li>`).join('')
+                + '</ul>';
+        };
+
+        // ✅ BARU: Render ringkasan AI
+        const aiSummaryHtml = (student.aiSummary && student.aiSummary !== '-')
+            ? `<span style="font-size:0.78rem;color:#374151;line-height:1.4;">${this.escapeHtml(student.aiSummary)}</span>`
+            : '<span style="color:#9ca3af;font-style:italic;">-</span>';
 
         return `
             <tr data-student-id="${student.id}">
@@ -167,6 +245,13 @@ class StudentAnalyticsTable {
                     <span class="cluster-badge ${student.cluster}">${clusterDisplay}</span>
                 </td>
                 <td class="student-prediction">${predictionText}</td>
+
+                <!-- ✅ 4 KOLOM AI BARU -->
+                <td class="student-ai-summary" style="max-width:220px;">${aiSummaryHtml}</td>
+                <td class="student-ai-strengths" style="max-width:180px;">${renderAiList(student.aiStrengths)}</td>
+                <td class="student-ai-weaknesses" style="max-width:180px;">${renderAiList(student.aiWeaknesses)}</td>
+                <td class="student-ai-suggestions" style="max-width:200px;">${renderAiList(student.aiSuggestions)}</td>
+
                 <td class="student-actions">
                     <button onclick="showStudentDetail('${student.id}')" class="action-btn detail-btn" title="Lihat detail siswa">
                         <i class="fas fa-eye"></i> Detail
@@ -181,8 +266,6 @@ class StudentAnalyticsTable {
 
     /**
      * Dapatkan teks prediksi berdasarkan cluster siswa
-     * @param {Object} student - Data siswa
-     * @returns {string} Teks prediksi
      */
     getPredictionText(student) {
         const predictions = {
@@ -195,8 +278,6 @@ class StudentAnalyticsTable {
 
     /**
      * Dapatkan display text untuk cluster
-     * @param {string} cluster - Nama cluster
-     * @returns {string} Display text
      */
     getClusterDisplay(cluster) {
         const displays = {
@@ -209,57 +290,35 @@ class StudentAnalyticsTable {
 
     /**
      * Terapkan filter ke data siswa
-     * @returns {Array} Data yang sudah difilter
      */
     applyFilters() {
         return this.studentsData.filter(student => {
-            // Filter kelas
-            if (this.filters.class !== 'all' && student.class !== this.filters.class) {
-                return false;
-            }
-
-            // Filter cluster
-            if (this.filters.cluster !== 'all' && student.cluster !== this.filters.cluster) {
-                return false;
-            }
-
-            // Filter skor
-            if (student.avgScore < this.filters.minScore || student.avgScore > this.filters.maxScore) {
-                return false;
-            }
-
+            if (this.filters.class !== 'all' && student.class !== this.filters.class) return false;
+            if (this.filters.cluster !== 'all' && student.cluster !== this.filters.cluster) return false;
+            if (student.avgScore < this.filters.minScore || student.avgScore > this.filters.maxScore) return false;
             return true;
         });
     }
 
     /**
      * Terapkan sorting ke data siswa
-     * @param {Array} data - Data yang akan di-sort
-     * @returns {Array} Data yang sudah di-sort
      */
     applySorting(data) {
-        return data.sort((a, b) => {
-            let aValue = a[this.sortColumn];
-            let bValue = b[this.sortColumn];
+        return [...data].sort((a, b) => {
+            let aVal = a[this.sortColumn];
+            let bVal = b[this.sortColumn];
 
-            // Handle string comparison
-            if (typeof aValue === 'string') {
-                aValue = aValue.toLowerCase();
-                bValue = bValue.toLowerCase();
-            }
+            if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+            if (typeof bVal === 'string') bVal = bVal.toLowerCase();
 
-            if (this.sortDirection === 'asc') {
-                return aValue > bValue ? 1 : aValue < bValue ? -1 : 0;
-            } else {
-                return aValue < bValue ? 1 : aValue > bValue ? -1 : 0;
-            }
+            if (aVal < bVal) return this.sortDirection === 'asc' ? -1 : 1;
+            if (aVal > bVal) return this.sortDirection === 'asc' ? 1 : -1;
+            return 0;
         });
     }
 
     /**
-     * Set sorting untuk kolom tertentu
-     * @param {string} column - Nama kolom
-     * @param {string} direction - 'asc' atau 'desc'
+     * Set sorting kolom
      */
     setSorting(column, direction = 'desc') {
         this.sortColumn = column;
@@ -269,24 +328,21 @@ class StudentAnalyticsTable {
 
     /**
      * Set filter untuk data
-     * @param {Object} filters - Object filter
      */
     setFilters(filters) {
         this.filters = { ...this.filters, ...filters };
-        this.currentPage = 1; // Reset ke halaman pertama
+        this.currentPage = 1;
         this.renderTable();
     }
 
     /**
      * Update informasi pagination
-     * @param {number} totalItems - Total item
      */
     updatePaginationInfo(totalItems) {
         const totalPages = Math.ceil(totalItems / this.itemsPerPage);
         const startItem = (this.currentPage - 1) * this.itemsPerPage + 1;
         const endItem = Math.min(this.currentPage * this.itemsPerPage, totalItems);
 
-        // Update elemen pagination jika ada
         const paginationInfo = document.getElementById('paginationInfo');
         if (paginationInfo) {
             paginationInfo.textContent = `Menampilkan ${startItem}-${endItem} dari ${totalItems} siswa`;
@@ -300,18 +356,14 @@ class StudentAnalyticsTable {
 
     /**
      * Buat kontrol pagination
-     * @param {number} totalPages - Total halaman
-     * @returns {string} HTML kontrol pagination
      */
     createPaginationControls(totalPages) {
         let controls = '';
 
-        // Previous button
         controls += `<button onclick="studentTable.goToPage(${this.currentPage - 1})" ${this.currentPage <= 1 ? 'disabled' : ''}>
             <i class="fas fa-chevron-left"></i>
         </button>`;
 
-        // Page numbers
         const startPage = Math.max(1, this.currentPage - 2);
         const endPage = Math.min(totalPages, this.currentPage + 2);
 
@@ -319,7 +371,6 @@ class StudentAnalyticsTable {
             controls += `<button onclick="studentTable.goToPage(${i})" class="${i === this.currentPage ? 'active' : ''}">${i}</button>`;
         }
 
-        // Next button
         controls += `<button onclick="studentTable.goToPage(${this.currentPage + 1})" ${this.currentPage >= totalPages ? 'disabled' : ''}>
             <i class="fas fa-chevron-right"></i>
         </button>`;
@@ -329,7 +380,6 @@ class StudentAnalyticsTable {
 
     /**
      * Pindah ke halaman tertentu
-     * @param {number} page - Nomor halaman
      */
     goToPage(page) {
         if (page >= 1 && page <= Math.ceil(this.studentsData.length / this.itemsPerPage)) {
@@ -339,25 +389,31 @@ class StudentAnalyticsTable {
     }
 
     /**
-     * Export data siswa ke CSV
-     * @returns {string} CSV content
+     * Export data siswa ke CSV (termasuk kolom AI)
      */
     exportToCSV() {
-        const headers = ['Nama Siswa', 'Kelas', 'Rata-rata Skor', 'Jumlah Ujian', 'Cluster', 'Prediksi Selanjutnya'];
+        const headers = [
+            'Nama Siswa', 'Kelas', 'Rata-rata Skor', 'Jumlah Ujian',
+            'Cluster', 'Prediksi Selanjutnya',
+            'Ringkasan AI', 'Kekuatan', 'Kelemahan', 'Rekomendasi'
+        ];
         const rows = this.studentsData.map(student => [
             student.name,
             student.class,
             student.avgScore.toFixed(1),
             student.examCount,
             this.getClusterDisplay(student.cluster),
-            this.getPredictionText(student)
+            this.getPredictionText(student),
+            student.aiSummary || '-',
+            (student.aiStrengths || []).join(' | '),
+            (student.aiWeaknesses || []).join(' | '),
+            (student.aiSuggestions || []).join(' | ')
         ]);
 
         const csvContent = [headers, ...rows]
-            .map(row => row.map(field => `"${field}"`).join(','))
+            .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
             .join('\n');
 
-        // Download file
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
@@ -373,7 +429,6 @@ class StudentAnalyticsTable {
 
     /**
      * Cari siswa berdasarkan nama
-     * @param {string} query - Kata kunci pencarian
      */
     searchStudents(query) {
         if (!query.trim()) {
@@ -386,12 +441,10 @@ class StudentAnalyticsTable {
             student.class.toLowerCase().includes(query.toLowerCase())
         );
 
-        // Render hasil pencarian (sementara override pagination)
         const table = document.getElementById(this.tableId);
         const tbody = table.querySelector('tbody');
         tbody.innerHTML = filteredData.slice(0, this.itemsPerPage).map(student => this.createTableRow(student)).join('');
 
-        // Update info
         const paginationInfo = document.getElementById('paginationInfo');
         if (paginationInfo) {
             paginationInfo.textContent = `Ditemukan ${filteredData.length} siswa untuk "${query}"`;
@@ -400,8 +453,6 @@ class StudentAnalyticsTable {
 
     /**
      * Escape HTML untuk keamanan
-     * @param {string} text - Text yang akan di-escape
-     * @returns {string} Text yang sudah di-escape
      */
     escapeHtml(text) {
         const div = document.createElement('div');
@@ -419,7 +470,6 @@ class StudentAnalyticsTable {
 
     /**
      * Get statistik ringkasan siswa
-     * @returns {Object} Statistik
      */
     getSummaryStats() {
         const total = this.studentsData.length;
@@ -447,37 +497,9 @@ export const studentTable = new StudentAnalyticsTable();
 
 // Fungsi utility untuk global scope
 window.showStudentDetail = async function(studentId) {
-    // Import showStudentDetail dari analytics.js jika diperlukan
     if (window.showStudentDetailFromAnalytics) {
         window.showStudentDetailFromAnalytics(studentId);
     } else {
         console.log(`Show detail for student: ${studentId}`);
-        // Implementasi fallback atau import dinamis
     }
 };
-
-// Contoh penggunaan:
-/*
-// Inisialisasi
-await studentTable.loadStudentsData();
-studentTable.renderTable('studentsTable');
-
-// Set filter
-studentTable.setFilters({ class: '7A', cluster: 'high-performer' });
-
-// Set sorting
-studentTable.setSorting('avgScore', 'desc');
-
-// Pencarian
-studentTable.searchStudents('john');
-
-// Export
-studentTable.exportToCSV();
-
-// Refresh data
-await studentTable.refresh();
-
-// Get statistik
-const stats = studentTable.getSummaryStats();
-console.log(`Total siswa: ${stats.totalStudents}, Rata-rata skor: ${stats.averageScore}%`);
-*/

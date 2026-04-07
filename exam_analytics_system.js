@@ -654,7 +654,7 @@ export async function getDetailedStudentAnalytics(userId) {
         // Hitung performa per bab
         const chapterStats = {};
         allQuestionDetails.forEach(q => {
-            const chapter = q.bab || q.chapter;
+            const chapter = q.chapter; // ✅ PERBAIKAN: hapus q.bab (field ini tidak ada di object questionDetails, sudah dipetakan ke .chapter saat build)
             if (chapter) {
                 if (!chapterStats[chapter]) {
                     chapterStats[chapter] = {

@@ -33,7 +33,7 @@ class GeminiAnalytics {
 
             if (error.message && error.message.includes('Rate limit')) {
                 console.warn('[Gemini AI] Rate limit tercapai, mencoba lagi...');
-                throw error; 
+                throw error;
             }
 
             return this.getFallbackAnalysis(answerData, questionData);
@@ -41,17 +41,21 @@ class GeminiAnalytics {
     }
 
     buildAnalysisPrompt(answerData, questionData) {
-        const competenceText = questionData.competence || this.getCompetencyDescription(questionData.bab, questionData.sub_bab) || 'Kompetensi umum matematika';
+        // ✅ PERBAIKAN: Gunakan 'chapter' dan 'sub_chapter' (sesuai nama kolom di DB Supabase)
+        //    Sebelumnya salah pakai: questionData.bab dan questionData.sub_bab
+        const competenceText = questionData.competence
+            || this.getCompetencyDescription(questionData.chapter, questionData.sub_chapter)
+            || 'Kompetensi umum matematika';
 
         return `
 Analisis jawaban siswa matematika ini berdasarkan konteks berikut:
-TIPE SOAL: ${questionData.tipe_soal || ''} (pilihan ganda, PGK Kategori, atau PGK MCMA)
-BAB: ${questionData.bab || ''}
-SUB BAB: ${questionData.sub_bab || ''}
+TIPE SOAL: ${questionData.tipe_soal || questionData.question_type || ''}
+BAB: ${questionData.chapter || ''}
+SUB BAB: ${questionData.sub_chapter || ''}
 KOMPETENSI: ${competenceText}
 SOAL: ${questionData.question_text || ''}
 KUNCI JAWABAN: ${questionData.correct_answer || ''}
-JAWABAN SISWA: ${answerData.answer_text || ''}
+JAWABAN SISWA: ${answerData.answer_text || answerData.selected_answer || ''}
 
 Tugas: Berikan analisis mendalam tentang kekurangan, kelebihan siswa, dan saran belajar spesifik berdasarkan tipe soal, bab, sub bab, dan kompetensi yang diharapkan. Output HANYA dalam format JSON valid. Jangan ada teks lain.
 Format JSON:
@@ -66,7 +70,9 @@ Format JSON:
 `.trim();
     }
 
-    getCompetencyDescription(bab, subBab) {
+    // ✅ PERBAIKAN: Parameter diganti dari (bab, subBab) → (chapter, subChapter)
+    //    agar konsisten dengan nama kolom DB
+    getCompetencyDescription(chapter, subChapter) {
         const competencies = {
             'Bilangan': {
                 'Bilangan real': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Perbandingan dan sifat-sifat bilangan; Operasi aritmetika pada bilangan; Estimasi/perkiraan hasil perhitungan; Faktorisasi prima bilangan asli; Rasio (skala, proporsi, dan laju perubahan); Perbandingan senilai dan berbalik nilai.'
@@ -85,7 +91,8 @@ Format JSON:
                 'Data dan peluang': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Perumusan pertanyaan untuk mendapatkan data, serta penyajian, dan penginterpretasian data; Penentuan dan penaksiran rerata (mean), median, modus, dan jangkauan (range) dari data; Perbandingan ukuran pemusatan dan ukuran penyebaran beberapa kelompok data; Peluang dan frekuensi relatif dari kejadian tunggal.'
             }
         };
-        return competencies[bab]?.[subBab] || 'Kompetensi umum matematika';
+        // ✅ PERBAIKAN: Gunakan parameter chapter dan subChapter
+        return competencies[chapter]?.[subChapter] || 'Kompetensi umum matematika';
     }
 
     async callEdgeFunction(prompt) {
@@ -105,7 +112,6 @@ Format JSON:
                 throw new Error(data.error || `HTTP Error ${response.status}`);
             }
 
-            // Membaca balasan Gemini yang diformat ala OpenAI
             if (data.choices && data.choices.length > 0) {
                 return data.choices[0].message.content;
             } else {
@@ -113,7 +119,7 @@ Format JSON:
             }
 
         } catch (error) {
-            throw error; 
+            throw error;
         }
     }
 
@@ -128,8 +134,7 @@ Format JSON:
             }
 
             if (question) {
-                // Jeda 3 detik untuk mencegah error Rate Limit dari Gemini
-                await new Promise(r => setTimeout(r, 3000)); 
+                await new Promise(r => setTimeout(r, 3000));
                 const analysis = await this.analyzeStudentAnswer(answer, question);
                 results.push({ answerId: answer.id, analysis: analysis });
             }
@@ -196,7 +201,7 @@ Format JSON:
             strengths: [], weaknesses: [], learningSuggestions: []
         };
     }
-    
+
     getFallbackCapabilityReport() {
         return { overallCapability: "Sedang", mainStrengths: [], areasForImprovement: [] };
     }
