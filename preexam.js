@@ -73,10 +73,22 @@ async function loadExamInfo() {
             // Update question count display
             questionCountEl.textContent = `${avgCount} Soal`;
 
-            // Calculate time limit (average time per question * question count)
-            const avgTimePerQuestion = questionsData.reduce((sum, q) => sum + (q.time_limit_minutes || 30), 0) / questionsData.length;
-            const totalTime = Math.round(avgTimePerQuestion * avgCount / 30); // Assuming 30 questions
-            
+            // ✅ PERBAIKAN: Logika waktu sebelumnya salah (hasil selalu kecil karena dibagi 30 lagi).
+            // time_limit_minutes di DB adalah total waktu ujian (misal 60).
+            // Jika nilainya sangat kecil (<= 5), asumsikan itu waktu per soal lalu kalikan jumlah soal.
+            const firstTimeLimit = questionsData[0]?.time_limit_minutes;
+            let totalTime;
+            if (firstTimeLimit && firstTimeLimit > 5) {
+                // Sudah merupakan total waktu ujian — pakai langsung
+                totalTime = firstTimeLimit;
+            } else if (firstTimeLimit && firstTimeLimit <= 5) {
+                // Waktu per soal — kalikan dengan jumlah soal
+                totalTime = Math.round(firstTimeLimit * avgCount);
+            } else {
+                // Default 60 menit jika kolom time_limit_minutes kosong
+                totalTime = 60;
+            }
+
             timeLimitEl.textContent = `${totalTime} Menit`;
         } else {
             // Default values if no questions
