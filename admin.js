@@ -5032,47 +5032,45 @@ async function buildStudentExportData(userId) {
     // Fungsi helper: ambil AI per sesi tertentu
     async function getAIPerSession(sessionId) {
         try {
-            // Ambil semua answer_id untuk sesi ini (tanpa limit)
-            const { data: allAnswers } = await supabase
+            // Ambil SEMUA answer_id untuk sesi ini
+            const { data: allAnswers, error: ansErr } = await supabase
                 .from('exam_answers').select('id, question_id')
                 .eq('exam_session_id', sessionId);
+            if (ansErr) { console.warn('getAIPerSession answerErr:', ansErr); return null; }
             if (!allAnswers || allAnswers.length === 0) return null;
 
-            // Dedup: ambil 1 answer_id per question_id (yang pertama)
-            const seenQ = new Set();
-            const uniqueAnswerIds = [];
-            allAnswers.forEach(a => {
-                if (!seenQ.has(a.question_id)) {
-                    seenQ.add(a.question_id);
-                    uniqueAnswerIds.push(a.id);
-                }
-            });
+            // Coba dengan SEMUA answer_id dulu (termasuk duplikat)
+            // karena gemini_analyses mungkin tersimpan di salah satu dari duplikat
+            const allAnswerIds = allAnswers.map(a => a.id);
 
-            // Ambil semua analisis AI untuk answer_id tersebut
-            const { data: geminiData } = await supabase
+            const { data: geminiData, error: gemErr } = await supabase
                 .from('gemini_analyses').select('analysis_data')
-                .in('answer_id', uniqueAnswerIds);
-            if (!geminiData || geminiData.length === 0) return null;
+                .in('answer_id', allAnswerIds);
+            if (gemErr) { console.warn('getAIPerSession geminiErr:', gemErr); return null; }
+            if (!geminiData || geminiData.length === 0) {
+                console.warn('getAIPerSession: no gemini data for session', sessionId, 'with', allAnswerIds.length, 'answer IDs');
+                return null;
+            }
 
-            // Filter yang punya data valid (bukan fallback kosong)
-            const validData = geminiData.filter(g =>
-                (g.analysis_data?.strengths?.length > 0) ||
-                (g.analysis_data?.weaknesses?.length > 0) ||
-                (g.analysis_data?.explanation && g.analysis_data.explanation.length > 10)
-            );
+            console.log(`getAIPerSession: found ${geminiData.length} analyses for session ${sessionId}`);
 
-            // Jika tidak ada yang valid, coba pakai semua data
-            const sourceData = validData.length > 0 ? validData : geminiData;
+            // Ambil semua data yang punya konten apapun
+            const allData = geminiData.filter(g => g.analysis_data);
+            if (allData.length === 0) return null;
 
-            const strengths = [...new Set(sourceData.flatMap(g => g.analysis_data?.strengths || []))].filter(Boolean).slice(0, 3);
-            const weaknesses = [...new Set(sourceData.flatMap(g => g.analysis_data?.weaknesses || []))].filter(Boolean).slice(0, 3);
-            const suggestions = [...new Set(sourceData.flatMap(g => g.analysis_data?.learningSuggestions || []))].filter(Boolean).slice(0, 3);
-            const explanation = sourceData.find(g => g.analysis_data?.explanation?.length > 10)?.analysis_data?.explanation || '';
+            const strengths = [...new Set(allData.flatMap(g => g.analysis_data?.strengths || []))].filter(s => s && s.length > 3).slice(0, 3);
+            const weaknesses = [...new Set(allData.flatMap(g => g.analysis_data?.weaknesses || []))].filter(w => w && w.length > 3).slice(0, 3);
+            const suggestions = [...new Set(allData.flatMap(g => g.analysis_data?.learningSuggestions || []))].filter(s => s && s.length > 3).slice(0, 3);
+            const explanation = allData.find(g => g.analysis_data?.explanation?.length > 10)?.analysis_data?.explanation || '';
 
-            if (strengths.length === 0 && weaknesses.length === 0 && !explanation) return null;
+            // Jika semua kosong berarti AI belum jalan dengan benar (data fallback)
+            if (strengths.length === 0 && weaknesses.length === 0 && suggestions.length === 0 && !explanation) {
+                console.warn('getAIPerSession: data AI kosong (kemungkinan fallback/Groq error) untuk session', sessionId);
+                return { ringkasan: 'Analisis AI belum tersedia. Pastikan Edge Function Gemini sudah dikonfigurasi.', kekuatan: '-', kelemahan: '-', rekomendasi: '-' };
+            }
 
             return {
-                ringkasan: explanation || (weaknesses.length > 0 ? weaknesses[0] : '-'),
+                ringkasan: explanation || (weaknesses.length > 0 ? weaknesses[0] : (strengths.length > 0 ? 'Kekuatan: ' + strengths[0] : '-')),
                 kekuatan: strengths.length > 0 ? strengths.join('; ') : '-',
                 kelemahan: weaknesses.length > 0 ? weaknesses.join('; ') : '-',
                 rekomendasi: suggestions.length > 0 ? suggestions.join('; ') : '-'
@@ -6520,7 +6518,31 @@ async function loadFullSummaryTable() {
                         ${skor}
                     </span>
                 </td>
-                <td style="padding:8px 12px;font-size:0.78rem;color:#374151;max-width:200px;">${trim(row[8], 80)}</td>
+                <td style="padding:8px 12px;font-size:0.75rem;color:#374151;max-width:220px;">
+                    ${(() => {
+                        const peta = String(row[8] || '-');
+                        if (peta === '-') return '-';
+                        // Parse "Bab: XX% | Bab: XX%" jadi mini bar chart
+                        const items = peta.split('|').map(s => s.trim()).filter(Boolean);
+                        if (items.length === 0) return peta;
+                        return items.map(item => {
+                            const match = item.match(/^(.+):\s*(\d+)%$/);
+                            if (!match) return `<div style="font-size:0.7rem;color:#6b7280;">${item}</div>`;
+                            const [, bab, pct] = match;
+                            const pctNum = parseInt(pct);
+                            const color = pctNum >= 70 ? '#10b981' : pctNum >= 50 ? '#f59e0b' : '#ef4444';
+                            return `<div style="margin-bottom:3px;">
+                                <div style="display:flex;justify-content:space-between;font-size:0.68rem;">
+                                    <span style="color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;" title="${bab}">${bab}</span>
+                                    <span style="color:${color};font-weight:600;margin-left:4px;">${pct}%</span>
+                                </div>
+                                <div style="height:4px;background:#f3f4f6;border-radius:2px;margin-top:1px;">
+                                    <div style="height:4px;width:${pctNum}%;background:${color};border-radius:2px;"></div>
+                                </div>
+                            </div>`;
+                        }).join('');
+                    })()}
+                </td>
                 <td style="padding:8px 12px;text-align:center;color:#059669;font-weight:600;">${row[7] || 0}</td>
                 <td style="padding:8px 12px;text-align:center;color:#dc2626;font-weight:600;">${row[10] !== undefined ? row[10] : '-'}</td>
                 <td style="padding:8px 12px;font-size:0.78rem;color:#374151;max-width:180px;">${trim(row[11], 80)}</td>
