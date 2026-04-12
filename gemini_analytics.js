@@ -1,18 +1,15 @@
-// gemini_analytics.js - Murni menggunakan Google Gemini
+// gemini_analytics.js - Menggunakan Edge Function Supabase sebagai proxy
+// API key TIDAK disimpan di sini - aman untuk GitHub
 import { supabase } from './clientSupabase.js';
 
-// KONFIGURASI
-const FUNCTION_URL = 'https://tsgldkyuktqpsbeuevsn.supabase.co/functions/v1/gemini-chat';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2OTExOTksImV4cCI6MjA3OTI2NzE5OX0.C0g6iZcwd02ZFmuGFluYXScX9uuahntJtkPvHt5g1FE';
+const EDGE_FUNCTION_URL = 'https://tsgldkyuktqpsbeuevsn.supabase.co/functions/v1/gemini-chat';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDA4MDYwNjcsImV4cCI6MjA1NjM4MjA2N30.tQSNSjP1G-HONEnRmKCE73nMgFrHFXJWyJ_PbuwuBHA';
 
 class GeminiAnalytics {
     constructor() {
-        this.functionUrl = FUNCTION_URL;
-        this.supabaseKey = SUPABASE_ANON_KEY;
         this.cache = new Map();
     }
 
-    // Fungsi Utama: Analisis Jawaban
     async analyzeStudentAnswer(answerData, questionData) {
         try {
             const cacheKey = `${answerData.id}_${questionData.id}`;
@@ -20,167 +17,141 @@ class GeminiAnalytics {
 
             console.log(`[Gemini AI] Menganalisis jawaban ID: ${answerData.id}...`);
             const prompt = this.buildAnalysisPrompt(answerData, questionData);
-
-            const responseText = await this.callEdgeFunction(prompt);
+            const responseText = await this.callGeminiAPI(prompt);
             const analysis = this.parseAIResponse(responseText);
 
             this.cache.set(cacheKey, analysis);
             await this.storeAnalysisResult(answerData.id, analysis);
-
             return analysis;
         } catch (error) {
             console.error('[Gemini AI] Gagal menganalisis:', error);
-
             if (error.message && error.message.includes('Rate limit')) {
-                console.warn('[Gemini AI] Rate limit tercapai, mencoba lagi...');
                 throw error;
             }
-
-            return this.getFallbackAnalysis(answerData, questionData);
+            return this.getFallbackAnalysis();
         }
     }
 
     buildAnalysisPrompt(answerData, questionData) {
-        // ✅ PERBAIKAN: Gunakan 'chapter' dan 'sub_chapter' (sesuai nama kolom di DB Supabase)
-        //    Sebelumnya salah pakai: questionData.bab dan questionData.sub_bab
         const competenceText = questionData.competence
-            || this.getCompetencyDescription(questionData.chapter, questionData.sub_chapter)
+            || this.getCompetencyDescription(questionData.bab || questionData.chapter, questionData.sub_bab || questionData.sub_chapter)
             || 'Kompetensi umum matematika';
 
-        return `
-Analisis jawaban siswa matematika ini berdasarkan konteks berikut:
+        return `Analisis jawaban siswa matematika ini:
 TIPE SOAL: ${questionData.tipe_soal || questionData.question_type || ''}
-BAB: ${questionData.chapter || ''}
-SUB BAB: ${questionData.sub_chapter || ''}
+BAB: ${questionData.bab || questionData.chapter || ''}
+SUB BAB: ${questionData.sub_bab || questionData.sub_chapter || ''}
 KOMPETENSI: ${competenceText}
 SOAL: ${questionData.question_text || ''}
 KUNCI JAWABAN: ${questionData.correct_answer || ''}
-JAWABAN SISWA: ${answerData.answer_text || answerData.selected_answer || ''}
+JAWABAN SISWA: ${answerData.selected_answer || answerData.answer_text || ''}
 
-Tugas: Berikan analisis mendalam tentang kekurangan, kelebihan siswa, dan saran belajar spesifik berdasarkan tipe soal, bab, sub bab, dan kompetensi yang diharapkan. Output HANYA dalam format JSON valid. Jangan ada teks lain.
-Format JSON:
-{
-    "score": (angka 0-100 berdasarkan akurasi dan pemahaman konsep),
-    "correctness": "Benar/Salah/Sebagian",
-    "strengths": ["Kelebihan siswa berdasarkan kompetensi, mis: 'Memahami operasi aritmetika pada bilangan dengan baik'"],
-    "weaknesses": ["Kekurangan siswa, mis: 'Kesulitan dalam menerapkan teorema Pythagoras'"],
-    "explanation": "Penjelasan detail kekurangan dan kelebihan siswa terkait tipe soal, bab, sub bab, dan kompetensi...",
-    "learningSuggestions": ["Saran belajar spesifik berdasarkan kompetensi, mis: 'Latih penyelesaian sistem persamaan linear dua variabel'"]
-}
-`.trim();
+Output HANYA JSON valid tanpa teks lain:
+{"score":0-100,"correctness":"Benar/Salah/Sebagian","strengths":["..."],"weaknesses":["..."],"explanation":"...","learningSuggestions":["..."]}`;
     }
 
-    // ✅ PERBAIKAN: Parameter diganti dari (bab, subBab) → (chapter, subChapter)
-    //    agar konsisten dengan nama kolom DB
-    getCompetencyDescription(chapter, subChapter) {
+    getCompetencyDescription(bab, subBab) {
         const competencies = {
             'Bilangan': {
-                'Bilangan real': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Perbandingan dan sifat-sifat bilangan; Operasi aritmetika pada bilangan; Estimasi/perkiraan hasil perhitungan; Faktorisasi prima bilangan asli; Rasio (skala, proporsi, dan laju perubahan); Perbandingan senilai dan berbalik nilai.'
+                'Bilangan Real': 'Perbandingan dan sifat bilangan; operasi aritmetika; estimasi; faktorisasi prima; rasio, skala, proporsi, laju perubahan; perbandingan senilai dan berbalik nilai. Mencakup bilangan bulat, rasional, irasional, berpangkat, akar, dan notasi ilmiah.',
+                'Bilangan real': 'Perbandingan dan sifat bilangan; operasi aritmetika; estimasi; faktorisasi prima; rasio, skala, proporsi, laju perubahan; perbandingan senilai dan berbalik nilai.'
             },
             'Aljabar': {
-                'Persamaan dan pertidaksamaan linear': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Persamaan linear satu variabel; Pertidaksamaan linear satu variabel; Sistem persamaan linear dua variabel.',
-                'Bentuk Aljabar': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Bentuk aljabar dan sifat-sifat operasinya (komutatif, asosiatif, dan distributif).',
-                'fungsi dan barisan deret': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Relasi dan fungsi (domain, kodomain, range), serta penyajiannya; Barisan berhingga bilangan; Deret berhingga bilangan.'
+                'Persamaan dan Pertidaksamaan Linier': 'Persamaan linear satu variabel; pertidaksamaan linear satu variabel; sistem persamaan linear dua variabel.',
+                'Persamaan dan pertidaksamaan linear': 'Persamaan linear satu variabel; pertidaksamaan linear satu variabel; sistem persamaan linear dua variabel.',
+                'Bentuk Aljabar': 'Bentuk aljabar dan sifat-sifat operasinya: komutatif, asosiatif, dan distributif.',
+                'Fungsi': 'Relasi dan fungsi (domain, kodomain, range), serta penyajiannya.',
+                'Barisan dan Deret': 'Barisan berhingga bilangan; deret berhingga bilangan.',
+                'fungsi dan barisan deret': 'Relasi dan fungsi, barisan dan deret berhingga bilangan.'
+            },
+            'Geometri dan Pengukuran': {
+                'Objek Geometri': 'Hubungan antar-sudut (dua garis berpotongan/sejajar); Teorema Pythagoras; kekongruenan dan kesebangunan bangun datar; jaring-jaring bangun ruang (prisma, tabung, limas, kerucut).',
+                'Objek geometri': 'Hubungan antar-sudut; Teorema Pythagoras; kesebangunan; jaring-jaring bangun ruang.',
+                'Transformasi Geometri': 'Transformasi tunggal: refleksi, translasi, rotasi, dan dilatasi terhadap titik, garis, dan bangun datar pada bidang.',
+                'transformasi geometri': 'Refleksi, translasi, rotasi, dan dilatasi terhadap bangun datar.',
+                'Pengukuran': 'Keliling dan luas bangun datar (segi banyak, lingkaran, gabungannya); volume bangun ruang (prisma, limas, bola).',
+                'pengukuran': 'Keliling, luas bangun datar, volume bangun ruang.'
             },
             'Geometri dan pengukuran': {
-                'Objek geometri': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Hubungan antar-sudut yang terbentuk oleh dua garis yang berpotongan, dan oleh dua garis sejajar yang dipotong suatu garis transversal (termasuk penentuan besar sudut dalam segitiga); Teorema Pythagoras; Kekongruenan dan kesebangunan bangun datar; Jaring-jaring bangun ruang (prisma, tabung, limas dan kerucut).',
-                'transformasi geometri': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Transformasi tunggal (refleksi, translasi, rotasi, dan dilatasi) terhadap titik, garis, dan bangun datar pada bidang.',
-                'pengukuran': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Keliling dan luas bangun datar (daerah segi banyak dan daerah lingkaran, serta daerah gabungannya); Volume bangun ruang (prisma, limas, dan bola).'
+                'Objek Geometri': 'Hubungan antar-sudut; Teorema Pythagoras; kekongruenan dan kesebangunan; jaring-jaring bangun ruang.',
+                'Transformasi Geometri': 'Refleksi, translasi, rotasi, dan dilatasi terhadap bangun datar.',
+                'Pengukuran': 'Keliling dan luas bangun datar; volume bangun ruang.'
+            },
+            'Data dan Peluang': {
+                'Data': 'Perumusan pertanyaan untuk data; penyajian dan interpretasi data (diagram batang, garis, lingkaran, tabel); mean, median, modus, jangkauan; perbandingan ukuran pemusatan dan penyebaran.',
+                'Peluang': 'Peluang dan frekuensi relatif dari kejadian tunggal.',
+                'Data dan peluang': 'Penyajian data, mean, median, modus, peluang kejadian tunggal.'
             },
             'Data dan peluang': {
-                'Data dan peluang': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Perumusan pertanyaan untuk mendapatkan data, serta penyajian, dan penginterpretasian data; Penentuan dan penaksiran rerata (mean), median, modus, dan jangkauan (range) dari data; Perbandingan ukuran pemusatan dan ukuran penyebaran beberapa kelompok data; Peluang dan frekuensi relatif dari kejadian tunggal.'
+                'Data': 'Penyajian dan interpretasi data; mean, median, modus, jangkauan.',
+                'Peluang': 'Peluang dan frekuensi relatif dari kejadian tunggal.'
             }
         };
-        // ✅ PERBAIKAN: Gunakan parameter chapter dan subChapter
-        return competencies[chapter]?.[subChapter] || 'Kompetensi umum matematika';
+        // Cari exact match dulu, lalu case-insensitive
+        if (competencies[bab]?.[subBab]) return competencies[bab][subBab];
+        // Fallback: cari key yang mirip (case-insensitive)
+        for (const [k, v] of Object.entries(competencies)) {
+            if (k.toLowerCase() === bab?.toLowerCase()) {
+                for (const [sk, sv] of Object.entries(v)) {
+                    if (sk.toLowerCase() === subBab?.toLowerCase()) return sv;
+                }
+            }
+        }
+        return 'Kompetensi umum matematika SMP';
     }
 
-    async callEdgeFunction(prompt) {
-        try {
-            const response = await fetch(this.functionUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.supabaseKey}`
-                },
-                body: JSON.stringify({ message: prompt })
-            });
+    async callGeminiAPI(prompt) {
+        // Gunakan Edge Function sebagai proxy - API key aman di Supabase Secrets
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
 
-            const data = await response.json();
+        const response = await fetch(EDGE_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
+                'apikey': SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({ message: prompt })
+        });
 
-            if (!response.ok || data.error) {
-                throw new Error(data.error || `HTTP Error ${response.status}`);
+        if (!response.ok) {
+            const errText = await response.text();
+            if (response.status === 429 || errText.includes('quota') || errText.includes('RESOURCE_EXHAUSTED')) {
+                throw new Error('Rate limit: ' + errText);
             }
-
-            if (data.choices && data.choices.length > 0) {
-                return data.choices[0].message.content;
-            } else {
-                throw new Error("Gemini AI tidak memberikan jawaban.");
-            }
-
-        } catch (error) {
-            throw error;
+            throw new Error(`Edge Function error ${response.status}: ${errText}`);
         }
+
+        const data = await response.json();
+        // Edge Function mengembalikan: { choices: [{ message: { content: text } }] }
+        const text = data.choices?.[0]?.message?.content;
+        if (!text) throw new Error('Edge Function tidak memberikan jawaban: ' + JSON.stringify(data));
+        return text;
     }
 
     async batchAnalyzeAnswers(answersData, questionsMap) {
         const results = [];
         for (const answer of answersData) {
-            let question;
-            if (questionsMap instanceof Map) {
-                question = questionsMap.get(answer.question_id);
-            } else {
-                question = questionsMap[answer.question_id];
-            }
-
+            const question = questionsMap instanceof Map
+                ? questionsMap.get(answer.question_id)
+                : questionsMap[answer.question_id];
             if (question) {
-                await new Promise(r => setTimeout(r, 3000));
+                await new Promise(r => setTimeout(r, 2000));
                 const analysis = await this.analyzeStudentAnswer(answer, question);
-                results.push({ answerId: answer.id, analysis: analysis });
+                results.push({ answerId: answer.id, analysis });
             }
         }
         return results;
     }
 
-    async generateCapabilityReport(studentId, analyses) {
-        try {
-            const prompt = `Buat laporan ringkas JSON (overallCapability, mainStrengths, areasForImprovement) dari ${analyses.length} data ini.`;
-            const responseText = await this.callEdgeFunction(prompt);
-            return this.parseCapabilityReport(responseText);
-        } catch (error) {
-            return this.getFallbackCapabilityReport();
-        }
-    }
-
     parseAIResponse(responseText) {
         try {
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) return JSON.parse(jsonMatch[0]);
-            return this.parseTextResponse(responseText);
-        } catch (e) {
-            return this.parseTextResponse(responseText);
-        }
-    }
-
-    parseTextResponse(text) {
-        return {
-            score: 50,
-            correctness: "Perlu Review",
-            strengths: [],
-            weaknesses: [],
-            explanation: text,
-            learningSuggestions: []
-        };
-    }
-
-    parseCapabilityReport(text) {
-        try {
-            const cleanText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-            if (jsonMatch) return JSON.parse(jsonMatch[0]);
+            const clean = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            const match = clean.match(/\{[\s\S]*\}/);
+            if (match) return JSON.parse(match[0]);
         } catch (e) {}
-        return this.getFallbackCapabilityReport();
+        return { score: 50, correctness: "Perlu Review", strengths: [], weaknesses: [], explanation: responseText, learningSuggestions: [] };
     }
 
     async storeAnalysisResult(answerId, analysis) {
@@ -194,12 +165,7 @@ Format JSON:
     }
 
     getFallbackAnalysis() {
-        return {
-            score: 0,
-            correctness: "Error",
-            explanation: "Analisis AI gagal.",
-            strengths: [], weaknesses: [], learningSuggestions: []
-        };
+        return { score: 0, correctness: "Error", explanation: "Analisis AI gagal.", strengths: [], weaknesses: [], learningSuggestions: [] };
     }
 
     getFallbackCapabilityReport() {
@@ -211,46 +177,25 @@ export const geminiAnalytics = new GeminiAnalytics();
 export function isGeminiAvailable() { return true; }
 export async function getGeminiStatus() {
     try {
-        const response = await fetch(FUNCTION_URL, {
+        const response = await fetch(EDGE_FUNCTION_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                'apikey': SUPABASE_ANON_KEY
             },
-            body: JSON.stringify({ message: 'Test connection' })
+            body: JSON.stringify({ message: 'Hi' })
         });
-
         const data = await response.json();
-
-        if (response.ok && !data.error) {
-            return {
-                available: true,
-                connected: true,
-                validResponse: true,
-                responseTime: Date.now() - performance.now(),
-                apiConfigured: true,
-                cacheSize: geminiAnalytics.cache.size,
-                totalAnalyses: 0,
-                lastTest: new Date()
-            };
-        } else {
-            return {
-                available: true,
-                connected: true,
-                validResponse: false,
-                error: data.error,
-                apiConfigured: true,
-                lastTest: new Date()
-            };
-        }
-    } catch (error) {
         return {
-            available: false,
-            connected: false,
-            validResponse: false,
-            error: error.message,
+            available: true,
+            connected: response.ok,
+            validResponse: response.ok,
+            error: null,
             apiConfigured: true,
+            cacheSize: geminiAnalytics.cache.size,
             lastTest: new Date()
         };
+    } catch (error) {
+        return { available: false, connected: false, validResponse: false, error: error.message, apiConfigured: true, lastTest: new Date() };
     }
 }
