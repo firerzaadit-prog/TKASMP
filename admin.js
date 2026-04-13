@@ -5054,23 +5054,49 @@ async function buildStudentExportData(userId) {
 
             console.log(`getAIPerSession: found ${geminiData.length} analyses for session ${sessionId}`);
 
-            // Ambil semua data yang punya konten apapun
-            const allData = geminiData.filter(g => g.analysis_data);
-            if (allData.length === 0) return null;
+            // Parse analysis_data - bisa berupa object atau string JSON
+            const parsedData = geminiData.map(g => {
+                let ad = g.analysis_data;
+                if (typeof ad === 'string') {
+                    try {
+                        // Bersihkan markdown code block jika ada
+                        const clean = ad.replace(/```json/g,'').replace(/```/g,'').trim();
+                        const match = clean.match(/\{[\s\S]*\}/);
+                        if (match) ad = JSON.parse(match[0]);
+                    } catch(e) { ad = { explanation: ad }; }
+                }
+                return ad;
+            }).filter(Boolean);
 
-            const strengths = [...new Set(allData.flatMap(g => g.analysis_data?.strengths || []))].filter(s => s && s.length > 3).slice(0, 3);
-            const weaknesses = [...new Set(allData.flatMap(g => g.analysis_data?.weaknesses || []))].filter(w => w && w.length > 3).slice(0, 3);
-            const suggestions = [...new Set(allData.flatMap(g => g.analysis_data?.learningSuggestions || []))].filter(s => s && s.length > 3).slice(0, 3);
-            const explanation = allData.find(g => g.analysis_data?.explanation?.length > 10)?.analysis_data?.explanation || '';
+            if (parsedData.length === 0) return null;
 
-            // Jika semua kosong berarti AI belum jalan dengan benar (data fallback)
-            if (strengths.length === 0 && weaknesses.length === 0 && suggestions.length === 0 && !explanation) {
-                console.warn('getAIPerSession: data AI kosong (kemungkinan fallback/Groq error) untuk session', sessionId);
-                return { ringkasan: 'Analisis AI belum tersedia. Pastikan Edge Function Gemini sudah dikonfigurasi.', kekuatan: '-', kelemahan: '-', rekomendasi: '-' };
+            const strengths = [...new Set(parsedData.flatMap(g => g?.strengths || []))].filter(s => s && s.length > 3 && !s.includes('{') && !s.includes('json')).slice(0, 3);
+            const weaknesses = [...new Set(parsedData.flatMap(g => g?.weaknesses || []))].filter(w => w && w.length > 3 && !w.includes('{') && !w.includes('json')).slice(0, 3);
+            const suggestions = [...new Set(parsedData.flatMap(g => g?.learningSuggestions || []))].filter(s => s && s.length > 3 && !s.includes('{') && !s.includes('json')).slice(0, 3);
+
+            // Buat ringkasan dari strengths dan weaknesses
+            let ringkasan = '';
+            if (strengths.length > 0 && weaknesses.length > 0) {
+                ringkasan = `Siswa memiliki kekuatan dalam ${strengths[0].toLowerCase()}. Perlu perhatian pada ${weaknesses[0].toLowerCase()}.`;
+            } else if (strengths.length > 0) {
+                ringkasan = `Siswa menunjukkan pemahaman yang baik dalam ${strengths[0].toLowerCase()}.`;
+            } else if (weaknesses.length > 0) {
+                ringkasan = `Siswa perlu meningkatkan pemahaman pada ${weaknesses[0].toLowerCase()}.`;
+            } else {
+                // Coba ambil dari explanation tapi bersihkan dari raw JSON
+                const rawExp = parsedData.find(g => g?.explanation?.length > 10)?.explanation || '';
+                ringkasan = rawExp.replace(/```json[\s\S]*?```/g,'').replace(/\{[\s\S]*?\}/g,'').trim();
+                if (!ringkasan || ringkasan.length < 5) ringkasan = 'Analisis tersedia. Lihat kekuatan dan kelemahan.';
+            }
+
+            // Jika semua kosong
+            if (strengths.length === 0 && weaknesses.length === 0 && suggestions.length === 0) {
+                console.warn('getAIPerSession: data AI kosong untuk session', sessionId);
+                return null;
             }
 
             return {
-                ringkasan: explanation || (weaknesses.length > 0 ? weaknesses[0] : (strengths.length > 0 ? 'Kekuatan: ' + strengths[0] : '-')),
+                ringkasan: ringkasan,
                 kekuatan: strengths.length > 0 ? strengths.join('; ') : '-',
                 kelemahan: weaknesses.length > 0 ? weaknesses.join('; ') : '-',
                 rekomendasi: suggestions.length > 0 ? suggestions.join('; ') : '-'
