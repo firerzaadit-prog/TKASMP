@@ -4348,12 +4348,6 @@ function renderStudentExamRows(exams) {
                 <td style="padding: 12px;">${waktu}</td>
                 <td style="padding: 12px;">
                     <div style="display:flex;gap:5px;align-items:center;">
-                        <button onclick="showStudentDetail('${userId}')" class="mini-btn" style="background: #4f46e5;" title="Lihat Detail & Peta Kompetensi">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        <button onclick="window.open('ai_viewer.html?student_id=${userId}', '_blank')" class="mini-btn" style="background: #7c3aed;" title="Lihat Analisis AI">
-                            <i class="fas fa-robot"></i>
-                        </button>
                         <button onclick="deleteStudentExamData('${userId}', '${studentName}')" class="mini-btn" style="background: #ef4444;" title="Hapus Data Ujian">
                             <i class="fas fa-trash"></i>
                         </button>
@@ -4925,16 +4919,6 @@ async function showStudentDetail(userId) {
                             </div>
                         </div>
 
-                        <!-- Peta Kompetensi Radar Chart -->
-                        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:1rem;">
-                            <h4 style="margin:0 0 1rem;color:#374151;font-size:0.95rem;">
-                                <i class="fas fa-chart-radar" style="color:#667eea;"></i> Peta Kompetensi
-                            </h4>
-                            <div style="position:relative;height:250px;">
-                                <canvas id="${uniqueId}"></canvas>
-                            </div>
-                            ${chapterLabels.length === 0 ? '<p style="text-align:center;color:#9ca3af;font-size:0.85rem;margin-top:0.5rem;">Belum ada data ujian</p>' : ''}
-                        </div>
                     </div>
 
                     <!-- Kanan: Analisis AI + Performa per Bab -->
