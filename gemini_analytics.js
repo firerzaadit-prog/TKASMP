@@ -33,21 +33,49 @@ class GeminiAnalytics {
     }
 
     buildAnalysisPrompt(answerData, questionData) {
+        const bab = questionData.bab || questionData.chapter || '';
+        const subBab = questionData.sub_bab || questionData.sub_chapter || '';
         const competenceText = questionData.competence
-            || this.getCompetencyDescription(questionData.bab || questionData.chapter, questionData.sub_bab || questionData.sub_chapter)
+            || this.getCompetencyDescription(bab, subBab)
             || 'Kompetensi umum matematika';
 
-        return `Analisis jawaban siswa matematika ini:
-TIPE SOAL: ${questionData.tipe_soal || questionData.question_type || ''}
-BAB: ${questionData.bab || questionData.chapter || ''}
-SUB BAB: ${questionData.sub_bab || questionData.sub_chapter || ''}
-KOMPETENSI: ${competenceText}
-SOAL: ${questionData.question_text || ''}
-KUNCI JAWABAN: ${questionData.correct_answer || ''}
-JAWABAN SISWA: ${answerData.selected_answer || answerData.answer_text || ''}
+        const isCorrect = answerData.is_correct;
+        const jawabanSiswa = answerData.selected_answer || answerData.answer_text || '';
+        const kunciJawaban = questionData.correct_answer || (questionData.correct_answers || []).join(', ') || '';
+        const penjelasan = questionData.explanation || '';
+        const levelKognitif = questionData.level_kognitif || '';
+        const prosesBerpikir = questionData.proses_berpikir || '';
 
-Output HANYA JSON valid tanpa teks lain:
-{"score":0-100,"correctness":"Benar/Salah/Sebagian","strengths":["..."],"weaknesses":["..."],"explanation":"...","learningSuggestions":["..."]}`;
+        return `Kamu adalah guru matematika SMP yang menganalisis jawaban siswa pada soal TKA (Tes Kemampuan Akademik).
+
+INFORMASI SOAL:
+- Elemen: ${bab}
+- Sub-elemen: ${subBab}
+- Level Kognitif: ${levelKognitif}
+- Proses Berpikir: ${prosesBerpikir}
+- Kompetensi: ${competenceText}
+- Soal: ${questionData.question_text || ''}
+- Kunci Jawaban: ${kunciJawaban}
+- Pembahasan: ${penjelasan}
+
+JAWABAN SISWA: ${jawabanSiswa}
+STATUS: ${isCorrect ? 'BENAR' : 'SALAH'}
+
+TUGAS:
+${isCorrect
+  ? `Jawaban siswa BENAR. Identifikasi kompetensi spesifik yang dikuasai siswa dari soal ini.`
+  : `Jawaban siswa SALAH (jawaban: ${jawabanSiswa}, seharusnya: ${kunciJawaban}). Identifikasi kesalahan konsep atau pemahaman yang menyebabkan siswa menjawab salah.`
+}
+
+Aturan WAJIB:
+- Jika jawaban BENAR: strengths berisi kompetensi yang dikuasai, weaknesses HARUS array kosong []
+- Jika jawaban SALAH: weaknesses berisi kesalahan konsep spesifik, strengths boleh kosong []
+- Jangan tulis "Tidak ada kelemahan" di weaknesses jika jawaban benar - tulis [] saja
+- Semua item dalam bahasa Indonesia, spesifik pada materi soal ini
+- learningSuggestions harus relevan dengan materi soal ini
+
+Output HANYA JSON valid tanpa markdown, tanpa teks lain:
+{"score":0-100,"correctness":"Benar/Salah/Sebagian","strengths":[],"weaknesses":[],"explanation":"ringkasan singkat 1 kalimat","learningSuggestions":[]}`;
     }
 
     getCompetencyDescription(bab, subBab) {
