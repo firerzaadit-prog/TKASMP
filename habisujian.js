@@ -169,7 +169,7 @@ function displayExamResults(session) {
     // Display pass status
     const passStatusElement = document.getElementById('passStatus');
     if (passStatusElement) {
-        const isPassed = session.is_passed || (session.total_score >= 70);
+        const isPassed = session.is_passed || (session.total_score >= 50);
         passStatusElement.textContent = isPassed ? '🎉 LULUS' : '❌ TIDAK LULUS';
         passStatusElement.className = `pass-status ${isPassed ? 'pass' : 'fail'}`;
     }
@@ -522,14 +522,24 @@ async function triggerAIAnalysis(session) {
         console.log(`Dedup: ${answersData.length} records → ${dedupedAnswers.length} unik`);
         const uniqueAnswersData = dedupedAnswers;
 
-        // Cek jawaban yang belum dianalisis (gunakan data yang sudah dedup)
+        // Cek jawaban yang belum dianalisis atau punya data kosong (fallback)
         const { data: existingAnalyses } = await supabase
             .from('gemini_analyses')
-            .select('answer_id')
+            .select('answer_id, analysis_data')
             .in('answer_id', uniqueAnswersData.map(a => a.id));
 
+        // Anggap sudah dianalisis HANYA jika punya strengths ATAU weaknesses yang tidak kosong
         const analyzedAnswerIds = new Set(
-            (existingAnalyses || []).map(a => a.answer_id)
+            (existingAnalyses || [])
+                .filter(a => {
+                    const ad = a.analysis_data;
+                    if (!ad) return false;
+                    const hasStrengths = Array.isArray(ad.strengths) && ad.strengths.length > 0;
+                    const hasWeaknesses = Array.isArray(ad.weaknesses) && ad.weaknesses.length > 0;
+                    const hasExplanation = ad.explanation && ad.explanation.length > 20 && !ad.explanation.includes('Analisis AI gagal');
+                    return hasStrengths || hasWeaknesses || hasExplanation;
+                })
+                .map(a => a.answer_id)
         );
 
         const answersToAnalyze = uniqueAnswersData.filter(answer => !analyzedAnswerIds.has(answer.id));
@@ -557,9 +567,10 @@ async function triggerAIAnalysis(session) {
                 completedAnalyses++;
                 console.log(`Analyzed answer ${completedAnalyses}/${answersToAnalyze.length}`);
 
-                // Jeda 4 detik antar soal untuk hindari rate limit
+                // Jeda adaptif: 3-6 detik random untuk hindari collision saat banyak siswa bersamaan
                 if (i < answersToAnalyze.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 4000));
+                    const jitter = 3000 + Math.random() * 3000; // 3-6 detik random
+                    await new Promise(resolve => setTimeout(resolve, jitter));
                 }
             } catch (error) {
                 // Jika rate limit, hentikan — jangan terus coba

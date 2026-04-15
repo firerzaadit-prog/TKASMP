@@ -128,7 +128,7 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
         return 'Kompetensi umum matematika SMP';
     }
 
-    async callGeminiAPI(prompt) {
+    async callGeminiAPI(prompt, retryCount = 0) {
         // Gunakan Edge Function sebagai proxy - API key aman di Supabase Secrets
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
@@ -145,8 +145,20 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
 
         if (!response.ok) {
             const errText = await response.text();
+            // Rate limit: tunggu dan retry maksimal 2x
             if (response.status === 429 || errText.includes('quota') || errText.includes('RESOURCE_EXHAUSTED')) {
+                if (retryCount < 2) {
+                    const waitTime = (retryCount + 1) * 15000; // 15s, 30s
+                    console.warn(`[AI] Rate limit - tunggu ${waitTime/1000}s lalu retry...`);
+                    await new Promise(r => setTimeout(r, waitTime));
+                    return this.callGeminiAPI(prompt, retryCount + 1);
+                }
                 throw new Error('Rate limit: ' + errText);
+            }
+            // Server error (503, 500): retry sekali
+            if ((response.status >= 500) && retryCount < 1) {
+                await new Promise(r => setTimeout(r, 5000));
+                return this.callGeminiAPI(prompt, retryCount + 1);
             }
             throw new Error(`Edge Function error ${response.status}: ${errText}`);
         }
