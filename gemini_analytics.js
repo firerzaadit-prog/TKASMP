@@ -128,7 +128,7 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
         return 'Kompetensi umum matematika SMP';
     }
 
-    async callGeminiAPI(prompt, retryCount = 0) {
+    async callGeminiAPI(prompt) {
         // Gunakan Edge Function sebagai proxy - API key aman di Supabase Secrets
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
@@ -145,20 +145,8 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
 
         if (!response.ok) {
             const errText = await response.text();
-            // Rate limit: tunggu dan retry maksimal 2x
             if (response.status === 429 || errText.includes('quota') || errText.includes('RESOURCE_EXHAUSTED')) {
-                if (retryCount < 2) {
-                    const waitTime = (retryCount + 1) * 15000; // 15s, 30s
-                    console.warn(`[AI] Rate limit - tunggu ${waitTime/1000}s lalu retry...`);
-                    await new Promise(r => setTimeout(r, waitTime));
-                    return this.callGeminiAPI(prompt, retryCount + 1);
-                }
                 throw new Error('Rate limit: ' + errText);
-            }
-            // Server error (503, 500): retry sekali
-            if ((response.status >= 500) && retryCount < 1) {
-                await new Promise(r => setTimeout(r, 5000));
-                return this.callGeminiAPI(prompt, retryCount + 1);
             }
             throw new Error(`Edge Function error ${response.status}: ${errText}`);
         }
@@ -202,6 +190,83 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
                 updated_at: new Date()
             });
         } catch (e) { console.warn("Gagal simpan ke DB", e); }
+    }
+
+
+    // ── BATCH ANALYSIS: 1 API call untuk 30 soal sekaligus ──────────────────
+    async analyzeBatchAnswers(answersWithQuestions) {
+        const maxRetries = 3;
+        let attempt = 0;
+
+        while (attempt < maxRetries) {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                const token = session?.access_token;
+
+                const response = await fetch(EDGE_FUNCTION_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
+                        'apikey': SUPABASE_ANON_KEY
+                    },
+                    body: JSON.stringify({ answers: answersWithQuestions })
+                });
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    // Exponential backoff untuk 429 / 5xx
+                    if (response.status === 429 || response.status >= 500) {
+                        attempt++;
+                        if (attempt >= maxRetries) throw new Error(`Max retries reached: ${errText}`);
+                        const waitMs = Math.pow(2, attempt) * 5000; // 10s, 20s, 40s
+                        console.warn(`[AI Batch] Error ${response.status} - retry ${attempt}/${maxRetries} in ${waitMs/1000}s...`);
+                        await new Promise(r => setTimeout(r, waitMs));
+                        continue;
+                    }
+                    throw new Error(`Batch error ${response.status}: ${errText}`);
+                }
+
+                const data = await response.json();
+                if (!data.batch || !data.result) {
+                    throw new Error('Invalid batch response format');
+                }
+
+                console.log('[AI Batch] Analysis complete:', data.result);
+                return data.result; // { summary, strengths, weaknesses, learningSuggestions }
+
+            } catch (err) {
+                attempt++;
+                if (attempt >= maxRetries) {
+                    console.error('[AI Batch] Failed after max retries:', err);
+                    throw err;
+                }
+                const waitMs = Math.pow(2, attempt) * 5000;
+                console.warn(`[AI Batch] Retry ${attempt}/${maxRetries} in ${waitMs/1000}s...`);
+                await new Promise(r => setTimeout(r, waitMs));
+            }
+        }
+    }
+
+    // Store batch result as a single session-level record
+    async storeBatchResult(sessionId, batchResult) {
+        try {
+            // Simpan ke tabel gemini_analyses dengan answer_id = sessionId (sebagai identifier sesi)
+            // Gunakan upsert agar tidak duplikat
+            const { error } = await supabase.from('gemini_analyses').upsert({
+                answer_id: sessionId, // gunakan sessionId sebagai key unik untuk hasil batch
+                analysis_data: {
+                    ...batchResult,
+                    is_batch: true,
+                    analyzed_at: new Date().toISOString()
+                },
+                updated_at: new Date()
+            });
+            if (error) console.warn('[AI Batch] Store error:', error);
+            else console.log('[AI Batch] Result stored for session:', sessionId);
+        } catch (e) {
+            console.warn('[AI Batch] Store failed:', e);
+        }
     }
 
     getFallbackAnalysis() {

@@ -5016,15 +5016,36 @@ async function buildStudentExportData(userId) {
     // Fungsi helper: ambil AI per sesi tertentu
     async function getAIPerSession(sessionId) {
         try {
-            // Ambil SEMUA answer_id untuk sesi ini
+            // ── COBA BATCH RESULT DULU (1 record per session) ──────────────
+            const { data: batchRecord } = await supabase
+                .from('gemini_analyses')
+                .select('analysis_data')
+                .eq('answer_id', sessionId)
+                .single();
+
+            if (batchRecord?.analysis_data?.is_batch) {
+                const bd = batchRecord.analysis_data;
+                const strengths = (bd.strengths || []).filter(s => s && s.length > 3).slice(0, 3);
+                const weaknesses = (bd.weaknesses || []).filter(w => w && w.length > 3).slice(0, 3);
+                const suggestions = (bd.learningSuggestions || []).filter(s => s && s.length > 3).slice(0, 3);
+                const summary = bd.summary || '';
+                if (strengths.length > 0 || weaknesses.length > 0 || summary) {
+                    return {
+                        ringkasan: summary || (weaknesses.length > 0 ? weaknesses[0] : strengths[0] || '-'),
+                        kekuatan: strengths.length > 0 ? strengths.join('; ') : '-',
+                        kelemahan: weaknesses.length > 0 ? weaknesses.join('; ') : '-',
+                        rekomendasi: suggestions.length > 0 ? suggestions.join('; ') : '-'
+                    };
+                }
+            }
+
+            // ── FALLBACK: cek individual answer analyses ─────────────────
             const { data: allAnswers, error: ansErr } = await supabase
                 .from('exam_answers').select('id, question_id')
                 .eq('exam_session_id', sessionId);
             if (ansErr) { console.warn('getAIPerSession answerErr:', ansErr); return null; }
             if (!allAnswers || allAnswers.length === 0) return null;
 
-            // Coba dengan SEMUA answer_id dulu (termasuk duplikat)
-            // karena gemini_analyses mungkin tersimpan di salah satu dari duplikat
             const allAnswerIds = allAnswers.map(a => a.id);
 
             const { data: geminiData, error: gemErr } = await supabase
@@ -5032,7 +5053,7 @@ async function buildStudentExportData(userId) {
                 .in('answer_id', allAnswerIds);
             if (gemErr) { console.warn('getAIPerSession geminiErr:', gemErr); return null; }
             if (!geminiData || geminiData.length === 0) {
-                console.warn('getAIPerSession: no gemini data for session', sessionId, 'with', allAnswerIds.length, 'answer IDs');
+                console.warn('getAIPerSession: no gemini data for session', sessionId);
                 return null;
             }
 

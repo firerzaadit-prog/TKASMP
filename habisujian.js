@@ -110,8 +110,11 @@ async function loadExamResults() {
         // Display results
         displayExamResults(session);
 
-        // Trigger AI analysis for this exam session
-        await triggerAIAnalysis(session);
+        // Display results FIRST - don't block on AI analysis
+        // AI analysis runs in background (fire-and-forget)
+        triggerAIAnalysis(session).catch(err => {
+            console.warn('[AI Background] Analysis error (non-blocking):', err);
+        });
 
     } catch (error) {
         console.error('Error loading exam results:', error);
@@ -480,118 +483,68 @@ function retakeExam() {
 
 // Trigger AI analysis for the completed exam
 async function triggerAIAnalysis(session) {
+    // Runs in background - does NOT block the results page
     try {
-        console.log('Starting AI analysis for exam session:', examSessionId);
+        console.log('[AI Background] Starting batch analysis for session:', examSessionId);
 
-        // Ambil HANYA jawaban untuk soal yang benar-benar dikerjakan (sesuai questions yang sudah difilter)
         const answeredQuestionIds = questions.map(q => q.id);
-        if (answeredQuestionIds.length === 0) {
-            console.log('No questions to analyze');
+        if (answeredQuestionIds.length === 0) return;
+
+        // Cek apakah sudah ada hasil batch untuk session ini
+        const { data: existingBatch } = await supabase
+            .from('gemini_analyses')
+            .select('answer_id, analysis_data')
+            .eq('answer_id', examSessionId) // batch result uses sessionId as key
+            .single();
+
+        if (existingBatch?.analysis_data?.is_batch) {
+            console.log('[AI Background] Batch already analyzed for this session');
+            showAIAnalysisNotification(questions.length);
             return;
         }
 
-        const { data: answersData, error: answersError } = await supabase
+        // Ambil jawaban (dedup)
+        const { data: answersData } = await supabase
             .from('exam_answers')
             .select('*')
             .eq('exam_session_id', examSessionId)
             .in('question_id', answeredQuestionIds);
 
-        if (answersError) {
-            console.warn('Could not load answers for AI analysis:', answersError);
-            return;
-        }
+        if (!answersData || answersData.length === 0) return;
 
-        if (!answersData || answersData.length === 0) {
-            console.log('No answers to analyze');
-            return;
-        }
+        // Dedup per question_id
+        const dedupMap = new Map();
+        [...answersData]
+            .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+            .forEach(ans => {
+                if (!dedupMap.has(ans.question_id)) dedupMap.set(ans.question_id, ans);
+            });
+        const uniqueAnswers = Array.from(dedupMap.values());
 
-        // DEDUP: Jika ada duplikat per question_id, ambil hanya 1 (yang terbaru)
-        const dedupedAnswers = [];
-        const seenQuestionIds = new Set();
-        // Sort by created_at descending agar yang terbaru diambil
-        const sortedAnswers = [...answersData].sort((a, b) =>
-            new Date(b.created_at || 0) - new Date(a.created_at || 0)
-        );
-        sortedAnswers.forEach(ans => {
-            if (!seenQuestionIds.has(ans.question_id)) {
-                seenQuestionIds.add(ans.question_id);
-                dedupedAnswers.push(ans);
-            }
-        });
-        console.log(`Dedup: ${answersData.length} records → ${dedupedAnswers.length} unik`);
-        const uniqueAnswersData = dedupedAnswers;
+        // Build payload: array of { answer, question }
+        const questionsMap = new Map(questions.map(q => [q.id, q]));
+        const payload = uniqueAnswers
+            .map(ans => ({
+                answer: ans,
+                question: questionsMap.get(ans.question_id)
+            }))
+            .filter(item => item.question); // filter yang questionnya tidak ada
 
-        // Cek jawaban yang belum dianalisis atau punya data kosong (fallback)
-        const { data: existingAnalyses } = await supabase
-            .from('gemini_analyses')
-            .select('answer_id, analysis_data')
-            .in('answer_id', uniqueAnswersData.map(a => a.id));
+        if (payload.length === 0) return;
 
-        // Anggap sudah dianalisis HANYA jika punya strengths ATAU weaknesses yang tidak kosong
-        const analyzedAnswerIds = new Set(
-            (existingAnalyses || [])
-                .filter(a => {
-                    const ad = a.analysis_data;
-                    if (!ad) return false;
-                    const hasStrengths = Array.isArray(ad.strengths) && ad.strengths.length > 0;
-                    const hasWeaknesses = Array.isArray(ad.weaknesses) && ad.weaknesses.length > 0;
-                    const hasExplanation = ad.explanation && ad.explanation.length > 20 && !ad.explanation.includes('Analisis AI gagal');
-                    return hasStrengths || hasWeaknesses || hasExplanation;
-                })
-                .map(a => a.answer_id)
-        );
+        console.log(`[AI Background] Sending ${payload.length} answers for batch analysis...`);
 
-        const answersToAnalyze = uniqueAnswersData.filter(answer => !analyzedAnswerIds.has(answer.id));
+        // Single batch API call - 1 call untuk semua soal
+        const batchResult = await geminiAnalytics.analyzeBatchAnswers(payload);
 
-        if (answersToAnalyze.length === 0) {
-            console.log('All answers have already been analyzed');
-            return;
-        }
+        // Store result dengan sessionId sebagai key
+        await geminiAnalytics.storeBatchResult(examSessionId, batchResult);
 
-        console.log(`Analyzing ${answersToAnalyze.length} new answers with AI...`);
-
-        // Buat map soal untuk lookup cepat
-        const questionsMap = new Map();
-        questions.forEach(q => questionsMap.set(q.id, q));
-
-        let completedAnalyses = 0;
-
-        for (let i = 0; i < answersToAnalyze.length; i++) {
-            const answer = answersToAnalyze[i];
-            const question = questionsMap.get(answer.question_id);
-            if (!question) continue;
-
-            try {
-                await geminiAnalytics.analyzeStudentAnswer(answer, question);
-                completedAnalyses++;
-                console.log(`Analyzed answer ${completedAnalyses}/${answersToAnalyze.length}`);
-
-                // Jeda adaptif: 3-6 detik random untuk hindari collision saat banyak siswa bersamaan
-                if (i < answersToAnalyze.length - 1) {
-                    const jitter = 3000 + Math.random() * 3000; // 3-6 detik random
-                    await new Promise(resolve => setTimeout(resolve, jitter));
-                }
-            } catch (error) {
-                // Jika rate limit, hentikan — jangan terus coba
-                if (error.message && error.message.includes('Rate limit')) {
-                    console.warn(`[AI] Rate limit tercapai setelah ${completedAnalyses} jawaban. Berhenti sementara.`);
-                    break;
-                }
-                console.error('Error analyzing answer:', error);
-                // Error lain: lanjut ke jawaban berikutnya
-            }
-        }
-
-        console.log(`AI analysis completed: ${completedAnalyses} answers analyzed`);
-
-        if (completedAnalyses > 0) {
-            showAIAnalysisNotification(completedAnalyses);
-        }
+        console.log('[AI Background] Batch analysis complete!');
+        showAIAnalysisNotification(payload.length);
 
     } catch (error) {
-        console.error('Error triggering AI analysis:', error);
-        // Don't show error to user as this is background processing
+        console.error('[AI Background] Error (non-blocking):', error);
     }
 }
 
