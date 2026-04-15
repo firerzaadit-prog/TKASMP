@@ -21,49 +21,55 @@ serve(async (req) => {
       );
     }
 
-    // ── MODE 1: BATCH (array of 30 answers) ──────────────────────────────────
-    if (body.answers && Array.isArray(body.answers)) {
-      const { answers, sessionInfo } = body;
+    // ── MODE 1: BATCH ────────────────────────────────────────────────────────
+    if (body.answers && Array.isArray(body.answers) && body.answers.length > 0) {
+      const answers = body.answers;
 
-      // Build system prompt for batch evaluation
-      const soalList = answers.map((item: any, idx: number) => {
-        const q = item.question;
-        const a = item.answer;
-        const statusLabel = a.is_correct ? 'BENAR' : 'SALAH';
-        return `
-[Soal ${idx + 1}]
-Elemen: ${q.bab || q.chapter || '-'}
-Sub-elemen: ${q.sub_bab || q.sub_chapter || '-'}
-Level Kognitif: ${q.level_kognitif || '-'}
-Proses Berpikir: ${q.proses_berpikir || '-'}
-Soal: ${q.question_text || '-'}
-Kunci Jawaban: ${q.correct_answer || (q.correct_answers || []).join(', ') || '-'}
-Pembahasan: ${q.explanation || '-'}
-Jawaban Siswa: ${a.selected_answer || '-'}
-Status: ${statusLabel}`;
-      }).join('\n');
+      // Validasi setiap item punya question dan answer
+      const validAnswers = answers.filter((item: any) =>
+        item?.question?.question_text && item?.answer
+      );
 
-      const batchPrompt = `Kamu adalah guru matematika SMP yang menganalisis hasil ujian TKA (Tes Kemampuan Akademik).
+      if (validAnswers.length === 0) {
+        return new Response(
+          JSON.stringify({ error: 'No valid answers with question data in payload' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
-Berikut adalah data 30 soal beserta jawaban siswa:
+      console.log(`[Batch] Processing ${validAnswers.length} answers`);
+
+      // Build soal list dengan fallback aman untuk setiap field
+      const soalList = validAnswers.map((item: any, idx: number) => {
+        const q = item.question || {};
+        const a = item.answer || {};
+        const statusLabel = a.is_correct === true ? 'BENAR' : 'SALAH';
+        const kunci = q.correct_answer || (Array.isArray(q.correct_answers) ? q.correct_answers.join(', ') : '') || '-';
+        const elemen = q.bab || q.chapter || '-';
+        const subElemen = q.sub_bab || q.sub_chapter || '-';
+
+        return `[Soal ${idx + 1}] (${elemen} - ${subElemen}) | Status: ${statusLabel}
+Soal: ${(q.question_text || '').substring(0, 300)}
+Kunci: ${kunci} | Jawaban Siswa: ${a.selected_answer || '-'}
+Level: ${q.level_kognitif || '-'} | Proses: ${q.proses_berpikir || '-'}`;
+      }).join('\n\n');
+
+      const batchPrompt = `Kamu adalah guru matematika SMP. Analisis hasil ujian TKA berikut secara KESELURUHAN:
+
 ${soalList}
 
-Tugas kamu:
-1. Analisis pola kelemahan dan kekuatan siswa secara KESELURUHAN (bukan per soal)
-2. Fokus pada soal yang SALAH untuk menentukan kelemahan
-3. Fokus pada soal yang BENAR untuk menentukan kekuatan
-4. Berikan rekomendasi belajar yang spesifik dan actionable
+Instruksi:
+- weaknesses: HANYA dari soal yang SALAH, spesifik ke konsep/materi yang tidak dikuasai
+- strengths: HANYA dari soal yang BENAR, kompetensi yang dikuasai
+- Jika semua benar, weaknesses = []
+- Jika semua salah, strengths = []
+- Maksimal 4 item per kategori, dalam bahasa Indonesia
+- summary: 2-3 kalimat ringkasan kemampuan siswa
 
-Aturan WAJIB:
-- weaknesses HANYA berisi materi/konsep yang benar-benar salah dijawab siswa
-- Jangan tulis "Tidak ada kelemahan" di weaknesses - jika tidak ada yang salah, tulis array kosong []
-- strengths HANYA berisi materi yang dikuasai dengan baik
-- Semua dalam bahasa Indonesia
-- Maksimal 4 item per kategori
+Output JSON saja, tanpa markdown:
+{"summary":"...","strengths":["..."],"weaknesses":["..."],"learningSuggestions":["..."]}`;
 
-Output HANYA JSON valid tanpa markdown, tanpa teks apapun selain JSON:
-{"summary":"ringkasan kemampuan siswa dalam 2-3 kalimat","strengths":["kekuatan spesifik 1","kekuatan spesifik 2"],"weaknesses":["kelemahan spesifik 1","kelemahan spesifik 2"],"learningSuggestions":["rekomendasi spesifik 1","rekomendasi spesifik 2"]}`;
-
+      // Panggil Gemini API
       const geminiResponse = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
         {
@@ -82,36 +88,34 @@ Output HANYA JSON valid tanpa markdown, tanpa teks apapun selain JSON:
       const geminiData = await geminiResponse.json();
 
       if (!geminiResponse.ok) {
-        console.error('Gemini batch error:', JSON.stringify(geminiData));
+        const errMsg = geminiData?.error?.message || `Gemini error ${geminiResponse.status}`;
+        console.error('[Batch] Gemini error:', errMsg);
         return new Response(
-          JSON.stringify({ error: geminiData.error?.message || 'Gemini API error' }),
+          JSON.stringify({ error: errMsg }),
           { status: geminiResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
       if (!text) {
-        console.error('Empty batch response:', JSON.stringify(geminiData));
+        console.error('[Batch] Empty response from Gemini:', JSON.stringify(geminiData).substring(0, 500));
         return new Response(
           JSON.stringify({ error: 'Empty response from Gemini' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      // Parse JSON from response
-      let parsed: any = {};
+      // Parse JSON result
+      let parsed: any = { summary: '', strengths: [], weaknesses: [], learningSuggestions: [] };
       try {
         const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
         const match = clean.match(/\{[\s\S]*\}/);
         if (match) parsed = JSON.parse(match[0]);
       } catch (e) {
-        console.error('JSON parse error:', e);
-        parsed = {
-          summary: text.substring(0, 300),
-          strengths: [],
-          weaknesses: [],
-          learningSuggestions: []
-        };
+        console.error('[Batch] JSON parse error:', e, 'Raw text:', text.substring(0, 200));
+        // Fallback: gunakan text sebagai summary
+        parsed.summary = text.substring(0, 500);
       }
 
       return new Response(
@@ -120,12 +124,12 @@ Output HANYA JSON valid tanpa markdown, tanpa teks apapun selain JSON:
       );
     }
 
-    // ── MODE 2: SINGLE (legacy compatibility) ────────────────────────────────
+    // ── MODE 2: SINGLE (legacy) ──────────────────────────────────────────────
     const { message } = body;
 
-    if (!message) {
+    if (!message || typeof message !== 'string' || message.trim() === '') {
       return new Response(
-        JSON.stringify({ error: 'message or answers is required' }),
+        JSON.stringify({ error: 'message or answers[] is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -137,10 +141,7 @@ Output HANYA JSON valid tanpa markdown, tanpa teks apapun selain JSON:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: message }] }],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 1024,
-          }
+          generationConfig: { temperature: 0.3, maxOutputTokens: 1024 }
         })
       }
     );
@@ -148,30 +149,24 @@ Output HANYA JSON valid tanpa markdown, tanpa teks apapun selain JSON:
     const geminiData = await geminiResponse.json();
 
     if (!geminiResponse.ok) {
-      console.error('Gemini API error:', JSON.stringify(geminiData));
+      const errMsg = geminiData?.error?.message || 'Gemini API error';
       return new Response(
-        JSON.stringify({ error: geminiData.error?.message || 'Gemini API error' }),
+        JSON.stringify({ error: errMsg }),
         { status: geminiResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-    if (!text) {
-      console.error('Empty text from Gemini:', JSON.stringify(geminiData));
-    }
+    const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
     return new Response(
-      JSON.stringify({
-        choices: [{ message: { content: text } }]
-      }),
+      JSON.stringify({ choices: [{ message: { content: text } }] }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('Edge Function error:', error);
+    console.error('[Edge Function] Unhandled error:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: error.message || 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

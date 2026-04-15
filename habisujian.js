@@ -494,8 +494,8 @@ async function triggerAIAnalysis(session) {
         const { data: existingBatch } = await supabase
             .from('gemini_analyses')
             .select('answer_id, analysis_data')
-            .eq('answer_id', examSessionId) // batch result uses sessionId as key
-            .single();
+            .eq('answer_id', examSessionId)
+            .maybeSingle(); // maybeSingle() tidak error jika row tidak ada
 
         if (existingBatch?.analysis_data?.is_batch) {
             console.log('[AI Background] Batch already analyzed for this session');

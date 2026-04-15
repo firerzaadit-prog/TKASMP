@@ -251,19 +251,33 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
     // Store batch result as a single session-level record
     async storeBatchResult(sessionId, batchResult) {
         try {
-            // Simpan ke tabel gemini_analyses dengan answer_id = sessionId (sebagai identifier sesi)
-            // Gunakan upsert agar tidak duplikat
-            const { error } = await supabase.from('gemini_analyses').upsert({
-                answer_id: sessionId, // gunakan sessionId sebagai key unik untuk hasil batch
+            if (!sessionId || !batchResult) {
+                console.warn('[AI Batch] storeBatchResult: invalid args', { sessionId, batchResult });
+                return;
+            }
+
+            const dataToStore = {
+                answer_id: sessionId,
                 analysis_data: {
-                    ...batchResult,
+                    summary: batchResult.summary || '',
+                    strengths: Array.isArray(batchResult.strengths) ? batchResult.strengths : [],
+                    weaknesses: Array.isArray(batchResult.weaknesses) ? batchResult.weaknesses : [],
+                    learningSuggestions: Array.isArray(batchResult.learningSuggestions) ? batchResult.learningSuggestions : [],
                     is_batch: true,
                     analyzed_at: new Date().toISOString()
                 },
-                updated_at: new Date()
-            });
-            if (error) console.warn('[AI Batch] Store error:', error);
-            else console.log('[AI Batch] Result stored for session:', sessionId);
+                updated_at: new Date().toISOString()
+            };
+
+            const { error } = await supabase
+                .from('gemini_analyses')
+                .upsert(dataToStore, { onConflict: 'answer_id' });
+
+            if (error) {
+                console.warn('[AI Batch] Store error:', error.message, error.code);
+            } else {
+                console.log('[AI Batch] Result stored OK for session:', sessionId);
+            }
         } catch (e) {
             console.warn('[AI Batch] Store failed:', e);
         }
