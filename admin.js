@@ -5021,7 +5021,7 @@ async function buildStudentExportData(userId) {
                 .from('gemini_analyses')
                 .select('analysis_data')
                 .eq('answer_id', sessionId)
-                ..maybeSingle();
+                .maybeSingle();
 
             if (batchRecord?.analysis_data?.is_batch) {
                 const bd = batchRecord.analysis_data;
