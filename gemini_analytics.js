@@ -194,52 +194,61 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
 
 
     // ── BATCH ANALYSIS: 1 API call untuk 30 soal sekaligus ──────────────────
- async analyzeBatchAnswers(answersPayload) {
-        // ... (kode URL dan token Anda di atas)
-        
-        const response = await fetch(EDGE_FUNCTION_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': SUPABASE_ANON_KEY,
-                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-            },
-            // PASTIKAN STRUKTUR JSON-NYA SEPERTI INI:
-            body: JSON.stringify({ 
-                answers: answersPayload,
-                sessionInfo: { timestamp: new Date().toISOString() }
-            })
-        });
-        
-        // ... (sisa kode di bawahnya)
+ // ── BATCH ANALYSIS: 1 API call untuk 30 soal sekaligus ──────────────────
+    async analyzeBatchAnswers(answersPayload) {
+        const maxRetries = 3;
+        let attempt = 0;
 
+        // Perulangan WHILE ini yang membuat perintah 'continue' menjadi sah/valid
+        while (attempt < maxRetries) {
+            try {
+                const response = await fetch(EDGE_FUNCTION_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_ANON_KEY,
+                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                    },
+                    body: JSON.stringify({ 
+                        answers: answersPayload,
+                        sessionInfo: { timestamp: new Date().toISOString() }
+                    })
+                });
+                
                 if (!response.ok) {
                     const errText = await response.text();
-                    // Exponential backoff untuk 429 / 5xx
+                    // Exponential backoff untuk error 429 / 5xx
                     if (response.status === 429 || response.status >= 500) {
                         attempt++;
                         if (attempt >= maxRetries) throw new Error(`Max retries reached: ${errText}`);
                         const waitMs = Math.pow(2, attempt) * 5000; // 10s, 20s, 40s
                         console.warn(`[AI Batch] Error ${response.status} - retry ${attempt}/${maxRetries} in ${waitMs/1000}s...`);
                         await new Promise(r => setTimeout(r, waitMs));
-                        continue;
+                        continue; // Kembali ke awal 'while' loop
                     }
                     throw new Error(`Batch error ${response.status}: ${errText}`);
                 }
 
                 const data = await response.json();
-                if (!data.batch || !data.result) {
-                    throw new Error('Invalid batch response format');
+                
+                // Menyesuaikan pembacaan data dengan output dari index.ts
+                const textResult = data.choices?.[0]?.message?.content;
+                if (!textResult) {
+                    throw new Error('Format balasan dari server tidak sesuai');
                 }
 
-                console.log('[AI Batch] Analysis complete:', data.result);
-                return data.result; // { summary, strengths, weaknesses, learningSuggestions }
+                // Membersihkan markdown JSON (jika Gemini mengirimkan ```json)
+                const cleanJson = textResult.replace(/```json/g, '').replace(/```/g, '').trim();
+                const parsedResult = JSON.parse(cleanJson);
+
+                console.log('[AI Batch] Analysis complete:', parsedResult);
+                return parsedResult;
 
             } catch (err) {
                 attempt++;
                 if (attempt >= maxRetries) {
                     console.error('[AI Batch] Failed after max retries:', err);
-                    throw err;
+                    throw err; // Jika sudah gagal 3x, menyerah
                 }
                 const waitMs = Math.pow(2, attempt) * 5000;
                 console.warn(`[AI Batch] Retry ${attempt}/${maxRetries} in ${waitMs/1000}s...`);
