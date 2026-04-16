@@ -194,24 +194,24 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
 
 
     // ── BATCH ANALYSIS: 1 API call untuk 30 soal sekaligus ──────────────────
-    async analyzeBatchAnswers(answersWithQuestions) {
-        const maxRetries = 3;
-        let attempt = 0;
-
-        while (attempt < maxRetries) {
-            try {
-                const { data: { session } } = await supabase.auth.getSession();
-                const token = session?.access_token;
-
-                const response = await fetch(EDGE_FUNCTION_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token || SUPABASE_ANON_KEY}`,
-                        'apikey': SUPABASE_ANON_KEY
-                    },
-                    body: JSON.stringify({ answers: answersWithQuestions })
-                });
+ async analyzeBatchAnswers(answersPayload) {
+        // ... (kode URL dan token Anda di atas)
+        
+        const response = await fetch(EDGE_FUNCTION_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            // PASTIKAN STRUKTUR JSON-NYA SEPERTI INI:
+            body: JSON.stringify({ 
+                answers: answersPayload,
+                sessionInfo: { timestamp: new Date().toISOString() }
+            })
+        });
+        
+        // ... (sisa kode di bawahnya)
 
                 if (!response.ok) {
                     const errText = await response.text();
