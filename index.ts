@@ -1,55 +1,63 @@
-// @ts-ignore
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+};
 
-serve(async (req: Request) => {
+serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { message } = await req.json()
+    const body = await req.json();
+    const apiKey = Deno.env.get('GEMINI_API_KEY');
 
-    // Ambil Key GROQ
-    const apiKey = Deno.env.get('GROQ_API_KEY')
-    if (!apiKey) throw new Error('API Key Groq belum disetting di Supabase')
-
-    // Kirim ke GROQ (Gunakan Model TERBARU: llama-3.3-70b-versatile)
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: "llama-3.3-70b-versatile", // Model terbaru & aktif
-        messages: [
-          { role: "system", content: "Anda adalah asisten guru matematika yang ahli. Berikan output JSON valid." },
-          { role: "user", content: message }
-        ],
-        temperature: 0.5
-      })
-    })
-
-    const data = await response.json()
-
-    if (data.error) {
-      console.error("Groq Error:", data.error)
-      throw new Error(data.error.message)
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: 'GEMINI_API_KEY not configured' }), { status: 500, headers: corsHeaders });
     }
 
-    return new Response(JSON.stringify(data), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    // Cek apakah ini mode BATCH (Array soal)
+    if (body.answers && Array.isArray(body.answers)) {
+      const answers = body.answers;
+      
+      // Gabungkan 30 soal menjadi satu teks prompt
+      let promptText = `Anda adalah guru matematika ahli. Analisis hasil ujian siswa berikut yang berisi ${answers.length} jawaban. Berikan evaluasi dalam format JSON murni.\n\n`;
+      
+      answers.forEach((item: any, idx: number) => {
+        promptText += `Soal ${idx + 1}: ${item.question?.question_text || '-'}\nJawaban Siswa: ${item.answer?.answer_value || '-'}\nKunci: ${item.question?.correct_answer || '-'}\nStatus: ${item.answer?.is_correct ? 'BENAR' : 'SALAH'}\n\n`;
+      });
+      
+      promptText += `\nBerikan output WAJIB HANYA berupa JSON dengan struktur: {"summary": "string", "strengths": ["string"], "weaknesses": ["string"], "learningSuggestions": ["string"]}`;
 
-  } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
-    })
+ 
+ // Tembak ke API Google Gemini
+      const geminiResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText }] }],
+            generationConfig: { temperature: 0.2, responseMimeType: "application/json" }
+          })
+        }
+      );
+
+      const geminiData = await geminiResponse.json();
+
+      if (!geminiResponse.ok) {
+         return new Response(JSON.stringify({ error: geminiData }), { status: 400, headers: corsHeaders });
+      }
+
+      const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      return new Response(JSON.stringify({ choices: [{ message: { content: text } }] }), { headers: corsHeaders });
+    }
+
+    return new Response(JSON.stringify({ error: "Invalid Payload: 'answers' array is missing" }), { status: 400, headers: corsHeaders });
+
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
   }
-})
+});
