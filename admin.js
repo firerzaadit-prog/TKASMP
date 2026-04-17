@@ -4847,11 +4847,14 @@ async function showStudentDetail(userId) {
         const chapterAccuracy = analytics.chapterPerformance.map(c => Math.round(c.accuracy || 0));
 
         // Ringkasan AI
+  // Ringkasan AI
         let aiSummary = '<p style="color:#6b7280;">Belum ada analisis AI untuk siswa ini.</p>';
         if (aiAnalyses.length > 0) {
-            const strengths = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.strengths || []))].slice(0, 3);
-            const weaknesses = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.weaknesses || []))].slice(0, 3);
-            const suggestions = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.learningSuggestions || []))].slice(0, 3);
+            const strengths = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.strengths || []))];
+            const weaknesses = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.weaknesses || []))];
+            const suggestions = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.learningSuggestions || []))];
+
+            aiSummary = `
 
             aiSummary = `
                 <div style="margin-bottom:1rem;">
@@ -5014,6 +5017,7 @@ async function buildStudentExportData(userId) {
         .join(' | ') || '-';
 
     // Fungsi helper: ambil AI per sesi tertentu
+ // Fungsi helper: ambil AI per sesi tertentu
     async function getAIPerSession(sessionId) {
         try {
             // ── COBA BATCH RESULT DULU (1 record per session) ──────────────
@@ -5025,19 +5029,80 @@ async function buildStudentExportData(userId) {
 
             if (batchRecord?.analysis_data?.is_batch) {
                 const bd = batchRecord.analysis_data;
-const strengths = aiData.strengths ? '• ' + aiData.strengths.join('<br>• ') : '-';
-const weaknesses = aiData.weaknesses ? '• ' + aiData.weaknesses.join('<br>• ') : '-';
-const suggestions = aiData.learningSuggestions ? '• ' + aiData.learningSuggestions.join('<br>• ') : '-';
+                const strengths = (bd.strengths || []).filter(s => s && s.length > 3);
+                const weaknesses = (bd.weaknesses || []).filter(w => w && w.length > 3);
+                const suggestions = (bd.learningSuggestions || []).filter(s => s && s.length > 3);
                 const summary = bd.summary || '';
+                
                 if (strengths.length > 0 || weaknesses.length > 0 || summary) {
                     return {
                         ringkasan: summary || (weaknesses.length > 0 ? weaknesses[0] : strengths[0] || '-'),
-                        kekuatan: strengths.length > 0 ? strengths.join('; ') : '-',
-                        kelemahan: weaknesses.length > 0 ? weaknesses.join('; ') : '-',
-                        rekomendasi: suggestions.length > 0 ? suggestions.join('; ') : '-'
+                        kekuatan: strengths.length > 0 ? '• ' + strengths.join('\n• ') : '-',
+                        kelemahan: weaknesses.length > 0 ? '• ' + weaknesses.join('\n• ') : '-',
+                        rekomendasi: suggestions.length > 0 ? '• ' + suggestions.join('\n• ') : '-'
                     };
                 }
             }
+
+            // ── FALLBACK: cek individual answer analyses ─────────────────
+            const { data: allAnswers, error: ansErr } = await supabase
+                .from('exam_answers').select('id, question_id')
+                .eq('exam_session_id', sessionId);
+            if (ansErr) return null;
+            if (!allAnswers || allAnswers.length === 0) return null;
+
+            const allAnswerIds = allAnswers.map(a => a.id);
+
+            const { data: geminiData, error: gemErr } = await supabase
+                .from('gemini_analyses').select('analysis_data')
+                .in('answer_id', allAnswerIds);
+            if (gemErr) return null;
+            if (!geminiData || geminiData.length === 0) return null;
+
+            const parsedData = geminiData.map(g => {
+                let ad = g.analysis_data;
+                if (typeof ad === 'string') {
+                    try {
+                        const clean = ad.replace(/```json/g,'').replace(/```/g,'').trim();
+                        const match = clean.match(/\{[\s\S]*\}/);
+                        if (match) ad = JSON.parse(match[0]);
+                    } catch(e) { ad = { explanation: ad }; }
+                }
+                return ad;
+            }).filter(Boolean);
+
+            if (parsedData.length === 0) return null;
+
+            const strengths = [...new Set(parsedData.flatMap(g => g?.strengths || []))].filter(s => s && s.length > 3 && !s.includes('{') && !s.includes('json'));
+            const weaknesses = [...new Set(parsedData.flatMap(g => g?.weaknesses || []))].filter(w => w && w.length > 3 && !w.includes('{') && !w.includes('json'));
+            const suggestions = [...new Set(parsedData.flatMap(g => g?.learningSuggestions || []))].filter(s => s && s.length > 3 && !s.includes('{') && !s.includes('json'));
+
+            let ringkasan = '';
+            if (strengths.length > 0 && weaknesses.length > 0) {
+                ringkasan = `Siswa memiliki kekuatan dalam ${strengths[0].toLowerCase()}. Perlu perhatian pada ${weaknesses[0].toLowerCase()}.`;
+            } else if (strengths.length > 0) {
+                ringkasan = `Siswa menunjukkan pemahaman yang baik dalam ${strengths[0].toLowerCase()}.`;
+            } else if (weaknesses.length > 0) {
+                ringkasan = `Siswa perlu meningkatkan pemahaman pada ${weaknesses[0].toLowerCase()}.`;
+            } else {
+                const rawExp = parsedData.find(g => g?.explanation?.length > 10)?.explanation || '';
+                ringkasan = rawExp.replace(/```json[\s\S]*?```/g,'').replace(/\{[\s\S]*?\}/g,'').trim();
+                if (!ringkasan || ringkasan.length < 5) ringkasan = 'Analisis tersedia. Lihat kekuatan dan kelemahan.';
+            }
+
+            if (strengths.length === 0 && weaknesses.length === 0 && suggestions.length === 0) return null;
+
+            return {
+                ringkasan: ringkasan,
+                kekuatan: strengths.length > 0 ? '• ' + strengths.join('\n• ') : '-',
+                kelemahan: weaknesses.length > 0 ? '• ' + weaknesses.join('\n• ') : '-',
+                rekomendasi: suggestions.length > 0 ? '• ' + suggestions.join('\n• ') : '-'
+            };
+        } catch(e) {
+            console.warn('getAIPerSession error:', e);
+            return null;
+        }
+    }
 
             // ── FALLBACK: cek individual answer analyses ─────────────────
             const { data: allAnswers, error: ansErr } = await supabase
@@ -6576,10 +6641,10 @@ async function loadFullSummaryTable() {
                 </td>
                 <td style="padding:8px 12px;text-align:center;color:#059669;font-weight:600;">${row[7] || 0}</td>
                 <td style="padding:8px 12px;text-align:center;color:#dc2626;font-weight:600;">${row[10] !== undefined ? row[10] : '-'}</td>
-                <td style="padding:8px 12px;font-size:0.78rem;color:#374151;max-width:180px;">${trim(row[11], 80)}</td>
-                <td style="padding:8px 12px;font-size:0.78rem;color:#059669;max-width:180px;">${trim(row[12], 80)}</td>
-                <td style="padding:8px 12px;font-size:0.78rem;color:#dc2626;max-width:180px;">${trim(row[13], 80)}</td>
-                <td style="padding:8px 12px;font-size:0.78rem;color:#3b82f6;max-width:180px;">${trim(row[14] || row[13], 80)}</td>
+               <td style="padding:8px 12px;font-size:0.78rem;color:#374151;min-width:200px;vertical-align:top;">${String(row[11] || '-').replace(/\n/g, '<br>')}</td>
+                <td style="padding:8px 12px;font-size:0.78rem;color:#059669;min-width:250px;vertical-align:top;">${String(row[12] || '-').replace(/\n/g, '<br>')}</td>
+                <td style="padding:8px 12px;font-size:0.78rem;color:#dc2626;min-width:250px;vertical-align:top;">${String(row[13] || '-').replace(/\n/g, '<br>')}</td>
+                <td style="padding:8px 12px;font-size:0.78rem;color:#3b82f6;min-width:250px;vertical-align:top;">${String(row[14] || row[13] || '-').replace(/\n/g, '<br>')}</td>
             </tr>`;
         }).join('');
 
