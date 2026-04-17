@@ -5025,9 +5025,9 @@ async function buildStudentExportData(userId) {
 
             if (batchRecord?.analysis_data?.is_batch) {
                 const bd = batchRecord.analysis_data;
-                const strengths = (bd.strengths || []).filter(s => s && s.length > 3).slice(0, 3);
-                const weaknesses = (bd.weaknesses || []).filter(w => w && w.length > 3).slice(0, 3);
-                const suggestions = (bd.learningSuggestions || []).filter(s => s && s.length > 3).slice(0, 3);
+const strengths = aiData.strengths ? '• ' + aiData.strengths.join('<br>• ') : '-';
+const weaknesses = aiData.weaknesses ? '• ' + aiData.weaknesses.join('<br>• ') : '-';
+const suggestions = aiData.learningSuggestions ? '• ' + aiData.learningSuggestions.join('<br>• ') : '-';
                 const summary = bd.summary || '';
                 if (strengths.length > 0 || weaknesses.length > 0 || summary) {
                     return {
