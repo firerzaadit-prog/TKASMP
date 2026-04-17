@@ -484,13 +484,18 @@ function retakeExam() {
 // Trigger AI analysis for the completed exam
 // Trigger AI analysis for the completed exam
 async function triggerAIAnalysis(session) {
+    const aiSection = document.getElementById('aiAnalysisSection');
+    const aiLoading = document.getElementById('aiAnalysisLoading');
+    const aiContent = document.getElementById('aiAnalysisContent');
+
     try {
+        if (aiSection) aiSection.style.display = 'block';
         console.log('[AI Background] Starting batch analysis for session:', examSessionId);
 
+        // 1. Siapkan data untuk dikirim ke AI
         const answeredQuestionIds = questions.map(q => q.id);
         if (answeredQuestionIds.length === 0) return;
 
-        // Ambil jawaban (dedup)
         const { data: answersData } = await supabase
             .from('exam_answers')
             .select('*')
@@ -499,107 +504,95 @@ async function triggerAIAnalysis(session) {
 
         if (!answersData || answersData.length === 0) return;
 
-        // Dedup per question_id
-        const dedupMap = new Map();
-        [...answersData]
-            .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
-            .forEach(ans => {
-                if (!dedupMap.has(ans.question_id)) dedupMap.set(ans.question_id, ans);
-            });
-        const uniqueAnswers = Array.from(dedupMap.values());
-
-        // Build payload
         const questionsMap = new Map(questions.map(q => [q.id, q]));
-        const payload = uniqueAnswers
-            .map(ans => ({
-                answer: ans,
-                question: questionsMap.get(ans.question_id)
-            }))
-            .filter(item => item.question);
+        const payload = answersData.map(ans => ({
+            answer: {
+                answer_value: ans.selected_answer || ans.user_answer,
+                is_correct: checkAnswerCorrectness(questionsMap.get(ans.question_id), ans.selected_answer || ans.user_answer)
+            },
+            question: questionsMap.get(ans.question_id)
+        }));
 
-        if (payload.length === 0) return;
+        let analysisResult = null;
 
-        // 1. Tampilkan animasi loading AI pada setiap soal yang dijawab di UI siswa
-        payload.forEach(item => {
-            const container = document.getElementById(`ai-analysis-${item.question.id}`);
-            if (container) container.style.display = 'block';
-        });
-
-        let finalAnalysisData = null;
-
-        // 2. Cek apakah sudah ada hasil batch untuk session ini di database
+        // 2. Cek Cache atau Panggil API
         const { data: existingBatch } = await supabase
             .from('gemini_analyses')
-            .select('answer_id, analysis_data')
+            .select('analysis_data')
             .eq('answer_id', examSessionId)
             .maybeSingle();
 
-        if (existingBatch?.analysis_data?.is_batch || existingBatch?.analysis_data?.results) {
-            console.log('[AI Background] Batch already analyzed for this session');
-            finalAnalysisData = existingBatch.analysis_data;
+        if (existingBatch) {
+            analysisResult = existingBatch.analysis_data;
+            console.log('[AI] Mengambil hasil dari cache database');
         } else {
-            console.log(`[AI Background] Sending ${payload.length} answers for batch analysis...`);
-            // Single batch API call
-            const batchResult = await geminiAnalytics.analyzeBatchAnswers(payload);
-            // Store result
-            await geminiAnalytics.storeBatchResult(examSessionId, batchResult);
-            finalAnalysisData = batchResult;
-            console.log('[AI Background] Batch analysis complete!');
+            // Panggil Supabase Edge Function (melalui geminiAnalytics)
+            analysisResult = await geminiAnalytics.analyzeBatchAnswers(payload);
+            // Simpan ke database agar tidak panggil API terus menerus
+            await geminiAnalytics.storeBatchResult(examSessionId, analysisResult);
         }
 
-        showAIAnalysisNotification(payload.length);
-
-        // 3. Render hasil analisis AI ke layar siswa
-        if (finalAnalysisData) {
-            // Ambil array results (menyesuaikan format JSON balasan Gemini Anda)
-            const resultsArray = finalAnalysisData.results || finalAnalysisData.analyses || [];
-
-            resultsArray.forEach((res, index) => {
-                // Ambil ID pertanyaan, coba dari response AI atau berdasar urutan payload
-                const qId = res.question_id || payload[index].question.id;
-                const container = document.getElementById(`ai-analysis-${qId}`);
-
-                if (container) {
-                    const contentDiv = container.querySelector('.ai-analysis-content');
-                    
-                    // Ambil detail penilaian AI (menyesuaikan keys yang digenerate di prompt AI)
-                    const statusVal = res.correctness || res.status || '';
-                    const feedbackVal = res.feedback || res.explanation || res.analysis || res.pembahasan || 'Tidak ada catatan tambahan.';
-                    
-                    // Format tampilan
-                    const statusHTML = statusVal ? `<span style="display:inline-block; margin-bottom:8px; padding:4px 10px; background:#e3e6f0; color:#4e73df; border-radius:12px; font-size:0.8rem; font-weight:bold;">Evaluasi: ${statusVal}</span><br>` : '';
-                    const feedbackHTML = feedbackVal.replace(/\n/g, '<br>');
-
-                    contentDiv.innerHTML = statusHTML + feedbackHTML;
-                    
-                    // Render ulang LaTeX jika AI menggunakan MathJax/KaTeX
-                    if (window.renderMathInElement) {
-                        renderMathInElement(contentDiv, {
-                            delimiters: [
-                                {left: "$$", right: "$$", display: true},
-                                {left: "\\[", right: "\\]", display: true},
-                                {left: "$", right: "$", display: false},
-                                {left: "\\(", right: "\\)", display: false}
-                            ],
-                            throwOnError: false
-                        });
-                    }
-                }
-            });
+        // 3. Tampilkan Hasil ke UI (Admin Style)
+        if (analysisResult) {
+            renderGlobalAiAnalysis(analysisResult);
+            aiLoading.style.display = 'none';
+            aiContent.style.display = 'block';
         }
 
     } catch (error) {
         console.error('[AI Background] Error:', error);
-        // Hentikan loading dan beritahu terjadi error pada blok UI
-        const answeredQuestionIds = questions.map(q => q.id);
-        answeredQuestionIds.forEach(qId => {
-            const container = document.getElementById(`ai-analysis-${qId}`);
-            if (container) {
-                const contentDiv = container.querySelector('.ai-analysis-content');
-                if (contentDiv && contentDiv.innerHTML.includes('fa-spinner')) {
-                    contentDiv.innerHTML = '<span style="color: #e74a3b;"><i class="fas fa-exclamation-triangle"></i> Gagal memuat analisis AI saat ini.</span>';
-                }
-            }
+        if (aiLoading) aiLoading.innerHTML = `<p style="color: red;"><i class="fas fa-exclamation-triangle"></i> Gagal memuat analisis AI.</p>`;
+    }
+}
+
+// Fungsi helper untuk merender hasil ke HTML (Tampilan Dashboard-style)
+function renderGlobalAiAnalysis(data) {
+    const container = document.getElementById('aiAnalysisContent');
+    if (!container) return;
+
+    // Bersihkan kontainer
+    container.innerHTML = `
+        <div class="ai-summary-card" style="background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px;">
+            <h3 style="color: #4e73df; margin-bottom: 15px;"><i class="fas fa-info-circle"></i> Ringkasan Evaluasi</h3>
+            <p style="line-height: 1.6; color: #444;">${data.summary || 'Tidak ada ringkasan tersedia.'}</p>
+        </div>
+
+        <div class="ai-details-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+            <div class="detail-card" style="background: #f8fff9; border-left: 5px solid #28a745; padding: 20px; border-radius: 8px;">
+                <h4 style="color: #28a745;"><i class="fas fa-check-circle"></i> Kekuatan</h4>
+                <ul style="margin-top: 10px; padding-left: 20px;">
+                    ${(data.strengths || []).map(s => `<li style="margin-bottom: 5px;">${s}</li>`).join('')}
+                </ul>
+            </div>
+
+            <div class="detail-card" style="background: #fff8f8; border-left: 5px solid #dc3545; padding: 20px; border-radius: 8px;">
+                <h4 style="color: #dc3545;"><i class="fas fa-exclamation-circle"></i> Kelemahan</h4>
+                <ul style="margin-top: 10px; padding-left: 20px;">
+                    ${(data.weaknesses || []).map(w => `<li style="margin-bottom: 5px;">${w}</li>`).join('')}
+                </ul>
+            </div>
+        </div>
+
+        <div class="ai-suggestion-card" style="margin-top: 20px; background: #f0f7ff; border-radius: 12px; padding: 25px; border: 1px dashed #4e73df;">
+            <h4 style="color: #4e73df;"><i class="fas fa-lightbulb"></i> Saran Pembelajaran</h4>
+            <div style="margin-top: 10px;">
+                ${(data.learningSuggestions || []).map(ls => `
+                    <div style="background: white; margin-bottom: 8px; padding: 10px 15px; border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+                        <i class="fas fa-arrow-right" style="font-size: 0.8rem; color: #4e73df;"></i> ${ls}
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    // Render ulang MathJax/KaTeX jika ada rumus dalam feedback AI
+    if (window.renderMathInElement) {
+        renderMathInElement(container, {
+            delimiters: [
+                {left: "$$", right: "$$", display: true},
+                {left: "$", right: "$", display: false}
+            ],
+            throwOnError: false
         });
     }
 }
