@@ -482,26 +482,13 @@ function retakeExam() {
 }
 
 // Trigger AI analysis for the completed exam
+// Trigger AI analysis for the completed exam
 async function triggerAIAnalysis(session) {
-    // Runs in background - does NOT block the results page
     try {
         console.log('[AI Background] Starting batch analysis for session:', examSessionId);
 
         const answeredQuestionIds = questions.map(q => q.id);
         if (answeredQuestionIds.length === 0) return;
-
-        // Cek apakah sudah ada hasil batch untuk session ini
-        const { data: existingBatch } = await supabase
-            .from('gemini_analyses')
-            .select('answer_id, analysis_data')
-            .eq('answer_id', examSessionId)
-            .maybeSingle(); // maybeSingle() tidak error jika row tidak ada
-
-        if (existingBatch?.analysis_data?.is_batch) {
-            console.log('[AI Background] Batch already analyzed for this session');
-            showAIAnalysisNotification(questions.length);
-            return;
-        }
 
         // Ambil jawaban (dedup)
         const { data: answersData } = await supabase
@@ -521,33 +508,101 @@ async function triggerAIAnalysis(session) {
             });
         const uniqueAnswers = Array.from(dedupMap.values());
 
-        // Build payload: array of { answer, question }
+        // Build payload
         const questionsMap = new Map(questions.map(q => [q.id, q]));
         const payload = uniqueAnswers
             .map(ans => ({
                 answer: ans,
                 question: questionsMap.get(ans.question_id)
             }))
-            .filter(item => item.question); // filter yang questionnya tidak ada
+            .filter(item => item.question);
 
         if (payload.length === 0) return;
 
-        console.log(`[AI Background] Sending ${payload.length} answers for batch analysis...`);
+        // 1. Tampilkan animasi loading AI pada setiap soal yang dijawab di UI siswa
+        payload.forEach(item => {
+            const container = document.getElementById(`ai-analysis-${item.question.id}`);
+            if (container) container.style.display = 'block';
+        });
 
-        // Single batch API call - 1 call untuk semua soal
-        const batchResult = await geminiAnalytics.analyzeBatchAnswers(payload);
+        let finalAnalysisData = null;
 
-        // Store result dengan sessionId sebagai key
-        await geminiAnalytics.storeBatchResult(examSessionId, batchResult);
+        // 2. Cek apakah sudah ada hasil batch untuk session ini di database
+        const { data: existingBatch } = await supabase
+            .from('gemini_analyses')
+            .select('answer_id, analysis_data')
+            .eq('answer_id', examSessionId)
+            .maybeSingle();
 
-        console.log('[AI Background] Batch analysis complete!');
+        if (existingBatch?.analysis_data?.is_batch || existingBatch?.analysis_data?.results) {
+            console.log('[AI Background] Batch already analyzed for this session');
+            finalAnalysisData = existingBatch.analysis_data;
+        } else {
+            console.log(`[AI Background] Sending ${payload.length} answers for batch analysis...`);
+            // Single batch API call
+            const batchResult = await geminiAnalytics.analyzeBatchAnswers(payload);
+            // Store result
+            await geminiAnalytics.storeBatchResult(examSessionId, batchResult);
+            finalAnalysisData = batchResult;
+            console.log('[AI Background] Batch analysis complete!');
+        }
+
         showAIAnalysisNotification(payload.length);
 
+        // 3. Render hasil analisis AI ke layar siswa
+        if (finalAnalysisData) {
+            // Ambil array results (menyesuaikan format JSON balasan Gemini Anda)
+            const resultsArray = finalAnalysisData.results || finalAnalysisData.analyses || [];
+
+            resultsArray.forEach((res, index) => {
+                // Ambil ID pertanyaan, coba dari response AI atau berdasar urutan payload
+                const qId = res.question_id || payload[index].question.id;
+                const container = document.getElementById(`ai-analysis-${qId}`);
+
+                if (container) {
+                    const contentDiv = container.querySelector('.ai-analysis-content');
+                    
+                    // Ambil detail penilaian AI (menyesuaikan keys yang digenerate di prompt AI)
+                    const statusVal = res.correctness || res.status || '';
+                    const feedbackVal = res.feedback || res.explanation || res.analysis || res.pembahasan || 'Tidak ada catatan tambahan.';
+                    
+                    // Format tampilan
+                    const statusHTML = statusVal ? `<span style="display:inline-block; margin-bottom:8px; padding:4px 10px; background:#e3e6f0; color:#4e73df; border-radius:12px; font-size:0.8rem; font-weight:bold;">Evaluasi: ${statusVal}</span><br>` : '';
+                    const feedbackHTML = feedbackVal.replace(/\n/g, '<br>');
+
+                    contentDiv.innerHTML = statusHTML + feedbackHTML;
+                    
+                    // Render ulang LaTeX jika AI menggunakan MathJax/KaTeX
+                    if (window.renderMathInElement) {
+                        renderMathInElement(contentDiv, {
+                            delimiters: [
+                                {left: "$$", right: "$$", display: true},
+                                {left: "\\[", right: "\\]", display: true},
+                                {left: "$", right: "$", display: false},
+                                {left: "\\(", right: "\\)", display: false}
+                            ],
+                            throwOnError: false
+                        });
+                    }
+                }
+            });
+        }
+
     } catch (error) {
-        console.error('[AI Background] Error (non-blocking):', error);
+        console.error('[AI Background] Error:', error);
+        // Hentikan loading dan beritahu terjadi error pada blok UI
+        const answeredQuestionIds = questions.map(q => q.id);
+        answeredQuestionIds.forEach(qId => {
+            const container = document.getElementById(`ai-analysis-${qId}`);
+            if (container) {
+                const contentDiv = container.querySelector('.ai-analysis-content');
+                if (contentDiv && contentDiv.innerHTML.includes('fa-spinner')) {
+                    contentDiv.innerHTML = '<span style="color: #e74a3b;"><i class="fas fa-exclamation-triangle"></i> Gagal memuat analisis AI saat ini.</span>';
+                }
+            }
+        });
     }
 }
-
 // Show notification that AI analysis is ready
 function showAIAnalysisNotification(analysisCount) {
     // Create notification element
