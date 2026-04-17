@@ -153,9 +153,25 @@
                 ? `<img src="${material.image_url}" alt="${material.title}">`
                 : `<i class="fas fa-book"></i>`;
 
-            const shortContent = material.content
-                ? material.content.replace(/<[^>]*>/g, '').substring(0, 100) + '...'
-                : 'Klik untuk melihat materi lengkap.';
+            // Render LaTeX untuk preview card
+            let shortContent = 'Klik untuk melihat materi lengkap.';
+            if (material.content) {
+                // Ambil 150 karakter pertama dari konten mentah (sebelum render)
+                const rawText = material.content.replace(/<[^>]*>/g, '').substring(0, 150);
+                // Render LaTeX inline di teks preview
+                let previewText = rawText;
+                if (window.katex) {
+                    previewText = previewText.replace(/\\\(([^]*?)\\\)/g, (match, latex) => {
+                        try { return window.katex.renderToString(latex, { displayMode: false, throwOnError: false, output: 'html' }); }
+                        catch(e) { return latex; } // jika gagal, tampilkan latex mentah
+                    });
+                    previewText = previewText.replace(/\\\[([^]*?)\\\]/g, (match, latex) => {
+                        try { return window.katex.renderToString(latex, { displayMode: false, throwOnError: false, output: 'html' }); }
+                        catch(e) { return latex; }
+                    });
+                }
+                shortContent = previewText + '...';
+            }
 
             return `
                 <div class="material-card" onclick="showMaterialDetail('${material.id}')">
@@ -168,7 +184,7 @@
                             <span class="material-type">${material.material_type}</span>
                             <span>${material.chapter || 'Umum'}</span>
                         </div>
-                        <p class="material-description">${shortContent}</p>
+                        <div class="material-description katex-preview">${shortContent}</div>
                         <div class="material-stats">
                             <span><i class="fas fa-eye"></i> ${material.view_count}</span>
                             <span><i class="fas fa-clock"></i> ${material.difficulty}</span>
