@@ -4810,6 +4810,7 @@ async function loadStudentsList() {
 }
 
 // Tampilkan detail analytics siswa
+// Tampilkan detail analytics siswa
 async function showStudentDetail(userId) {
     try {
         const analytics = await getDetailedStudentAnalytics(userId);
@@ -4846,15 +4847,12 @@ async function showStudentDetail(userId) {
         const chapterLabels = analytics.chapterPerformance.map(c => c.chapter);
         const chapterAccuracy = analytics.chapterPerformance.map(c => Math.round(c.accuracy || 0));
 
-        // Ringkasan AI
-  // Ringkasan AI
+        // Ringkasan AI - Menampilkan 100% Penuh
         let aiSummary = '<p style="color:#6b7280;">Belum ada analisis AI untuk siswa ini.</p>';
         if (aiAnalyses.length > 0) {
             const strengths = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.strengths || []))];
             const weaknesses = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.weaknesses || []))];
             const suggestions = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.learningSuggestions || []))];
-
-            aiSummary = `
 
             aiSummary = `
                 <div style="margin-bottom:1rem;">
@@ -4901,7 +4899,6 @@ async function showStudentDetail(userId) {
                 </div>
                 <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;padding:1.5rem;">
 
-                    <!-- Kiri: Summary + Peta Kompetensi -->
                     <div>
                         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem;">
                             <div style="background:#f0fdf4;border-radius:10px;padding:1rem;text-align:center;">
@@ -4921,12 +4918,9 @@ async function showStudentDetail(userId) {
                                 <div style="font-size:2rem;font-weight:700;color:#8b5cf6;">${analytics.summary.passRate}%</div>
                             </div>
                         </div>
-
                     </div>
 
-                    <!-- Kanan: Analisis AI + Performa per Bab -->
                     <div>
-                        <!-- Analisis Cerdas AI -->
                         <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:1rem;margin-bottom:1.5rem;">
                             <h4 style="margin:0 0 1rem;color:#374151;font-size:0.95rem;">
                                 <i class="fas fa-robot" style="color:#8b5cf6;"></i> Analisis Cerdas AI
@@ -4935,7 +4929,6 @@ async function showStudentDetail(userId) {
                             <div style="font-size:0.88rem;line-height:1.6;">${aiSummary}</div>
                         </div>
 
-                        <!-- Performa per Bab -->
                         <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:1rem;">
                             <h4 style="margin:0 0 1rem;color:#374151;font-size:0.95rem;">
                                 <i class="fas fa-chart-bar" style="color:#10b981;"></i> Performa per Bab
@@ -5004,7 +4997,6 @@ async function showStudentDetail(userId) {
         alert('Error loading student analytics.');
     }
 }
-
 // Export satu siswa ke Excel
 // Helper: build CSV row data lengkap sesuai format yang diminta
 async function buildStudentExportData(userId) {
