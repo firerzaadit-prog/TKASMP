@@ -986,7 +986,6 @@ function createQuestionTableRow(question) {
         <td>${question.difficulty}</td>
         <td>${question.scoring_weight}</td>
         <td>${question.time_limit_minutes} menit</td>
-        <td>${statusBadge}</td>
         <td>
             <button class="logout-btn" onclick="editQuestion('${question.id}')" style="margin-right: 0.5rem;">
                 <i class="fas fa-edit"></i> Edit
