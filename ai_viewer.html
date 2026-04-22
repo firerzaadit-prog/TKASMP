@@ -3,17 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Analytics Viewer - Standalone</title>
-    
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <title>Analisis AI Mendalam - EduLearn TKA</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- KaTeX -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    
-    <link rel="stylesheet" href="admin_ai_analytics_styles.css">
-
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
     <script type="importmap">
     {
       "imports": {
@@ -21,335 +17,353 @@
       }
     }
     </script>
-
     <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: 'Poppins', sans-serif;
-            background: #f3f4f6;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            background: #f0f4ff;
             min-height: 100vh;
         }
 
-        .viewer-container {
-            background: white;
-            padding: 40px;
-            border-radius: 24px;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.1);
-            width: 100%;
-            max-width: 500px;
-            text-align: center;
-            position: relative; /* Penting untuk tombol absolute */
-        }
-
-        /* Tombol Kembali yang Baru */
-        .btn-back-nav {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            text-decoration: none;
-            color: #6b7280;
-            font-size: 0.85rem;
-            font-weight: 500;
+        /* ===== HEADER ===== */
+        .ai-viewer-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #4e73df 100%);
+            padding: 24px 32px;
             display: flex;
             align-items: center;
-            gap: 6px;
-            transition: color 0.2s;
-            padding: 5px 10px;
-            border-radius: 8px;
+            justify-content: space-between;
+            box-shadow: 0 4px 20px rgba(102,126,234,0.3);
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        .header-icon {
+            width: 52px; height: 52px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.5rem; color: #fff;
+        }
+        .header-title h1 {
+            font-size: 1.3rem; font-weight: 700; color: #fff;
+            line-height: 1.2;
+        }
+        .header-title p { font-size: 0.85rem; color: rgba(255,255,255,0.8); margin-top: 2px; }
+        .btn-back {
+            background: rgba(255,255,255,0.15);
+            color: #fff;
+            border: 1.5px solid rgba(255,255,255,0.4);
+            padding: 10px 20px;
+            border-radius: 50px;
+            font-size: 0.9rem; font-weight: 600;
+            cursor: pointer;
+            display: inline-flex; align-items: center; gap: 8px;
+            transition: all 0.3s;
+            text-decoration: none;
+        }
+        .btn-back:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateX(-3px);
         }
 
-        .btn-back-nav:hover {
-            color: #4f46e5;
-            background: #eef2ff;
+        /* ===== MAIN CONTAINER ===== */
+        .ai-viewer-container {
+            max-width: 900px;
+            margin: 32px auto;
+            padding: 0 20px 60px;
         }
 
-        h1 {
-            color: #1f2937;
+        /* ===== STATUS CARDS ===== */
+        .status-bar {
+            background: #fff;
+            border-radius: 14px;
+            padding: 18px 24px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            flex-wrap: wrap;
+        }
+        .status-item { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #555; }
+        .status-item strong { color: #333; }
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            flex-shrink: 0;
+        }
+        .status-dot.loading { background: #f59e0b; animation: pulse 1.2s infinite; }
+        .status-dot.error { background: #ef4444; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* ===== LOADING CARD ===== */
+        .ai-loading-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 60px 32px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.07);
+        }
+        .loading-spinner {
+            width: 64px; height: 64px;
+            border: 5px solid #e0e7ff;
+            border-top: 5px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .ai-loading-card h3 { color: #374151; font-size: 1.1rem; margin-bottom: 8px; }
+        .ai-loading-card p { color: #9ca3af; font-size: 0.9rem; }
+
+        /* ===== ERROR CARD ===== */
+        .ai-error-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 48px 32px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.07);
+            border-top: 4px solid #ef4444;
+        }
+        .ai-error-card .error-icon {
+            font-size: 3rem; color: #ef4444; margin-bottom: 16px;
+        }
+        .ai-error-card h3 { color: #dc2626; margin-bottom: 8px; }
+        .ai-error-card p { color: #6b7280; font-size: 0.9rem; margin-bottom: 20px; }
+        .btn-retry {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: #fff; border: none;
+            padding: 12px 28px; border-radius: 50px;
+            font-size: 0.95rem; font-weight: 600; cursor: pointer;
+            display: inline-flex; align-items: center; gap: 8px;
+            transition: all 0.3s;
+        }
+        .btn-retry:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(102,126,234,0.4); }
+
+        /* ===== ANALYSIS CONTENT ===== */
+        #aiAnalysisContent { display: none; }
+
+        /* Summary card */
+        .ai-summary-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            margin-bottom: 24px;
+            border-top: 4px solid #667eea;
+        }
+        .ai-summary-card h3 {
+            color: #4e73df;
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 14px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .ai-summary-card p { line-height: 1.75; color: #444; font-size: 0.95rem; }
+
+        /* Grid strength/weakness */
+        .ai-details-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        .detail-card {
+            background: #fff;
+            border-radius: 14px;
+            padding: 24px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        .detail-card.strengths { border-left: 5px solid #10b981; }
+        .detail-card.weaknesses { border-left: 5px solid #ef4444; }
+        .detail-card h4 {
+            font-size: 0.95rem; font-weight: 700;
+            margin-bottom: 12px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .detail-card.strengths h4 { color: #10b981; }
+        .detail-card.weaknesses h4 { color: #ef4444; }
+        .detail-card ul { padding-left: 18px; }
+        .detail-card li { margin-bottom: 7px; font-size: 0.88rem; color: #374151; line-height: 1.5; }
+
+        /* Suggestions */
+        .ai-suggestion-card {
+            background: #f0f7ff;
+            border-radius: 16px;
+            padding: 28px;
+            border: 1.5px dashed #667eea;
+            margin-bottom: 24px;
+        }
+        .ai-suggestion-card h4 {
+            color: #4e73df; font-size: 1rem; font-weight: 700;
+            margin-bottom: 16px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .suggestion-item {
+            background: #fff;
             margin-bottom: 10px;
-            margin-top: 20px;
-            font-size: 1.8rem;
+            padding: 12px 16px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            font-size: 0.88rem;
+            color: #374151;
+            line-height: 1.55;
+            display: flex; align-items: flex-start; gap: 10px;
         }
+        .suggestion-item i { color: #667eea; margin-top: 2px; flex-shrink: 0; }
 
-        p {
-            color: #6b7280;
-            margin-bottom: 30px;
+        /* Cognitive matrix */
+        .cognitive-matrix-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            margin-bottom: 24px;
         }
+        .cognitive-matrix-card h4 {
+            font-size: 1rem; font-weight: 700; color: #374151;
+            margin-bottom: 18px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .cognitive-matrix-card h4 i { color: #8b5cf6; }
+        .matrix-table-wrap { overflow-x: auto; }
+        .matrix-table {
+            width: 100%; border-collapse: collapse; font-size: 0.85rem;
+        }
+        .matrix-table th {
+            background: #f5f3ff; color: #6d28d9;
+            padding: 10px 14px; text-align: center;
+            font-weight: 700; border: 1px solid #e9d5ff;
+            white-space: nowrap;
+        }
+        .matrix-table th:first-child { text-align: left; }
+        .matrix-table td {
+            padding: 9px 14px; text-align: center;
+            border: 1px solid #f3f4f6; color: #374151;
+        }
+        .matrix-table td:first-child { text-align: left; font-weight: 600; color: #1f2937; }
+        .matrix-table tr:nth-child(even) td { background: #fafafa; }
+        .cell-correct { color: #059669; font-weight: 700; }
+        .cell-wrong { color: #dc2626; }
+        .cell-total { color: #4f46e5; font-weight: 700; }
 
-        .select-wrapper {
-            position: relative;
-            margin-bottom: 20px;
+        /* Empty state */
+        .empty-state {
+            text-align: center; padding: 48px 24px;
+            background: #fff; border-radius: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
         }
+        .empty-state i { font-size: 3rem; color: #d1d5db; margin-bottom: 16px; }
+        .empty-state p { color: #9ca3af; font-size: 0.95rem; }
 
-        select {
-            width: 100%;
-            padding: 15px;
-            border: 2px solid #e5e7eb;
-            border-radius: 12px;
-            font-size: 16px;
-            font-family: inherit;
-            appearance: none;
-            background: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e") no-repeat right 1rem center;
-            background-size: 1em;
-            cursor: pointer;
-            transition: border-color 0.2s;
+        @media (max-width: 640px) {
+            .ai-viewer-header { padding: 18px 20px; }
+            .ai-viewer-container { margin: 20px auto; padding: 0 14px 40px; }
+            .ai-summary-card, .ai-suggestion-card { padding: 20px; }
         }
-
-        select:focus {
-            outline: none;
-            border-color: #6366f1;
-        }
-
-        .btn-view {
-            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-            color: white;
-            border: none;
-            padding: 16px 30px;
-            font-size: 16px;
-            font-weight: 600;
-            border-radius: 12px;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
-            width: 100%;
-        }
-
-        .btn-view:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4);
-        }
-        
-        .btn-view:disabled {
-            background: #cbd5e1;
-            transform: none;
-            cursor: not-allowed;
-            box-shadow: none;
-        }
-
-        #statusMessage {
-            margin-top: 20px;
-            font-size: 14px;
-            min-height: 20px;
-        }
-        
-        .loading { color: #6366f1; }
-        .error { color: #ef4444; }
     </style>
 </head>
 <body>
 
-    <div class="viewer-container">
-        <a href="admin.html" class="btn-back-nav">
-            <i class="fas fa-arrow-left"></i> Admin Panel
-        </a>
-
-        <h1>🤖 AI Viewer</h1>
-        <p>Pilih siswa untuk melihat hasil analisis.</p>
-
-        <div class="select-wrapper">
-            <select id="studentSelect">
-                <option value="">-- Memuat Data Siswa... --</option>
-            </select>
+    <!-- Header -->
+    <div class="ai-viewer-header">
+        <div class="header-left">
+            <div class="header-icon">
+                <i class="fas fa-brain"></i>
+            </div>
+            <div class="header-title">
+                <h1>Analisis AI Mendalam</h1>
+                <p id="headerSubtitle">Memuat data sesi ujian...</p>
+            </div>
         </div>
-
-        <button id="btnAnalyze" class="btn-view" disabled>
-            <i class="fas fa-magic"></i> Tampilkan Analisis AI
-        </button>
-
-        <div id="statusMessage"></div>
+        <a href="#" id="btnBack" class="btn-back" onclick="goBack(); return false;">
+            <i class="fas fa-arrow-left"></i> Kembali ke Hasil Ujian
+        </a>
     </div>
 
-    <script type="module">
-        import { supabase } from './clientSupabase.js';
-        
-        // Import file enhancement (tanpa kurung kurawal agar auto-execute)
-        import './admin_ai_analytics_enhancement.js';
+    <!-- Main -->
+    <div class="ai-viewer-container">
 
-        // Pastikan supabase tersedia global
-        window.supabase = supabase;
+        <!-- Status Bar -->
+        <div class="status-bar" id="statusBar">
+            <div class="status-item">
+                <div class="status-dot loading" id="statusDot"></div>
+                <span id="statusText">Menginisialisasi...</span>
+            </div>
+            <div class="status-item">
+                <i class="fas fa-id-badge" style="color:#667eea;"></i>
+                <span>Session: <strong id="statusSession">-</strong></span>
+            </div>
+        </div>
 
-        const studentSelect = document.getElementById('studentSelect');
-        const btnAnalyze = document.getElementById('btnAnalyze');
-        const statusMsg = document.getElementById('statusMessage');
+        <!-- Loading -->
+        <div class="ai-loading-card" id="aiLoadingCard">
+            <div class="loading-spinner"></div>
+            <h3>AI sedang menganalisis performa Anda…</h3>
+            <p id="loadingDetail">Mengambil data jawaban dan menjalankan model AI…</p>
+        </div>
 
-        // Fungsi bantu untuk menebak nama kolom (Smart Detection)
-        function findName(studentData) {
-            return studentData.nama_lengkap || 
-                   studentData.nama || 
-                   studentData.name || 
-                   studentData.full_name || 
-                   studentData.username || 
-                   studentData.email || 
-                   studentData.user_id || 
-                   "Siswa Tanpa Nama";
-        }
+        <!-- Error -->
+        <div class="ai-error-card" id="aiErrorCard" style="display:none;">
+            <div class="error-icon"><i class="fas fa-exclamation-triangle"></i></div>
+            <h3 id="errorTitle">Terjadi Kesalahan</h3>
+            <p id="errorMessage">Gagal memuat analisis AI. Silakan coba lagi.</p>
+            <button class="btn-retry" onclick="retryAnalysis()">
+                <i class="fas fa-redo"></i> Coba Lagi
+            </button>
+        </div>
 
-        // 1. Load Daftar Siswa dengan Smart Detection
-        async function loadStudents() {
-            try {
-                statusMsg.textContent = "Mencari data siswa...";
-                statusMsg.className = "loading";
+        <!-- Analysis Content -->
+        <div id="aiAnalysisContent"></div>
 
-                // Ambil semua kolom agar tidak error "column not found"
-                const { data, error } = await supabase
-                    .from('student_analytics')
-                    .select('*') 
-                    .limit(100);
+    </div>
 
-                if (error) throw error;
+    <script type="module" src="ai_viewer.js"></script>
 
-                if (!data || data.length === 0) {
-                    studentSelect.innerHTML = '<option value="">Database Kosong</option>';
-                    statusMsg.textContent = "Tidak ada data di student_analytics.";
-                    return;
-                }
-
-                // Filter duplikat user_id
-                const uniqueStudents = new Map();
-                data.forEach(item => {
-                    if (item.user_id && !uniqueStudents.has(item.user_id)) {
-                        uniqueStudents.set(item.user_id, item);
-                    }
-                });
-
-                // Reset Dropdown
-                studentSelect.innerHTML = '<option value="">-- Pilih Siswa --</option>';
-
-                // Isi Dropdown dengan nama yang berhasil dideteksi
-                uniqueStudents.forEach(student => {
-                    const displayName = findName(student); 
-                    const kelas = student.kelas || student.class || '-';
-                    
-                    const option = document.createElement('option');
-                    option.value = student.user_id;
-                    option.text = `${displayName} (${kelas})`;
-                    studentSelect.appendChild(option);
-                });
-
-                statusMsg.textContent = `${uniqueStudents.size} siswa ditemukan.`;
-                statusMsg.className = "";
-                btnAnalyze.disabled = true;
-
-            } catch (err) {
-                console.error('Error loading students:', err);
-                statusMsg.textContent = "Error: " + err.message;
-                statusMsg.className = "error";
-            }
-        }
-
-        // 2. Event Listener saat memilih siswa
-        studentSelect.addEventListener('change', () => {
-            if (studentSelect.value) {
-                btnAnalyze.disabled = false;
-                statusMsg.textContent = "Siap.";
-            } else {
-                btnAnalyze.disabled = true;
-                statusMsg.textContent = "";
-            }
-        });
-
-        // 3. Eksekusi Analisis
-        btnAnalyze.addEventListener('click', async () => {
-            const userId = studentSelect.value;
-            if (!userId) return;
-
-            btnAnalyze.disabled = true;
-            btnAnalyze.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
-            
-            try {
-                // Panggil fungsi analisis dari window
-                if (typeof window.showStudentDetail === 'function') {
-                    await window.showStudentDetail(userId);
-                } else {
-                    // Retry logic sederhana
-                    setTimeout(async () => {
-                         if (typeof window.showStudentDetail === 'function') {
-                            await window.showStudentDetail(userId);
-                            resetBtn();
-                         } else {
-                            alert("Fungsi analisis belum siap. Coba refresh halaman.");
-                            resetBtn();
-                         }
-                    }, 500);
-                    return;
-                }
-                resetBtn();
-
-            } catch (err) {
-                console.error(err);
-                alert('Gagal: ' + err.message);
-                resetBtn();
-            }
-        });
-
-        function resetBtn() {
-            btnAnalyze.innerHTML = '<i class="fas fa-check"></i> Selesai';
-            setTimeout(() => {
-                btnAnalyze.disabled = false;
-                btnAnalyze.innerHTML = '<i class="fas fa-magic"></i> Tampilkan Analisis AI';
-            }, 1000);
-        }
-
-        // Auto-select siswa dari URL parameter ?student_id=...
-        async function autoSelectFromURL() {
-            const params = new URLSearchParams(window.location.search);
-            const studentId = params.get('student_id');
-            const studentName = params.get('student_name');
-
-            if (!studentId) {
-                await loadStudents();
-                return;
-            }
-
-            await loadStudents();
-
-            const option = studentSelect.querySelector(`option[value="${studentId}"]`);
-            if (option) {
-                studentSelect.value = studentId;
-                btnAnalyze.disabled = false;
-                statusMsg.textContent = `Siswa: ${option.text}`;
-
-                btnAnalyze.disabled = true;
-                btnAnalyze.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memuat Analisis...';
+    <!-- KaTeX auto-render on dynamic content -->
+    <script>
+        function renderLatexGlobal(el) {
+            if (window.renderMathInElement && el) {
                 try {
-                    const waitForFn = (retries = 8) => new Promise((resolve, reject) => {
-                        if (typeof window.showStudentDetail === 'function') {
-                            resolve();
-                        } else if (retries <= 0) {
-                            reject(new Error('Fungsi belum siap, coba refresh halaman.'));
-                        } else {
-                            setTimeout(() => waitForFn(retries - 1).then(resolve).catch(reject), 400);
-                        }
+                    renderMathInElement(el, {
+                        delimiters: [
+                            {left:"$$",right:"$$",display:true},
+                            {left:"\\[",right:"\\]",display:true},
+                            {left:"$",right:"$",display:false},
+                            {left:"\\(",right:"\\)",display:false}
+                        ],
+                        throwOnError: false
                     });
-                    await waitForFn();
-                    await window.showStudentDetail(studentId);
-                    resetBtn();
-                } catch(err) {
-                    console.error(err);
-                    alert('Gagal memuat analisis: ' + err.message);
-                    resetBtn();
-                }
-            } else {
-                const newOption = document.createElement('option');
-                newOption.value = studentId;
-                newOption.text = studentName
-                    ? decodeURIComponent(studentName)
-                    : `Siswa (${studentId.slice(0,8)}...)`;
-                studentSelect.appendChild(newOption);
-                studentSelect.value = studentId;
-                btnAnalyze.disabled = false;
-                statusMsg.textContent = studentName
-                    ? `Siswa: ${decodeURIComponent(studentName)}`
-                    : 'Siswa dipilih dari parameter URL.';
+                } catch(e) { console.warn('KaTeX error:', e); }
             }
         }
 
-        // Jalankan saat load
-        autoSelectFromURL();
+        document.addEventListener('DOMContentLoaded', function() {
+            const target = document.getElementById('aiAnalysisContent');
+            if (target) {
+                new MutationObserver(mutations => {
+                    mutations.forEach(m => {
+                        if (m.addedNodes.length) renderLatexGlobal(target);
+                    });
+                }).observe(target, { childList: true, subtree: true });
+            }
+        });
+
+        function goBack() {
+            const params = new URLSearchParams(window.location.search);
+            const sessionId = params.get('session');
+            if (sessionId) {
+                window.location.href = `habisujian.html?session=${encodeURIComponent(sessionId)}`;
+            } else {
+                window.history.back();
+            }
+        }
     </script>
+
 </body>
 </html>

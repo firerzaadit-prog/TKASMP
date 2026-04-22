@@ -492,6 +492,86 @@ async function showStudentDetail(userId) {
 
         const uniqueId = 'radar_' + userId.replace(/-/g, '').slice(0, 10);
 
+        // ── Bangun Matriks Kognitif (Bab × Level Kognitif) ──────────────────────
+        const CHAPTERS_MATRIX = ['Bilangan', 'Aljabar', 'Geometri & Pengukuran', 'Data dan Peluang'];
+        const LEVELS_MATRIX = ['Level 1', 'Level 2', 'Level 3'];
+        const CHAPTER_MAP_MATRIX = {
+            'bilangan': 'Bilangan',
+            'aljabar': 'Aljabar',
+            'geometri': 'Geometri & Pengukuran',
+            'pengukuran': 'Geometri & Pengukuran',
+            'data': 'Data dan Peluang',
+            'peluang': 'Data dan Peluang'
+        };
+
+        // Ambil detail soal dari analytics
+        const cogMatrix = {};
+        CHAPTERS_MATRIX.forEach(c => {
+            cogMatrix[c] = {};
+            LEVELS_MATRIX.forEach(l => { cogMatrix[c][l] = { benar: 0, salah: 0 }; });
+        });
+
+        if (analytics.questionDetails && analytics.questionDetails.length > 0) {
+            analytics.questionDetails.forEach(q => {
+                const rawChapter = (q.chapter || '').toLowerCase().trim();
+                let chapter = null;
+                for (const [key, label] of Object.entries(CHAPTER_MAP_MATRIX)) {
+                    if (rawChapter.includes(key)) { chapter = label; break; }
+                }
+                if (!chapter) return;
+
+                const diff = (q.difficulty || '').toLowerCase();
+                let levelKey = 'Level 2';
+                if (diff === 'mudah' || diff === 'easy' || diff === 'l1') levelKey = 'Level 1';
+                else if (diff === 'sulit' || diff === 'hard' || diff === 'l3') levelKey = 'Level 3';
+
+                if (q.isCorrect) cogMatrix[chapter][levelKey].benar++;
+                else cogMatrix[chapter][levelKey].salah++;
+            });
+        }
+
+        const matrixRows = CHAPTERS_MATRIX.map(bab => {
+            let totalB = 0, totalS = 0;
+            const cells = LEVELS_MATRIX.map(lv => {
+                const c = cogMatrix[bab][lv];
+                totalB += c.benar; totalS += c.salah;
+                if (c.benar === 0 && c.salah === 0) return `<td style="text-align:center;padding:7px 10px;border:1px solid #f3f4f6;color:#d1d5db;">—</td>`;
+                return `<td style="text-align:center;padding:7px 10px;border:1px solid #f3f4f6;">
+                    <span style="color:#059669;font-weight:700;">${c.benar}</span><span style="color:#9ca3af;margin:0 2px;">/</span><span style="color:#dc2626;">${c.salah}</span>
+                </td>`;
+            }).join('');
+            const hasData = totalB > 0 || totalS > 0;
+            return `<tr>
+                <td style="padding:7px 10px;border:1px solid #f3f4f6;font-weight:600;color:#374151;font-size:0.82rem;">${bab}</td>
+                ${cells}
+                <td style="text-align:center;padding:7px 10px;border:1px solid #f3f4f6;">
+                    ${hasData ? `<strong style="color:#4f46e5;">${totalB + totalS}</strong><span style="font-size:0.72rem;color:#9ca3af;"> (${totalB}✓)</span>` : '<span style="color:#d1d5db;">—</span>'}
+                </td>
+            </tr>`;
+        }).join('');
+
+        const cogMatrixHtml = `
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:1rem;margin-top:1.5rem;">
+            <h4 style="margin:0 0 12px;color:#374151;font-size:0.92rem;">
+                <i class="fas fa-table" style="color:#8b5cf6;"></i> Matriks Performa Kognitif
+            </h4>
+            <p style="font-size:0.75rem;color:#9ca3af;margin-bottom:10px;">Sel: <strong style="color:#059669;">Benar</strong> / <strong style="color:#dc2626;">Salah</strong></p>
+            <div style="overflow-x:auto;">
+                <table style="width:100%;border-collapse:collapse;font-size:0.8rem;">
+                    <thead>
+                        <tr>
+                            <th style="background:#f5f3ff;color:#6d28d9;padding:8px 10px;text-align:left;border:1px solid #e9d5ff;white-space:nowrap;">Bab / Materi</th>
+                            <th style="background:#f5f3ff;color:#6d28d9;padding:8px 10px;text-align:center;border:1px solid #e9d5ff;white-space:nowrap;">Level 1<br><span style="font-weight:400;font-size:0.72rem;">Pengetahuan</span></th>
+                            <th style="background:#f5f3ff;color:#6d28d9;padding:8px 10px;text-align:center;border:1px solid #e9d5ff;white-space:nowrap;">Level 2<br><span style="font-weight:400;font-size:0.72rem;">Aplikasi</span></th>
+                            <th style="background:#f5f3ff;color:#6d28d9;padding:8px 10px;text-align:center;border:1px solid #e9d5ff;white-space:nowrap;">Level 3<br><span style="font-weight:400;font-size:0.72rem;">Penalaran</span></th>
+                            <th style="background:#f5f3ff;color:#6d28d9;padding:8px 10px;text-align:center;border:1px solid #e9d5ff;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>${matrixRows}</tbody>
+                </table>
+            </div>
+        </div>`;
+
         const modal = document.createElement('div');
         modal.className = 'analytics-modal';
         modal.innerHTML = `
@@ -531,6 +611,7 @@ async function showStudentDetail(userId) {
                                 <div style="font-size:2rem;font-weight:700;color:#8b5cf6;">${analytics.summary.passRate}%</div>
                             </div>
                         </div>
+                        ${cogMatrixHtml}
                     </div>
                     <div>
                         <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:1rem;margin-bottom:1.5rem;">
@@ -701,34 +782,38 @@ async function buildStudentExportData(userId) {
             analytics.student.nama_lengkap || '-',
             analytics.student.email || '-',
             analytics.student.class_name || '-',
-            '-', '-', '-', '-', 0, petaKompetensi, 0, 0, '-', '-', '-', '-'
+            '-', '-', '-', petaKompetensi, 0, 0, 0, '-', '-', '-', '-'
         ]);
     } else {
         for (const exam of analytics.exams) {
             const startTime = exam.date ? new Date(exam.date) : null;
-            const endTime = exam.date && exam.timeSpent
-                ? new Date(new Date(exam.date).getTime() + exam.timeSpent * 1000) : null;
             const durasiMenit = exam.timeSpent ? Math.round(exam.timeSpent / 60) + ' menit' : '-';
-            const jumlahSalah = (exam.totalQuestions || 0) - (exam.correctAnswers || 0);
+            const jumlahBenar = exam.correctAnswers || 0;
+            const jumlahSalah = (exam.totalQuestions || 0) - jumlahBenar;
+            // Tidak Dijawab = Total Soal - Benar - Salah
+            // Dalam konteks ini salah sudah mencakup yang dijawab tapi salah,
+            // sedangkan "tidak dijawab" berasal dari totalQuestions - answered count
+            const jumlahTidakDijawab = Math.max(0, (exam.totalQuestions || 0) - jumlahBenar - Math.max(0, jumlahSalah));
 
             const ai = await getAIPerSession(exam.sessionId);
 
             rows.push([
-                analytics.student.nama_lengkap || '-',
-                analytics.student.email || '-',
-                analytics.student.class_name || analytics.student.school || '-',
-                exam.questionTypeVariant || '-',
-                startTime ? startTime.toLocaleDateString('id-ID') : '-',
-                `${startTime ? startTime.toLocaleTimeString('id-ID') : '-'} → ${endTime ? endTime.toLocaleTimeString('id-ID') : '-'}`,
-                durasiMenit,
-                exam.correctAnswers || 0,
-                petaKompetensi,
-                exam.totalScore || 0,
-                jumlahSalah >= 0 ? jumlahSalah : 0,
-                ai ? ai.ringkasan : '-',
-                ai ? ai.kekuatan : '-',
-                ai ? ai.kelemahan : '-',
-                ai ? ai.rekomendasi : '-'
+                analytics.student.nama_lengkap || '-',       // 0
+                analytics.student.email || '-',               // 1
+                analytics.student.class_name || analytics.student.school || '-', // 2
+                exam.questionTypeVariant || '-',               // 3
+                startTime ? startTime.toLocaleDateString('id-ID') : '-', // 4
+                durasiMenit,                                  // 5 (was index 6, shifted after removing waktu mulai)
+                exam.totalScore || 0,                         // 6 (was 9)
+                petaKompetensi,                               // 7 (was 8)
+                jumlahBenar,                                  // 8 (was 7 correctAnswers)
+                Math.max(0, jumlahSalah),                     // 9 (was 10)
+                jumlahTidakDijawab,                           // 10 NEW
+                ai ? ai.ringkasan : '-',                      // 11 (was 11)
+                ai ? ai.kekuatan : '-',                       // 12 (was 12)
+                ai ? ai.kelemahan : '-',                      // 13 (was 13)
+                ai ? ai.rekomendasi : '-',                    // 14 (was 14)
+                exam.sessionId || '-'                         // 15 (NEW - for Lihat Jawaban btn)
             ]);
         }
     }
@@ -743,7 +828,7 @@ async function loadFullSummaryTable() {
     const tbody = document.getElementById('fullSummaryTableBody');
     if (!tbody) return;
 
-    tbody.innerHTML = `<tr><td colspan="15" style="padding:2rem;text-align:center;color:#6b7280;">
+    tbody.innerHTML = `<tr><td colspan="16" style="padding:2rem;text-align:center;color:#6b7280;">
         <i class="fas fa-spinner fa-spin"></i> Memuat data semua siswa...
     </td></tr>`;
 
@@ -751,7 +836,7 @@ async function loadFullSummaryTable() {
         const { getAllStudentsAnalytics } = await import('./exam_analytics_system.js');
         const students = await getAllStudentsAnalytics();
         if (!students || students.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="15" style="padding:2rem;text-align:center;color:#6b7280;">Belum ada data siswa.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="16" style="padding:2rem;text-align:center;color:#6b7280;">Belum ada data siswa.</td></tr>`;
             return;
         }
 
@@ -767,13 +852,13 @@ async function loadFullSummaryTable() {
         }
 
         if (allRows.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="15" style="padding:2rem;text-align:center;color:#6b7280;">Belum ada data ujian.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="16" style="padding:2rem;text-align:center;color:#6b7280;">Belum ada data ujian.</td></tr>`;
             return;
         }
 
         tbody.innerHTML = allRows.map((row, idx) => {
             const bgColor = idx % 2 === 0 ? '#ffffff' : '#f9fafb';
-            const skor = row[9] || 0;
+            const skor = row[6] || 0;   // index shifted: was row[9]
             const skorColor = skor >= 70 ? '#059669' : skor >= 50 ? '#d97706' : '#dc2626';
 
             const trim = (text, max = 60) => {
@@ -783,8 +868,6 @@ async function loadFullSummaryTable() {
                     : str;
             };
 
-            // Format khusus AI agar berupa bullet list vertikal yang bisa di-scroll 
-            // sehingga datanya lengkap tapi tabel tetap rapi
             const formatAIList = (text) => {
                 if (!text || text === '-') return '<span style="color:#9ca3af;font-style:italic;">-</span>';
                 if (!String(text).includes('; ')) {
@@ -798,6 +881,33 @@ async function loadFullSummaryTable() {
                         </div>`;
             };
 
+            // Peta kompetensi (index 7)
+            const petaHtml = (() => {
+                const peta = String(row[7] || '-');
+                if (peta === '-') return '-';
+                const items = peta.split('|').map(s => s.trim()).filter(Boolean);
+                if (items.length === 0) return peta;
+                return items.map(item => {
+                    const match = item.match(/^(.+):\s*(\d+)%$/);
+                    if (!match) return `<div style="font-size:0.7rem;color:#6b7280;">${item}</div>`;
+                    const [, bab, pct] = match;
+                    const pctNum = parseInt(pct);
+                    const color = pctNum >= 70 ? '#10b981' : pctNum >= 50 ? '#f59e0b' : '#ef4444';
+                    return `<div style="margin-bottom:3px;">
+                        <div style="display:flex;justify-content:space-between;font-size:0.68rem;">
+                            <span style="color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;" title="${bab}">${bab}</span>
+                            <span style="color:${color};font-weight:600;margin-left:4px;">${pct}%</span>
+                        </div>
+                        <div style="height:4px;background:#f3f4f6;border-radius:2px;margin-top:1px;">
+                            <div style="height:4px;width:${pctNum}%;background:${color};border-radius:2px;"></div>
+                        </div>
+                    </div>`;
+                }).join('');
+            })();
+
+            const sessionId = row[15] || '';
+            const studentName = encodeURIComponent(row[0] || 'Siswa');
+
             return `<tr style="background:${bgColor};border-bottom:1px solid #f3f4f6;">
                 <td style="padding:8px 12px;font-weight:600;color:#1f2937;">${trim(row[0])}</td>
                 <td style="padding:8px 12px;color:#6b7280;">${trim(row[1])}</td>
@@ -807,57 +917,207 @@ async function loadFullSummaryTable() {
                         ${row[3] || '-'}
                     </span>
                 </td>
-                <td style="padding:8px 12px;white-space:nowrap;color:#6b7280;">${String(row[4] || '-').split(',')[0]}</td>
-                <td style="padding:8px 12px;font-size:0.78rem;color:#6b7280;white-space:nowrap;">
-                    ${String(row[4] || '-').split(',')[1] || row[4] || '-'}<br>
-                    <span style="color:#9ca3af;">→ ${String(row[5] || '-').split(',')[1] || row[5] || '-'}</span>
-                </td>
-                <td style="padding:8px 12px;white-space:nowrap;">${row[6] || '-'}</td>
+                <td style="padding:8px 12px;white-space:nowrap;color:#6b7280;">${row[4] || '-'}</td>
+                <td style="padding:8px 12px;white-space:nowrap;">${row[5] || '-'}</td>
                 <td style="padding:8px 12px;text-align:center;">
                     <span style="background:${skorColor};color:white;padding:3px 10px;border-radius:12px;font-weight:700;font-size:0.88rem;">
                         ${skor}
                     </span>
                 </td>
-                <td style="padding:8px 12px;font-size:0.75rem;color:#374151;max-width:220px;">
-                    ${(() => {
-                        const peta = String(row[8] || '-');
-                        if (peta === '-') return '-';
-                        const items = peta.split('|').map(s => s.trim()).filter(Boolean);
-                        if (items.length === 0) return peta;
-                        return items.map(item => {
-                            const match = item.match(/^(.+):\s*(\d+)%$/);
-                            if (!match) return `<div style="font-size:0.7rem;color:#6b7280;">${item}</div>`;
-                            const [, bab, pct] = match;
-                            const pctNum = parseInt(pct);
-                            const color = pctNum >= 70 ? '#10b981' : pctNum >= 50 ? '#f59e0b' : '#ef4444';
-                            return `<div style="margin-bottom:3px;">
-                                <div style="display:flex;justify-content:space-between;font-size:0.68rem;">
-                                    <span style="color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px;" title="${bab}">${bab}</span>
-                                    <span style="color:${color};font-weight:600;margin-left:4px;">${pct}%</span>
-                                </div>
-                                <div style="height:4px;background:#f3f4f6;border-radius:2px;margin-top:1px;">
-                                    <div style="height:4px;width:${pctNum}%;background:${color};border-radius:2px;"></div>
-                                </div>
-                            </div>`;
-                        }).join('');
-                    })()}
-                </td>
-                <td style="padding:8px 12px;text-align:center;color:#059669;font-weight:600;">${row[7] || 0}</td>
-                <td style="padding:8px 12px;text-align:center;color:#dc2626;font-weight:600;">${row[10] !== undefined ? row[10] : '-'}</td>
-                
+                <td style="padding:8px 12px;font-size:0.75rem;color:#374151;max-width:220px;">${petaHtml}</td>
+                <td style="padding:8px 12px;text-align:center;color:#059669;font-weight:600;">${row[8] || 0}</td>
+                <td style="padding:8px 12px;text-align:center;color:#dc2626;font-weight:600;">${row[9] !== undefined ? row[9] : '-'}</td>
+                <td style="padding:8px 12px;text-align:center;color:#f59e0b;font-weight:600;">${row[10] !== undefined ? row[10] : '-'}</td>
                 <td style="padding:8px 12px;font-size:0.78rem;color:#374151;max-width:220px;vertical-align:top;">${formatAIList(row[11])}</td>
                 <td style="padding:8px 12px;font-size:0.78rem;color:#059669;max-width:200px;vertical-align:top;">${formatAIList(row[12])}</td>
                 <td style="padding:8px 12px;font-size:0.78rem;color:#dc2626;max-width:200px;vertical-align:top;">${formatAIList(row[13])}</td>
                 <td style="padding:8px 12px;font-size:0.78rem;color:#3b82f6;max-width:200px;vertical-align:top;">${formatAIList(row[14] || row[13])}</td>
+                <td style="padding:8px 12px;text-align:center;">
+                    ${sessionId && sessionId !== '-'
+                        ? `<button onclick="openExamDetailFromTable('${sessionId}', '${studentName}')"
+                            style="background:#667eea;color:white;border:none;padding:6px 12px;border-radius:8px;cursor:pointer;font-size:0.78rem;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;">
+                            <i class='fas fa-eye'></i> Lihat Jawaban
+                           </button>`
+                        : '<span style="color:#d1d5db;font-size:0.78rem;">-</span>'}
+                </td>
             </tr>`;
         }).join('');
 
     } catch (error) {
         console.error('Error loading full summary table:', error);
-        tbody.innerHTML = `<tr><td colspan="15" style="padding:2rem;text-align:center;color:#ef4444;">
+        tbody.innerHTML = `<tr><td colspan="16" style="padding:2rem;text-align:center;color:#ef4444;">
             Error: ${error.message}
         </td></tr>`;
     }
 }
+
+// ──────────────────────────────────────────────────────────────
+// Buka modal examDetailModal dari tabel analytics (tombol Lihat Jawaban)
+// ──────────────────────────────────────────────────────────────
+window.openExamDetailFromTable = async function(sessionId, studentName) {
+    if (!sessionId || sessionId === '-' || sessionId === 'undefined') {
+        alert('Session ID tidak valid.');
+        return;
+    }
+
+    // Gunakan fungsi viewExamDetail yang sudah ada di admin.html (atau buat fallback)
+    if (typeof window.viewExamDetail === 'function') {
+        window.viewExamDetail(sessionId);
+        return;
+    }
+
+    // Fallback: buat modal sederhana jika viewExamDetail tidak tersedia
+    const modal = document.getElementById('examDetailModal');
+    const content = document.getElementById('examDetailContent');
+    if (!modal || !content) {
+        alert('Modal detail ujian tidak ditemukan di halaman ini.');
+        return;
+    }
+
+    modal.style.display = 'flex';
+    content.innerHTML = `<div style="text-align:center;padding:40px;">
+        <i class="fas fa-spinner fa-spin" style="font-size:2rem;color:#667eea;"></i>
+        <p style="margin-top:16px;color:#6b7280;">Memuat jawaban siswa...</p>
+    </div>`;
+
+    try {
+        // Ambil session
+        const { data: session } = await supabase
+            .from('exam_sessions').select('*').eq('id', sessionId).single();
+
+        // Ambil profil siswa
+        let student = {};
+        if (session?.user_id) {
+            const { data: profile } = await supabase
+                .from('profiles').select('nama_lengkap, class_name').eq('id', session.user_id).single();
+            if (profile) student = profile;
+        }
+
+        // Ambil jawaban + soal
+        const { data: answers } = await supabase
+            .from('exam_answers')
+            .select(`
+                *,
+                questions (
+                    id, question_text, question_type, option_a, option_b, option_c, option_d,
+                    correct_answer, correct_answers, category_mapping, category_options,
+                    explanation, bab, difficulty
+                )
+            `)
+            .eq('exam_session_id', sessionId)
+            .order('created_at', { ascending: true });
+
+        if (!session) { content.innerHTML = '<p style="color:red;">Data session tidak ditemukan.</p>'; return; }
+
+        const totalQ = answers?.length || 0;
+        const totalCorrect = answers?.filter(a => a.is_correct).length || 0;
+        const studentDisplayName = student.nama_lengkap || decodeURIComponent(studentName) || 'Siswa';
+
+        // Header info
+        let html = `
+            <div style="background:#f9fafb;padding:16px;border-radius:10px;margin-bottom:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;">
+                <div><label style="font-size:0.72rem;color:#6b7280;text-transform:uppercase;">Nama</label>
+                    <div style="font-weight:700;color:#1f2937;">${studentDisplayName}</div></div>
+                <div><label style="font-size:0.72rem;color:#6b7280;text-transform:uppercase;">Kelas</label>
+                    <div style="font-weight:600;">${student.class_name || '-'}</div></div>
+                <div><label style="font-size:0.72rem;color:#6b7280;text-transform:uppercase;">Skor</label>
+                    <div style="font-weight:700;color:#667eea;font-size:1.3rem;">${session.total_score || 0}</div></div>
+                <div><label style="font-size:0.72rem;color:#6b7280;text-transform:uppercase;">Benar / Total</label>
+                    <div style="font-weight:600;color:#059669;">${totalCorrect} / ${totalQ}</div></div>
+            </div>
+            <h4 style="margin-bottom:14px;color:#374151;font-size:0.95rem;">
+                <i class="fas fa-list-alt" style="color:#667eea;"></i> Detail Jawaban Per Soal
+            </h4>`;
+
+        if (!answers || answers.length === 0) {
+            html += '<p style="color:#9ca3af;text-align:center;padding:20px;">Belum ada jawaban tercatat.</p>';
+        } else {
+            answers.forEach((ans, idx) => {
+                const q = ans.questions || {};
+                const isCorrect = ans.is_correct;
+                const userAns = ans.selected_answer || '-';
+                const borderColor = isCorrect ? '#10b981' : '#ef4444';
+                const bgColor = isCorrect ? '#f0fdf4' : '#fff5f5';
+
+                // Format jawaban berdasarkan tipe
+                let userAnsDisplay = userAns;
+                let correctAnsDisplay = q.correct_answer || '-';
+
+                if (q.question_type === 'PGK MCMA') {
+                    const opts = (userAns || '').split(',').map(l => l.trim()).filter(Boolean);
+                    userAnsDisplay = opts.map(l => `${l}. ${q[`option_${l.toLowerCase()}`] || ''}`).join('<br>') || userAns;
+                    const corOpts = Array.isArray(q.correct_answers)
+                        ? q.correct_answers
+                        : (q.correct_answers || '').split(',');
+                    correctAnsDisplay = corOpts.map(l => `${l.trim()}. ${q[`option_${l.trim().toLowerCase()}`] || ''}`).join('<br>');
+                } else if (q.question_type === 'PGK Kategori') {
+                    try {
+                        const selMap = typeof userAns === 'string' ? JSON.parse(userAns) : userAns;
+                        let stmts = q.category_options || q.category_statements || [];
+                        if (!Array.isArray(stmts)) stmts = typeof stmts === 'string' ? JSON.parse(stmts) : [];
+                        userAnsDisplay = stmts.map((s, i) => {
+                            const v = selMap[i];
+                            return `${i+1}. ${s} → <strong>${v === true ? '✔ Benar' : v === false ? '✘ Salah' : '—'}</strong>`;
+                        }).join('<br>');
+
+                        let cm = q.category_mapping || {};
+                        if (typeof cm === 'string') cm = JSON.parse(cm);
+                        correctAnsDisplay = stmts.map((s, i) => {
+                            const key = typeof s === 'string' ? s.trim() : s;
+                            const truth = cm.hasOwnProperty(key) ? cm[key] : cm[String(i)];
+                            return `${i+1}. ${s} → <strong>${truth ? '✔ Benar' : '✘ Salah'}</strong>`;
+                        }).join('<br>');
+                    } catch(e) { /* keep raw */ }
+                } else {
+                    const optKey = `option_${(userAns || '').toLowerCase()}`;
+                    if (q[optKey]) userAnsDisplay = `${userAns}. ${q[optKey]}`;
+                    const corKey = `option_${(q.correct_answer || '').toLowerCase()}`;
+                    if (q[corKey]) correctAnsDisplay = `${q.correct_answer}. ${q[corKey]}`;
+                }
+
+                html += `
+                <div style="border:1px solid #e5e7eb;border-radius:10px;margin-bottom:14px;overflow:hidden;border-left:4px solid ${borderColor};">
+                    <div style="background:${bgColor};padding:10px 14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
+                        <span style="font-weight:700;color:#374151;font-size:0.88rem;">Soal ${idx + 1}</span>
+                        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                            <span style="background:${isCorrect ? '#d1fae5' : '#fee2e2'};color:${isCorrect ? '#065f46' : '#991b1b'};padding:2px 10px;border-radius:20px;font-size:0.78rem;font-weight:600;">
+                                ${isCorrect ? '✓ Benar' : '✗ Salah'}
+                            </span>
+                            ${q.question_type ? `<span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:12px;font-size:0.75rem;">${q.question_type}</span>` : ''}
+                            ${q.bab ? `<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:0.75rem;">${q.bab}</span>` : ''}
+                        </div>
+                    </div>
+                    <div style="padding:12px 14px;">
+                        <p style="font-size:0.88rem;color:#374151;margin-bottom:12px;line-height:1.55;">
+                            ${q.question_text ? q.question_text.substring(0, 250) + (q.question_text.length > 250 ? '…' : '') : 'Teks soal tidak tersedia.'}
+                        </p>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:0.83rem;">
+                            <div style="background:${isCorrect ? 'rgba(59,130,246,0.07)' : 'rgba(239,68,68,0.07)'};padding:10px;border-radius:8px;">
+                                <div style="color:#6b7280;font-size:0.72rem;margin-bottom:4px;text-transform:uppercase;font-weight:600;">Jawaban Siswa</div>
+                                <div style="color:#1f2937;font-weight:500;line-height:1.5;">${userAnsDisplay}</div>
+                            </div>
+                            <div style="background:rgba(16,185,129,0.07);padding:10px;border-radius:8px;">
+                                <div style="color:#6b7280;font-size:0.72rem;margin-bottom:4px;text-transform:uppercase;font-weight:600;">Jawaban Benar</div>
+                                <div style="color:#065f46;font-weight:600;line-height:1.5;">${correctAnsDisplay}</div>
+                            </div>
+                        </div>
+                        ${q.explanation ? `
+                        <div style="margin-top:10px;background:#fffbeb;border-left:3px solid #f59e0b;padding:10px 12px;border-radius:0 8px 8px 0;">
+                            <div style="font-size:0.75rem;color:#92400e;font-weight:700;margin-bottom:4px;">
+                                <i class="fas fa-lightbulb"></i> Pembahasan
+                            </div>
+                            <div style="font-size:0.83rem;color:#374151;line-height:1.55;">${q.explanation}</div>
+                        </div>` : ''}
+                    </div>
+                </div>`;
+            });
+        }
+
+        content.innerHTML = html;
+
+    } catch(err) {
+        content.innerHTML = `<p style="color:red;padding:20px;">Gagal memuat data: ${err.message}</p>`;
+    }
+};
 
 window.loadFullSummaryTable = loadFullSummaryTable;

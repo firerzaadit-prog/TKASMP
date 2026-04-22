@@ -1,7 +1,6 @@
 // habisujian.js - Exam completion page with results and answer review
 import { supabase } from './clientSupabase.js';
 import { getCurrentUser } from './auth.js';
-import { geminiAnalytics } from './gemini_analytics.js';
 import { getItemParameters } from './irt_analysis.js';
 
 // Global variables
@@ -110,11 +109,13 @@ async function loadExamResults() {
         // Display results
         displayExamResults(session);
 
-        // Display results FIRST - don't block on AI analysis
-        // AI analysis runs in background (fire-and-forget)
-        triggerAIAnalysis(session).catch(err => {
-            console.warn('[AI Background] Analysis error (non-blocking):', err);
-        });
+        // Simpan session & user ID untuk tombol AI viewer
+        window._examSessionId = examSessionId;
+        window._examUserId = session.user_id || null;
+
+        // Tampilkan tombol analisis AI setelah data dimuat
+        const aiPrompt = document.getElementById('aiDeepAnalysisPrompt');
+        if (aiPrompt) aiPrompt.style.display = 'block';
 
     } catch (error) {
         console.error('Error loading exam results:', error);
@@ -481,121 +482,24 @@ function retakeExam() {
     window.location.href = 'halamanpertama.html';
 }
 
-// Trigger AI analysis for the completed exam
-// Trigger AI analysis for the completed exam
-async function triggerAIAnalysis(session) {
-    const aiSection = document.getElementById('aiAnalysisSection');
-    const aiLoading = document.getElementById('aiAnalysisLoading');
-    const aiContent = document.getElementById('aiAnalysisContent');
+// Arahkan ke halaman AI Viewer dengan parameter session & user
+function goToAIViewer() {
+    const sessionId = window._examSessionId || examSessionId;
+    const userId = window._examUserId;
 
-    try {
-        if (aiSection) aiSection.style.display = 'block';
-        console.log('[AI Background] Starting batch analysis for session:', examSessionId);
-
-        // 1. Siapkan data untuk dikirim ke AI
-        const answeredQuestionIds = questions.map(q => q.id);
-        if (answeredQuestionIds.length === 0) return;
-
-        const { data: answersData } = await supabase
-            .from('exam_answers')
-            .select('*')
-            .eq('exam_session_id', examSessionId)
-            .in('question_id', answeredQuestionIds);
-
-        if (!answersData || answersData.length === 0) return;
-
-        const questionsMap = new Map(questions.map(q => [q.id, q]));
-        const payload = answersData.map(ans => ({
-            answer: {
-                answer_value: ans.selected_answer || ans.user_answer,
-                is_correct: checkAnswerCorrectness(questionsMap.get(ans.question_id), ans.selected_answer || ans.user_answer)
-            },
-            question: questionsMap.get(ans.question_id)
-        }));
-
-        let analysisResult = null;
-
-        // 2. Cek Cache atau Panggil API
-        const { data: existingBatch } = await supabase
-            .from('gemini_analyses')
-            .select('analysis_data')
-            .eq('answer_id', examSessionId)
-            .maybeSingle();
-
-        if (existingBatch) {
-            analysisResult = existingBatch.analysis_data;
-            console.log('[AI] Mengambil hasil dari cache database');
-        } else {
-            // Panggil Supabase Edge Function (melalui geminiAnalytics)
-            analysisResult = await geminiAnalytics.analyzeBatchAnswers(payload);
-            // Simpan ke database agar tidak panggil API terus menerus
-            await geminiAnalytics.storeBatchResult(examSessionId, analysisResult);
-        }
-
-        // 3. Tampilkan Hasil ke UI (Admin Style)
-        if (analysisResult) {
-            renderGlobalAiAnalysis(analysisResult);
-            aiLoading.style.display = 'none';
-            aiContent.style.display = 'block';
-        }
-
-    } catch (error) {
-        console.error('[AI Background] Error:', error);
-        if (aiLoading) aiLoading.innerHTML = `<p style="color: red;"><i class="fas fa-exclamation-triangle"></i> Gagal memuat analisis AI.</p>`;
+    if (!sessionId || sessionId === 'null' || sessionId === 'undefined') {
+        alert('Session ID tidak ditemukan. Tidak dapat membuka analisis AI.');
+        return;
     }
+
+    let url = `ai_viewer.html?session=${encodeURIComponent(sessionId)}`;
+    if (userId) {
+        url += `&user=${encodeURIComponent(userId)}`;
+    }
+
+    window.location.href = url;
 }
 
-// Fungsi helper untuk merender hasil ke HTML (Tampilan Dashboard-style)
-function renderGlobalAiAnalysis(data) {
-    const container = document.getElementById('aiAnalysisContent');
-    if (!container) return;
-
-    // Bersihkan kontainer
-    container.innerHTML = `
-        <div class="ai-summary-card" style="background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 20px;">
-            <h3 style="color: #4e73df; margin-bottom: 15px;"><i class="fas fa-info-circle"></i> Ringkasan Evaluasi</h3>
-            <p style="line-height: 1.6; color: #444;">${data.summary || 'Tidak ada ringkasan tersedia.'}</p>
-        </div>
-
-        <div class="ai-details-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
-            <div class="detail-card" style="background: #f8fff9; border-left: 5px solid #28a745; padding: 20px; border-radius: 8px;">
-                <h4 style="color: #28a745;"><i class="fas fa-check-circle"></i> Kekuatan</h4>
-                <ul style="margin-top: 10px; padding-left: 20px;">
-                    ${(data.strengths || []).map(s => `<li style="margin-bottom: 5px;">${s}</li>`).join('')}
-                </ul>
-            </div>
-
-            <div class="detail-card" style="background: #fff8f8; border-left: 5px solid #dc3545; padding: 20px; border-radius: 8px;">
-                <h4 style="color: #dc3545;"><i class="fas fa-exclamation-circle"></i> Kelemahan</h4>
-                <ul style="margin-top: 10px; padding-left: 20px;">
-                    ${(data.weaknesses || []).map(w => `<li style="margin-bottom: 5px;">${w}</li>`).join('')}
-                </ul>
-            </div>
-        </div>
-
-        <div class="ai-suggestion-card" style="margin-top: 20px; background: #f0f7ff; border-radius: 12px; padding: 25px; border: 1px dashed #4e73df;">
-            <h4 style="color: #4e73df;"><i class="fas fa-lightbulb"></i> Saran Pembelajaran</h4>
-            <div style="margin-top: 10px;">
-                ${(data.learningSuggestions || []).map(ls => `
-                    <div style="background: white; margin-bottom: 8px; padding: 10px 15px; border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-                        <i class="fas fa-arrow-right" style="font-size: 0.8rem; color: #4e73df;"></i> ${ls}
-                    </div>
-                `).join('')}
-            </div>
-        </div>
-    `;
-
-    // Render ulang MathJax/KaTeX jika ada rumus dalam feedback AI
-    if (window.renderMathInElement) {
-        renderMathInElement(container, {
-            delimiters: [
-                {left: "$$", right: "$$", display: true},
-                {left: "$", right: "$", display: false}
-            ],
-            throwOnError: false
-        });
-    }
-}
 // Show notification that AI analysis is ready
 function showAIAnalysisNotification(analysisCount) {
     // Create notification element
@@ -627,3 +531,4 @@ function showAIAnalysisNotification(analysisCount) {
 
 // Export functions for global access
 window.retakeExam = retakeExam;
+window.goToAIViewer = goToAIViewer;

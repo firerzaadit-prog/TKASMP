@@ -14,6 +14,62 @@
     }
     </script>
     <link rel="stylesheet" href="habisujian.css">
+    <!-- AI CTA Styles -->
+    <style>
+        .ai-cta-wrapper { margin: 28px 0; }
+        .ai-cta-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #4e73df 100%);
+            border-radius: 18px;
+            padding: 28px 32px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            box-shadow: 0 8px 30px rgba(102,126,234,0.35);
+            flex-wrap: wrap;
+        }
+        .ai-cta-icon-wrap {
+            flex-shrink: 0;
+            width: 64px; height: 64px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.8rem; color: #fff;
+        }
+        .ai-cta-text { flex: 1; min-width: 200px; }
+        .ai-cta-question {
+            font-size: 1.05rem; font-weight: 700; color: #fff;
+            margin: 0 0 6px; line-height: 1.4;
+        }
+        .ai-cta-sub {
+            font-size: 0.88rem; color: rgba(255,255,255,0.85);
+            margin: 0; line-height: 1.5;
+        }
+        .ai-cta-btn {
+            flex-shrink: 0;
+            background: #fff;
+            color: #667eea;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 50px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex; align-items: center; gap: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+        .ai-cta-btn:hover {
+            transform: translateY(-3px) scale(1.03);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+        .ai-cta-btn i:last-child { transition: transform 0.3s; }
+        .ai-cta-btn:hover i:last-child { transform: translateX(4px); }
+        @media (max-width: 600px) {
+            .ai-cta-card { flex-direction: column; text-align: center; padding: 24px 20px; }
+            .ai-cta-btn { width: 100%; justify-content: center; }
+        }
+    </style>
     <!-- KaTeX for LaTeX rendering -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
@@ -82,19 +138,22 @@
   <div id="irtResult" class="irt-result-section" style="display: none;">
                     </div>
 
-                <div id="aiAnalysisSection" class="ai-analysis-global-section" style="display: none; margin-bottom: 30px;">
-                    <div class="section-header">
-                        <h2><i class="fas fa-brain"></i> Analisis AI Keseluruhan</h2>
-                        <p>Evaluasi mendalam berdasarkan performa ujian Anda</p>
-                    </div>
-                    
-                    <div id="aiAnalysisLoading" class="ai-loading-card" style="text-align: center; padding: 40px; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
-                        <i class="fas fa-spinner fa-spin" style="font-size: 2rem; color: #4e73df; margin-bottom: 15px;"></i>
-                        <p>AI sedang menganalisis pola jawaban Anda...</p>
-                    </div>
-
-                    <div id="aiAnalysisContent" style="display: none;">
+                <!-- Tombol Analisis AI Mendalam -->
+                <div id="aiDeepAnalysisPrompt" class="ai-cta-wrapper" style="display:none; margin: 24px 0;">
+                    <div class="ai-cta-card">
+                        <div class="ai-cta-icon-wrap">
+                            <i class="fas fa-brain"></i>
                         </div>
+                        <div class="ai-cta-text">
+                            <p class="ai-cta-question">Ingin tahu bagaimana performa belajarmu secara mendalam?</p>
+                            <p class="ai-cta-sub">Sistem AI kami akan menganalisis pola jawaban, kekuatan, kelemahan, dan memberikan rekomendasi belajar personal untukmu.</p>
+                        </div>
+                        <button id="btnGoToAIViewer" class="ai-cta-btn" onclick="goToAIViewer()">
+                            <i class="fas fa-rocket"></i>
+                            <span>Lihat Analisis AI Mendalam</span>
+                            <i class="fas fa-arrow-right"></i>
+                        </button>
+                    </div>
                 </div>
                     <!-- IRT results will be populated here by JavaScript -->
                 </div>
