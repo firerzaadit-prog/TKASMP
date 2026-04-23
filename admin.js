@@ -5270,20 +5270,15 @@ async function buildStudentExportData(userId) {
                 ? Math.round(exam.timeSpent / 60) + ' menit'
                 : '-';
 
-            const jumlahBenar  = exam.correctAnswers || 0;
-            const totalSoal    = exam.totalQuestions || 0;
-            // Salah = semua yang dikerjakan tapi salah
-            const jumlahSalah  = Math.max(0, totalSoal - jumlahBenar);
-            // Tidak Dijawab = sisa soal yang tidak sempat/tidak dikerjakan
-            // (dalam konteks ini totalSoal sudah mencakup soal yang diberi
-            //  ke siswa, sehingga salah + tidak dijawab = totalSoal - benar)
-            // Jika ada field answeredCount pakai itu, otherwise estimasi dari salah
-            const jumlahDijawab = exam.answeredCount != null
-                ? exam.answeredCount
-                : totalSoal;   // fallback: anggap semua terjawab
+            const jumlahBenar = exam.correctAnswers || 0;
+            const totalSoal = exam.totalQuestions || 0;
+            
+            // Cari jumlah yang benar-benar dijawab
+            const jumlahDijawab = exam.answeredCount != null ? exam.answeredCount : totalSoal;
+            
+            // Hitung Kosong dan Salah agar jumlahnya pas dengan Total
             const tidakDijawab = Math.max(0, totalSoal - jumlahDijawab);
-            // Dengan fallback: tidak dijawab = 0 jika answeredCount tidak ada
-            // Karena jumlah salah sudah = totalSoal - benar (semua terjawab)
+            const jumlahSalah  = Math.max(0, jumlahDijawab - jumlahBenar);
 
             // Ambil AI khusus untuk sesi ini
             const ai = await getAIPerSession(exam.sessionId);
