@@ -4743,31 +4743,6 @@ function loadAIRecommendations(analyticsData) {
 }
 
 // ==========================================
-// HELPER: Bersihkan LaTeX untuk teks plain (tooltip, title, dsb.)
-// Mengubah \frac{a}{b} → a/b, menghapus \cmd{...} → isi,
-// lalu membuang sisa tanda $ dan backslash.
-// ==========================================
-function stripLatex(text) {
-    if (!text) return '';
-    let s = String(text);
-    // \frac{pembilang}{penyebut} → pembilang/penyebut
-    s = s.replace(/\\frac\s*\{([^}]*)\}\s*\{([^}]*)\}/g, '$1/$2');
-    // \sqrt{isi} → √isi
-    s = s.replace(/\\sqrt\s*\{([^}]*)\}/g, '\u221a$1');
-    // \text{isi}, \mathrm{isi}, dsb. → isi
-    s = s.replace(/\\[a-zA-Z]+\s*\{([^}]*)\}/g, '$1');
-    // perintah LaTeX tanpa argumen: \cdot, \times, \pm, dll. → spasi
-    s = s.replace(/\\[a-zA-Z]+/g, ' ');
-    // buang tanda dolar
-    s = s.replace(/\$/g, '');
-    // buang kurung kurawal sisa
-    s = s.replace(/[{}]/g, '');
-    // normalisasi spasi berlebih
-    s = s.replace(/\s{2,}/g, ' ').trim();
-    return s;
-}
-
-// ==========================================
 // PER-STUDENT ANALYTICS FUNCTIONS
 // ==========================================
 
@@ -4998,7 +4973,7 @@ async function showStudentDetail(userId, sessionId = null) {
                     : `<span style="color:#d1d5db;">—</span>`;
 
                 return `<tr style="border-bottom:2px solid #e9d5ff;">
-                    <td style="padding:8px 12px;border:1px solid #e9d5ff;font-weight:600;color:#374151;font-size:0.82rem;background:${bg};white-space:nowrap;" title="${stripLatex(bab)}">${bab}</td>
+                    <td style="padding:8px 12px;border:1px solid #e9d5ff;font-weight:600;color:#374151;font-size:0.82rem;background:${bg};white-space:nowrap;">${bab}</td>
                     ${cells}
                     <td style="padding:8px 10px;text-align:center;border:1px solid #e9d5ff;background:${totBgCell};">${totCell}</td>
                 </tr>`;
@@ -5144,21 +5119,6 @@ async function showStudentDetail(userId, sessionId = null) {
         `;
 
         document.body.appendChild(modal);
-
-        // Render KaTeX setelah modal ada di DOM (untuk nama bab dengan LaTeX)
-        if (window.renderMathInElement) {
-            try {
-                renderMathInElement(modal, {
-                    delimiters: [
-                        { left: '$$', right: '$$', display: true },
-                        { left: '\\[', right: '\\]', display: true },
-                        { left: '$',  right: '$',  display: false },
-                        { left: '\\(', right: '\\)', display: false }
-                    ],
-                    throwOnError: false
-                });
-            } catch(e) { console.warn('KaTeX render error (modal):', e); }
-        }
 
         // Render radar chart setelah modal ada di DOM
         if (chapterLabels.length > 0 && window.Chart) {
@@ -5326,7 +5286,7 @@ function renderMiniCognitiveMatrix(matrix) {
 
         const shortBab = bab.length > 14 ? bab.substring(0, 13) + '…' : bab;
         return `<tr>
-            <td style="padding:2px 5px;border:1px solid #e9d5ff;font-size:0.65rem;font-weight:600;color:#374151;background:${bg};white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;" title="${stripLatex(bab)}">${shortBab}</td>
+            <td style="padding:2px 5px;border:1px solid #e9d5ff;font-size:0.65rem;font-weight:600;color:#374151;background:${bg};white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;" title="${bab}">${shortBab}</td>
             ${cells}
         </tr>`;
     }).join('');
@@ -7015,21 +6975,6 @@ async function loadFullSummaryTable() {
             </tr>`;
         }).filter(Boolean).join('');
 
-        // Render KaTeX setelah tabel dimuat (untuk nama bab yang mengandung LaTeX)
-        if (window.renderMathInElement) {
-            try {
-                renderMathInElement(document.getElementById('fullSummaryTableBody'), {
-                    delimiters: [
-                        { left: '$$', right: '$$', display: true },
-                        { left: '\\[', right: '\\]', display: true },
-                        { left: '$',  right: '$',  display: false },
-                        { left: '\\(', right: '\\)', display: false }
-                    ],
-                    throwOnError: false
-                });
-            } catch(e) { console.warn('KaTeX render error (summary table):', e); }
-        }
-
     } catch (error) {
         console.error('Error loading full summary table:', error);
         tbody.innerHTML = `<tr><td colspan="${COL}" style="padding:2rem;text-align:center;color:#ef4444;">
@@ -7042,6 +6987,24 @@ async function loadFullSummaryTable() {
 // FUNGSI: Lihat Jawaban Siswa per Sesi Ujian
 // Dipanggil dari tombol "Lihat Jawaban" di loadFullSummaryTable
 // ============================================================
+// ============================================================
+// HELPER: Bersihkan LaTeX menjadi teks plain (untuk badge/tooltip)
+// Contoh: "Aljabar $\frac{x}{2}$" → "Aljabar x/2"
+// ============================================================
+function stripLatex(text) {
+    if (!text) return '';
+    let s = String(text);
+    s = s.replace(/\\frac\s*\{([^}]*)\}\s*\{([^}]*)\}/g, '$1/$2');
+    s = s.replace(/\\sqrt\s*\{([^}]*)\}/g, '√$1');
+    s = s.replace(/\\[a-zA-Z]+\s*\{([^}]*)\}/g, '$1');
+    s = s.replace(/\\[a-zA-Z]+/g, ' ');
+    s = s.replace(/\\/g, '');
+    s = s.replace(/\$/g, '');
+    s = s.replace(/[{}]/g, '');
+    s = s.replace(/\s{2,}/g, ' ').trim();
+    return s;
+}
+
 async function showExamAnswerDetail(sessionId, studentName) {
     if (!sessionId || sessionId === '-') {
         alert('Session ID tidak valid.');
@@ -7278,11 +7241,12 @@ async function showExamAnswerDetail(sessionId, studentName) {
                 const qType     = q.question_type || 'Pilihan Ganda';
                 const bobot     = q.scoring_weight || 1;
 
-                const qText     = (q.question_text || 'Soal tidak tersedia.')
-                    .replace(/<[^>]*>/g, ' ')   // strip HTML
-                    .substring(0, 200)
-                    .trim()
-                    + (q.question_text?.length > 200 ? '…' : '');
+                // Tampilkan question_text penuh — LaTeX akan dirender KaTeX setelah innerHTML diset.
+                // Hanya strip tag <script>/<style> untuk keamanan, biarkan LaTeX \( \) dan $ $ utuh.
+                const qText = (q.question_text || 'Soal tidak tersedia.')
+                    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                    .trim();
 
                 html += `
                 <div style="border:1px solid #e5e7eb;border-radius:12px;margin-bottom:14px;
@@ -7299,7 +7263,7 @@ async function showExamAnswerDetail(sessionId, studentName) {
                                 ${badgeLbl}
                             </span>
                             ${qType ? `<span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:12px;font-size:0.72rem;">${qType}</span>` : ''}
-                            ${bab ? `<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:0.72rem;">${bab}</span>` : ''}
+                            ${bab ? `<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:0.72rem;" title="${(typeof stripLatex==='function'?stripLatex(bab):bab)}">${(typeof stripLatex==='function'?stripLatex(bab):bab)}</span>` : ''}
                             ${level ? `<span style="background:#f3e8ff;color:#6d28d9;padding:2px 8px;border-radius:12px;font-size:0.72rem;">${level}</span>` : ''}
                             <span style="background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:12px;font-size:0.72rem;">Bobot: ${bobot}</span>
                         </div>
@@ -7342,6 +7306,32 @@ async function showExamAnswerDetail(sessionId, studentName) {
         }
 
         bodyEl.innerHTML = html;
+
+        // ── Render KaTeX untuk semua LaTeX di dalam modal jawaban ────────────
+        // Ini yang mengkonversi \( ... \), \[ ... \], $ ... $  menjadi tulisan matematika
+        if (window.renderMathInElement) {
+            try {
+                renderMathInElement(bodyEl, {
+                    delimiters: [
+                        { left: '$$',   right: '$$',   display: true  },
+                        { left: '\\[', right: '\\]', display: true  },
+                        { left: '$',    right: '$',    display: false },
+                        { left: '\\(', right: '\\)', display: false }
+                    ],
+                    throwOnError: false
+                });
+            } catch(e) { console.warn('KaTeX render error (answer detail):', e); }
+        } else {
+            // Fallback ringan jika KaTeX belum dimuat:
+            // hapus pembungkus \( \) dan \[ \] agar tidak tampil raw
+            bodyEl.querySelectorAll('p, div, span').forEach(el => {
+                if (el.children.length === 0) {
+                    el.innerHTML = el.innerHTML
+                        .replace(/\\\(/g, '').replace(/\\\)/g, '')
+                        .replace(/\\\[/g, '').replace(/\\\]/g, '');
+                }
+            });
+        }
 
     } catch (err) {
         console.error('showExamAnswerDetail error:', err);

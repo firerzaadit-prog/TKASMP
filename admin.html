@@ -20,8 +20,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- KaTeX for LaTeX rendering -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+        onload="initKaTeX()"></script>
     <script type="module">
         // KEAMANAN: Sekarang menggunakan Anon Key saja, tidak lagi service role key
         // Service role key sekarang hanya di server (Edge Functions)
@@ -1728,6 +1729,55 @@
         document.getElementById('examDetailModal').addEventListener('click', function(e) {
             if (e.target === this) closeExamDetailModal();
         });
+    </script>
+
+    <!-- ================================================================
+         KaTeX Init — dipanggil otomatis via onload di auto-render.min.js
+         Juga tersedia sebagai window.renderKaTeX(el) untuk dipanggil
+         secara manual setelah konten dinamis dimasukkan ke DOM.
+         ================================================================ -->
+    <script>
+        // Konfigurasi delimiter KaTeX (dipakai di semua pemanggilan)
+        const KATEX_OPTS = {
+            delimiters: [
+                { left: '$$',    right: '$$',    display: true  },
+                { left: '\\[', right: '\\]', display: true  },
+                { left: '$',     right: '$',     display: false },
+                { left: '\\(', right: '\\)', display: false }
+            ],
+            throwOnError: false,
+            output: 'html'
+        };
+
+        // Dipanggil sekali saat auto-render.min.js selesai dimuat
+        function initKaTeX() {
+            if (typeof renderMathInElement === 'undefined') return;
+            // Render seluruh body untuk konten statis
+            try {
+                renderMathInElement(document.body, KATEX_OPTS);
+            } catch(e) { console.warn('KaTeX initKaTeX error:', e); }
+
+            // Expose helper global agar admin.js bisa memanggilnya kapan saja
+            window.renderKaTeX = function(el) {
+                if (!el || typeof renderMathInElement === 'undefined') return;
+                try { renderMathInElement(el, KATEX_OPTS); }
+                catch(e) { console.warn('KaTeX renderKaTeX error:', e); }
+            };
+
+            // Pasang MutationObserver: setiap kali ada node baru di body,
+            // render KaTeX di dalamnya — menangkap modal & konten dinamis apapun
+            const observer = new MutationObserver(mutations => {
+                mutations.forEach(m => {
+                    m.addedNodes.forEach(node => {
+                        if (node.nodeType === 1) { // ELEMENT_NODE
+                            try { renderMathInElement(node, KATEX_OPTS); }
+                            catch(e) { /* abaikan error per-node */ }
+                        }
+                    });
+                });
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
     </script>
 </body>
 </html>
