@@ -5163,12 +5163,137 @@ async function showStudentDetail(userId, sessionId = null) {
 }
 // Export satu siswa ke Excel
 // Helper: build CSV row data lengkap sesuai format yang diminta
+// ============================================================
+// FUNGSI: Bangun Matriks Kognitif Mini untuk ditampilkan di sel tabel
+// ============================================================
+async function buildCognitiveMatrixDataForStudent(userId) {
+    try {
+        const { data: sessions } = await supabase
+            .from('exam_sessions')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('status', 'completed');
+
+        if (!sessions || sessions.length === 0) return null;
+
+        const sessionIds = sessions.map(s => s.id);
+
+        const { data: answerRows, error: ansErr } = await supabase
+            .from('exam_answers')
+            .select(`
+                is_correct, question_id,
+                questions:question_id (bab, chapter, level_kognitif, difficulty)
+            `)
+            .in('exam_session_id', sessionIds);
+
+        if (ansErr || !answerRows || answerRows.length === 0) return null;
+
+        const LEVEL_MAP = {
+            'mudah': 'L1', 'easy': 'L1', '1': 'L1', 'l1': 'L1', 'pengetahuan': 'L1', 'knowledge': 'L1',
+            'sedang': 'L2', 'medium': 'L2', '2': 'L2', 'l2': 'L2', 'aplikasi': 'L2', 'application': 'L2',
+            'sulit': 'L3', 'hard': 'L3', '3': 'L3', 'l3': 'L3', 'penalaran': 'L3', 'reasoning': 'L3'
+        };
+        const ALL_LEVELS = ['L1', 'L2', 'L3'];
+
+        const dedupMap = new Map();
+        answerRows.forEach(row => {
+            if (row.question_id && !dedupMap.has(row.question_id)) {
+                dedupMap.set(row.question_id, row);
+            }
+        });
+
+        const matrix = {};
+        Array.from(dedupMap.values()).forEach(row => {
+            const q = row.questions;
+            if (!q) return;
+            const bab = (q.bab || q.chapter || 'Lainnya').trim();
+            const rawLevel = (q.level_kognitif || q.difficulty || '').toLowerCase().trim();
+            const level = LEVEL_MAP[rawLevel] || 'L2';
+            if (!matrix[bab]) {
+                matrix[bab] = {};
+                ALL_LEVELS.forEach(l => { matrix[bab][l] = { benar: 0, total: 0 }; });
+            }
+            matrix[bab][level].total++;
+            if (row.is_correct) matrix[bab][level].benar++;
+        });
+
+        return Object.keys(matrix).length > 0 ? matrix : null;
+    } catch (e) {
+        console.warn('buildCognitiveMatrixDataForStudent error:', e);
+        return null;
+    }
+}
+
+// Render Matriks Kognitif Mini sebagai HTML untuk ditampilkan di sel tabel
+function renderMiniCognitiveMatrix(matrix) {
+    if (!matrix) {
+        return `<span style="color:#9ca3af;font-size:0.72rem;font-style:italic;">Matriks belum tersedia</span>`;
+    }
+
+    const babs = Object.keys(matrix).sort();
+    const LEVELS = ['L1', 'L2', 'L3'];
+    const LEVEL_LABELS = { 'L1': 'L1<br><span style="font-size:0.6rem;opacity:0.8;">Pgt</span>', 'L2': 'L2<br><span style="font-size:0.6rem;opacity:0.8;">App</span>', 'L3': 'L3<br><span style="font-size:0.6rem;opacity:0.8;">Pnl</span>' };
+
+    const headerCells = LEVELS.map(l =>
+        `<th style="background:#4f46e5;color:white;padding:3px 5px;text-align:center;font-size:0.65rem;border:1px solid #4338ca;white-space:nowrap;">${LEVEL_LABELS[l]}</th>`
+    ).join('');
+
+    const bodyRows = babs.map((bab, i) => {
+        const bg = i % 2 === 0 ? '#ffffff' : '#f5f3ff';
+        const cells = LEVELS.map(lv => {
+            const d = matrix[bab][lv] || { benar: 0, total: 0 };
+            if (d.total === 0) {
+                return `<td style="padding:2px 4px;text-align:center;border:1px solid #e9d5ff;color:#d1d5db;background:${bg};font-size:0.65rem;">—</td>`;
+            }
+            const pct = Math.round((d.benar / d.total) * 100);
+            const salah = d.total - d.benar;
+            const bgCell = pct >= 70 ? '#f0fdf4' : pct >= 50 ? '#fffbeb' : '#fef2f2';
+            return `<td style="padding:2px 4px;text-align:center;border:1px solid #e9d5ff;background:${bgCell};font-size:0.65rem;line-height:1.3;">
+                <span style="color:#059669;font-weight:700;">✔${d.benar}</span>
+                <span style="color:#6b7280;"> / </span>
+                <span style="color:#dc2626;font-weight:700;">✘${salah}</span>
+            </td>`;
+        }).join('');
+
+        const shortBab = bab.length > 14 ? bab.substring(0, 13) + '…' : bab;
+        return `<tr>
+            <td style="padding:2px 5px;border:1px solid #e9d5ff;font-size:0.65rem;font-weight:600;color:#374151;background:${bg};white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;" title="${bab}">${shortBab}</td>
+            ${cells}
+        </tr>`;
+    }).join('');
+
+    return `<div style="min-width:220px;">
+        <table style="border-collapse:collapse;font-size:0.68rem;width:100%;">
+            <thead>
+                <tr>
+                    <th style="background:#4f46e5;color:white;padding:3px 5px;text-align:left;font-size:0.65rem;border:1px solid #4338ca;white-space:nowrap;">Bab</th>
+                    ${headerCells}
+                </tr>
+            </thead>
+            <tbody>${bodyRows}</tbody>
+        </table>
+        <div style="font-size:0.6rem;color:#9ca3af;margin-top:2px;text-align:right;">✔=Benar ✘=Salah</div>
+    </div>`;
+}
+
 async function buildStudentExportData(userId) {
+    // ── Safety Check: Validasi userId ────────────────────────────
+    if (!userId) {
+        console.warn('buildStudentExportData: userId kosong, skip.');
+        return null;
+    }
+
     const analytics = await getDetailedStudentAnalytics(userId);
     if (!analytics) return null;
 
-    // Peta Kompetensi per bab (berlaku untuk semua sesi siswa ini)
-    const petaKompetensi = analytics.chapterPerformance
+    // Safety check: pastikan analytics.student ada
+    const student = analytics?.student || {};
+
+    // Ambil data matriks kognitif untuk ditampilkan di kolom Peta Kompetensi
+    const kognitifMatrixData = await buildCognitiveMatrixDataForStudent(userId);
+
+    // Peta Kompetensi per bab — teks untuk CSV export
+    const petaKompetensi = (analytics.chapterPerformance || [])
         .map(c => `${c.chapter}: ${Math.round(c.accuracy||0)}%`)
         .join(' | ') || '-';
 
@@ -5279,18 +5404,19 @@ async function buildStudentExportData(userId) {
     // [15] Session ID (untuk tombol Lihat Jawaban)
 
     const rows = [];
+    const exams = analytics?.exams || [];
 
-    if (analytics.exams.length === 0) {
+    if (exams.length === 0) {
         // Siswa belum pernah ujian — isi semua kolom dengan nilai kosong
         rows.push([
-            analytics.student.nama_lengkap || '-',  // 0
-            analytics.student.email || '-',          // 1
-            analytics.student.class_name || '-',     // 2
+            student?.nama_lengkap || 'Tanpa Nama',  // 0
+            student?.email || '-',                   // 1
+            student?.class_name || '-',              // 2
             '-',                                     // 3: Paket Soal
             '-',                                     // 4: Tanggal Ujian
             '-',                                     // 5: Durasi
             0,                                       // 6: Skor
-            petaKompetensi,                          // 7: Peta Kompetensi
+            petaKompetensi,                          // 7: Peta Kompetensi (teks, untuk CSV)
             0,                                       // 8: Benar
             0,                                       // 9: Salah
             0,                                       // 10: Tidak Dijawab
@@ -5298,10 +5424,11 @@ async function buildStudentExportData(userId) {
             '-',                                     // 12: Kekuatan
             '-',                                     // 13: Kelemahan
             '-',                                     // 14: Rekomendasi
-            '-'                                      // 15: Session ID
+            '-',                                     // 15: Session ID
+            kognitifMatrixData                       // 16: Matrix object (untuk render di tabel)
         ]);
     } else {
-        for (const exam of analytics.exams) {
+        for (const exam of exams) {
             const startTime = exam.date ? new Date(exam.date) : null;
             const durasiMenit = exam.timeSpent
                 ? Math.round(exam.timeSpent / 60) + ' menit'
@@ -5321,22 +5448,23 @@ async function buildStudentExportData(userId) {
             const ai = await getAIPerSession(exam.sessionId);
 
             rows.push([
-                analytics.student.nama_lengkap || '-',                           // 0
-                analytics.student.email || '-',                                   // 1
-                analytics.student.class_name || analytics.student.school || '-', // 2
-                exam.questionTypeVariant || '-',                                  // 3
-                startTime ? startTime.toLocaleDateString('id-ID') : '-',         // 4
-                durasiMenit,                                                      // 5
-                exam.totalScore || 0,                                             // 6
-                petaKompetensi,                                                   // 7
-                jumlahBenar,                                                      // 8
-                jumlahSalah,                                                      // 9
-                tidakDijawab,                                                     // 10
-                ai ? ai.ringkasan : '-',                                          // 11
-                ai ? ai.kekuatan  : '-',                                          // 12
-                ai ? ai.kelemahan : '-',                                          // 13
-                ai ? ai.rekomendasi : '-',                                        // 14
-                exam.sessionId || '-'                                             // 15
+                student?.nama_lengkap || 'Tanpa Nama',                              // 0
+                student?.email || '-',                                               // 1
+                student?.class_name || student?.school || '-',                       // 2
+                exam.questionTypeVariant || '-',                                     // 3
+                startTime ? startTime.toLocaleDateString('id-ID') : '-',            // 4
+                durasiMenit,                                                         // 5
+                exam.totalScore || 0,                                                // 6
+                petaKompetensi,                                                      // 7: teks untuk CSV
+                jumlahBenar,                                                         // 8
+                jumlahSalah,                                                         // 9
+                tidakDijawab,                                                        // 10
+                ai ? ai.ringkasan : '-',                                             // 11
+                ai ? ai.kekuatan  : '-',                                             // 12
+                ai ? ai.kelemahan : '-',                                             // 13
+                ai ? ai.rekomendasi : '-',                                           // 14
+                exam.sessionId || '-',                                               // 15: Session ID
+                kognitifMatrixData                                                   // 16: Matrix object (render only)
             ]);
         }
     }
@@ -6670,17 +6798,28 @@ window.refreshMonitoringData = refreshMonitoringData;
 
 // ============================================================
 // TABEL RINGKASAN LENGKAP 17 KOLOM (tanpa Waktu Mulai/Selesai)
-// Urutan kolom sesuai buildStudentExportData:
-//  [0] Nama  [1] Email  [2] Kelas  [3] Paket  [4] Tanggal  [5] Durasi
-//  [6] Skor  [7] Peta Kompetensi  [8] Benar  [9] Salah  [10] Tidak Dijawab
-//  [11] Ringkasan AI  [12] Kekuatan  [13] Kelemahan  [14] Rekomendasi
-//  [15] Session ID  → kolom [16] = Aksi (Lihat Jawaban)
+// ============================================================
+// Urutan kolom tampil di tabel (14 kolom):
+//  [1]  Nama Siswa        → row[0]
+//  [2]  Paket Soal        → row[3]
+//  [3]  Tanggal Ujian     → row[4]
+//  [4]  Durasi            → row[5]
+//  [5]  Skor Akhir        → row[6]
+//  [6]  Peta Kompetensi   → row[16] (matrix object) — matriks mini
+//  [7]  Benar             → row[8]
+//  [8]  Salah             → row[9]
+//  [9]  Tidak Dijawab     → row[10]
+//  [10] Ringkasan AI      → row[11]
+//  [11] Kekuatan          → row[12]
+//  [12] Kelemahan         → row[13]
+//  [13] Rekomendasi       → row[14]
+//  [14] Aksi              → row[15] (sessionId) + userId
 // ============================================================
 async function loadFullSummaryTable() {
     const tbody = document.getElementById('fullSummaryTableBody');
     if (!tbody) return;
 
-    const COL = 15; // total kolom yang tampil (Email & Kelas dihapus)
+    const COL = 14; // 14 kolom sesuai thead
     tbody.innerHTML = `<tr><td colspan="${COL}" style="padding:2rem;text-align:center;color:#6b7280;">
         <i class="fas fa-spinner fa-spin"></i> Memuat data semua siswa...
     </td></tr>`;
@@ -6692,13 +6831,21 @@ async function loadFullSummaryTable() {
             return;
         }
 
-        let allRows = [];
+        // Simpan juga userId per row untuk tombol Lihat Detail
+        let allRows = []; // setiap elemen: { row, userId }
         for (const student of students) {
+            // Safety check: skip jika student tidak punya id
+            if (!student?.id) {
+                console.warn('loadFullSummaryTable: student tanpa id, skip.', student);
+                continue;
+            }
             try {
                 const rows = await buildStudentExportData(student.id);
-                if (rows) allRows = allRows.concat(rows);
+                if (rows) {
+                    rows.forEach(row => allRows.push({ row, userId: student.id }));
+                }
             } catch(e) {
-                console.warn('Error loading data for student:', student.id, e);
+                console.warn('Error loading data for student:', student?.id, e);
             }
         }
 
@@ -6726,42 +6873,21 @@ async function loadFullSummaryTable() {
             </ul>`;
         };
 
-        // Helper: mini progress bar untuk peta kompetensi
-        const fmtPeta = (peta) => {
-            const str = String(peta || '-');
-            if (str === '-' || !str) return '<span style="color:#9ca3af;">-</span>';
-            const items = str.split('|').map(s => s.trim()).filter(Boolean);
-            if (items.length === 0) return str;
-            return items.map(item => {
-                const match = item.match(/^(.+):\s*(\d+)%$/);
-                if (!match) return `<div style="font-size:0.7rem;color:#6b7280;">${item}</div>`;
-                const [, bab, pct] = match;
-                const pctNum = parseInt(pct);
-                const color = pctNum >= 70 ? '#10b981' : pctNum >= 50 ? '#f59e0b' : '#ef4444';
-                return `<div style="margin-bottom:4px;">
-                    <div style="display:flex;justify-content:space-between;font-size:0.68rem;margin-bottom:1px;">
-                        <span style="color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;" title="${bab}">${bab}</span>
-                        <span style="color:${color};font-weight:600;margin-left:4px;">${pct}%</span>
-                    </div>
-                    <div style="height:4px;background:#f3f4f6;border-radius:2px;">
-                        <div style="height:4px;width:${pctNum}%;background:${color};border-radius:2px;"></div>
-                    </div>
-                </div>`;
-            }).join('');
-        };
+        tbody.innerHTML = allRows.map(({ row, userId }, idx) => {
+            // Safety check: pastikan row adalah array yang valid
+            if (!Array.isArray(row)) return '';
 
-        tbody.innerHTML = allRows.map((row, idx) => {
             const bgColor     = idx % 2 === 0 ? '#ffffff' : '#f9fafb';
 
             // ── Ambil nilai dari indeks yang sudah benar ──────────────────
-            const nama        = row[0]  || '-';
-            const email       = row[1]  || '-';
-            const kelas       = row[2]  || '-';
+            const nama        = row[0]  || 'Tanpa Nama';
+            // row[1]=email, row[2]=kelas — tidak ditampilkan di tabel ini
             const paket       = row[3]  || '-';
             const tanggal     = row[4]  || '-';
             const durasi      = row[5]  || '-';
             const skor        = Number(row[6])  || 0;
-            const peta        = row[7]  || '-';
+            // row[7] = peta kompetensi teks (untuk CSV), tidak dipakai di sini
+            const matrixData  = row[16] || null; // object matrix kognitif
             const benar       = Number(row[8])  || 0;
             const salah       = Number(row[9])  || 0;
             const tdkDijawab  = row[10] !== undefined && row[10] !== null ? Number(row[10]) : '-';
@@ -6773,19 +6899,36 @@ async function loadFullSummaryTable() {
 
             const skorColor   = skor >= 70 ? '#059669' : skor >= 50 ? '#d97706' : '#dc2626';
 
-            // Tombol Lihat Jawaban — hanya aktif jika ada sessionId yang valid
+            // Kolom Peta Kompetensi: render matriks mini
+            const petaKompetensiCell = renderMiniCognitiveMatrix(matrixData);
+
+            // Tombol Aksi — Lihat Detail + Lihat Jawaban
+            const namaSafe = String(nama).replace(/'/g, "\\'");
+            const btnLihatDetail = userId
+                ? `<button
+                        onclick="openStudentAnalyticsModal('${userId}')"
+                        style="background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;border:none;
+                               padding:5px 10px;border-radius:7px;cursor:pointer;font-size:0.75rem;
+                               display:inline-flex;align-items:center;gap:4px;white-space:nowrap;
+                               box-shadow:0 2px 5px rgba(79,70,229,0.35);margin-bottom:4px;"
+                        onmouseover="this.style.transform='translateY(-1px)'"
+                        onmouseout="this.style.transform=''">
+                        <i class="fas fa-chart-bar"></i> Lihat Detail
+                   </button>`
+                : '';
+
             const btnLihatJawaban = (sessionId && sessionId !== '-')
                 ? `<button
-                        onclick="showExamAnswerDetail('${sessionId}', '${String(nama).replace(/'/g, "\\'")}')"
+                        onclick="showExamAnswerDetail('${sessionId}', '${namaSafe}')"
                         style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;
-                               padding:6px 12px;border-radius:8px;cursor:pointer;font-size:0.78rem;
-                               display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
-                               box-shadow:0 2px 6px rgba(102,126,234,0.35);transition:all 0.2s;"
-                        onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(102,126,234,0.5)'"
-                        onmouseout="this.style.transform='';this.style.boxShadow='0 2px 6px rgba(102,126,234,0.35)'">
+                               padding:5px 10px;border-radius:7px;cursor:pointer;font-size:0.75rem;
+                               display:inline-flex;align-items:center;gap:4px;white-space:nowrap;
+                               box-shadow:0 2px 5px rgba(102,126,234,0.35);"
+                        onmouseover="this.style.transform='translateY(-1px)'"
+                        onmouseout="this.style.transform=''">
                         <i class="fas fa-eye"></i> Lihat Jawaban
                    </button>`
-                : `<span style="color:#9ca3af;font-size:0.78rem;">Belum ujian</span>`;
+                : `<span style="color:#9ca3af;font-size:0.75rem;">Belum ujian</span>`;
 
             return `<tr style="background:${bgColor};border-bottom:3px solid #c4b5fd;">
                 <td style="padding:8px 12px;font-weight:600;color:#1f2937;white-space:nowrap;">${trim(nama)}</td>
@@ -6801,7 +6944,7 @@ async function loadFullSummaryTable() {
                         ${skor}
                     </span>
                 </td>
-                <td style="padding:8px 12px;font-size:0.75rem;color:#374151;max-width:200px;">${fmtPeta(peta)}</td>
+                <td style="padding:6px 10px;vertical-align:top;min-width:240px;">${petaKompetensiCell}</td>
                 <td style="padding:8px 12px;text-align:center;color:#059669;font-weight:700;font-size:0.95rem;">${benar}</td>
                 <td style="padding:8px 12px;text-align:center;color:#dc2626;font-weight:700;font-size:0.95rem;">${salah}</td>
                 <td style="padding:8px 12px;text-align:center;color:#d97706;font-weight:700;font-size:0.95rem;">${tdkDijawab}</td>
@@ -6809,9 +6952,14 @@ async function loadFullSummaryTable() {
                 <td style="padding:8px 12px;font-size:0.78rem;min-width:200px;vertical-align:top;">${fmtAI(kekuatan, '#059669')}</td>
                 <td style="padding:8px 12px;font-size:0.78rem;min-width:200px;vertical-align:top;">${fmtAI(kelemahan, '#dc2626')}</td>
                 <td style="padding:8px 12px;font-size:0.78rem;min-width:200px;vertical-align:top;">${fmtAI(rekomendasi, '#3b82f6')}</td>
-                <td style="padding:8px 12px;text-align:center;white-space:nowrap;">${btnLihatJawaban}</td>
+                <td style="padding:8px 12px;text-align:center;white-space:nowrap;vertical-align:top;">
+                    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+                        ${btnLihatDetail}
+                        ${btnLihatJawaban}
+                    </div>
+                </td>
             </tr>`;
-        }).join('');
+        }).filter(Boolean).join('');
 
     } catch (error) {
         console.error('Error loading full summary table:', error);
@@ -7142,6 +7290,8 @@ async function showExamAnswerDetail(sessionId, studentName) {
 
 window.showStudentDetail = showStudentDetail;
 window.loadFullSummaryTable = loadFullSummaryTable;
+window.buildCognitiveMatrixDataForStudent = buildCognitiveMatrixDataForStudent;
+window.renderMiniCognitiveMatrix = renderMiniCognitiveMatrix;
 window.showExamAnswerDetail = showExamAnswerDetail;
 window.pushDataToGoogleSheet = pushDataToGoogleSheet;
 window.exportStudentToExcel = exportStudentToExcel;
