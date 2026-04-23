@@ -5513,19 +5513,71 @@ function downloadCSV(csvContent, filename) {
     document.body.removeChild(link);
 }
 
+// ─────────────────────────────────────────────────────────────
+// Helper: konversi baris dari buildStudentExportData menjadi
+// array 16 elemen yang aman untuk CSV / TSV (tanpa objek).
+//
+// buildStudentExportData menghasilkan array dengan 17 elemen:
+//   [0..15]  = data teks / angka  (layak untuk spreadsheet)
+//   [16]     = objek matrix kognitif (HANYA untuk render HTML)
+//
+// Fungsi ini:
+//   1. Mengambil hanya index 0–15 (membuang index 16).
+//   2. Mengganti index [7] (Peta Kompetensi) dengan teks ringkas
+//      yang dihasilkan dari objek matrix di index [16], sehingga
+//      Google Sheet mendapat kolom yang informatif, bukan "-".
+// ─────────────────────────────────────────────────────────────
+function exportSafeRow(row) {
+    if (!Array.isArray(row)) return [];
+
+    // Ambil hanya 16 kolom pertama (index 0–15)
+    const safe = row.slice(0, 16);
+
+    // Konversi objek matrix di index [16] menjadi teks ringkas
+    // Format: "Bab: Lv1 ✔B/✘S | Lv2 ✔B/✘S | Lv3 ✔B/✘S"
+    const matrixObj = row[16];
+    if (matrixObj && typeof matrixObj === 'object') {
+        const lines = Object.entries(matrixObj)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([bab, levels]) => {
+                const cells = ['L1', 'L2', 'L3'].map(lv => {
+                    const d = levels[lv] || { benar: 0, total: 0 };
+                    if (d.total === 0) return null;
+                    const salah = d.total - d.benar;
+                    const pct = Math.round((d.benar / d.total) * 100);
+                    return `${lv}:✔${d.benar}/✘${salah}(${pct}%)`;
+                }).filter(Boolean);
+                return cells.length > 0 ? `${bab} [${cells.join(', ')}]` : null;
+            })
+            .filter(Boolean);
+        // Timpa index [7] dengan teks matriks (lebih informatif dari string lama)
+        if (lines.length > 0) {
+            safe[7] = lines.join(' | ');
+        }
+    }
+
+    return safe;
+}
+
+// Header standar 16 kolom untuk semua export
+const EXPORT_HEADER = [
+    'Nama Lengkap', 'Email Siswa', 'Kelas', 'Paket Soal',
+    'Tanggal Ujian', 'Durasi Pengerjaan', 'Nilai Akhir (Skor)', 'Peta Kompetensi',
+    'Jumlah Benar', 'Jumlah Salah', 'Tidak Dijawab',
+    'Ringkasan Kemampuan AI', 'Kekuatan Utama', 'Kelemahan Utama',
+    'Rekomendasi Belajar', 'Session ID'
+];
+
 async function exportStudentToExcel(userId) {
     try {
         const rows = await buildStudentExportData(userId);
         if (!rows) { alert('Data tidak ditemukan.'); return; }
 
-        const header = ['Nama Lengkap','Email Siswa','Kelas','Paket Soal',
-            'Tanggal Ujian','Durasi Pengerjaan','Nilai Akhir (Skor)','Peta Kompetensi','Jumlah Benar','Jumlah Salah','Tidak Dijawab',
-            'Ringkasan Kemampuan AI','Kekuatan Utama','Kelemahan Utama','Rekomendasi Belajar','Session ID'];
+        const safeRows = rows.map(exportSafeRow);
+        const csvRows = [EXPORT_HEADER, ...safeRows];
+        const csvContent = csvRows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g,'""')}"`).join(',')).join('\n');
 
-        const csvRows = [header, ...rows];
-        const csvContent = csvRows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-
-        const name = rows[0]?.[0] || 'siswa';
+        const name = safeRows[0]?.[0] || 'siswa';
         downloadCSV(csvContent, `hasil_ujian_${name}_${new Date().toISOString().split('T')[0]}.csv`);
         alert('Data berhasil diekspor!');
     } catch (error) {
@@ -5542,17 +5594,13 @@ async function exportAllStudentsToExcel() {
 
         alert(`Mengekspor data ${students.length} siswa... Mohon tunggu.`);
 
-        const header = ['Nama Lengkap','Email Siswa','Kelas','Paket Soal',
-            'Tanggal Ujian','Durasi Pengerjaan','Nilai Akhir (Skor)','Peta Kompetensi','Jumlah Benar','Jumlah Salah','Tidak Dijawab',
-            'Ringkasan Kemampuan AI','Kekuatan Utama','Kelemahan Utama','Rekomendasi Belajar','Session ID'];
-
-        let allRows = [header];
+        let allRows = [EXPORT_HEADER];
         for (const student of students) {
             const rows = await buildStudentExportData(student.id);
-            if (rows) allRows = allRows.concat(rows);
+            if (rows) allRows = allRows.concat(rows.map(exportSafeRow));
         }
 
-        const csvContent = allRows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+        const csvContent = allRows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g,'""')}"`).join(',')).join('\n');
         downloadCSV(csvContent, `semua_siswa_tka_${new Date().toISOString().split('T')[0]}.csv`);
         alert('Semua data berhasil diekspor!');
     } catch (error) {
@@ -5567,13 +5615,16 @@ async function exportStudentToGoogleSheet(userId) {
         const rows = await buildStudentExportData(userId);
         if (!rows) { alert('Data tidak ditemukan.'); return; }
 
-        const header = ['Nama Lengkap','Email Siswa','Kelas','Paket Soal',
-            'Tanggal Ujian','Durasi Pengerjaan','Nilai Akhir (Skor)','Peta Kompetensi','Jumlah Benar','Jumlah Salah','Tidak Dijawab',
-            'Ringkasan Kemampuan AI','Kekuatan Utama','Kelemahan Utama','Rekomendasi Belajar','Session ID'];
+        // Gunakan exportSafeRow agar index [16] (objek) tidak ikut dan
+        // kolom Peta Kompetensi berisi teks matriks yang informatif
+        const safeRows = rows.map(exportSafeRow);
 
         // Format tab-separated untuk langsung paste ke Google Sheet
-        const tsvRows = [header, ...rows];
-        const tsvContent = tsvRows.map(r => r.map(c => String(c).replace(/\t/g,' ')).join('\t')).join('\n');
+        const tsvRows = [EXPORT_HEADER, ...safeRows];
+        const tsvContent = tsvRows.map(r =>
+            r.map(c => String(c ?? '').replace(/\t/g, ' ').replace(/\n/g, ' | '))
+             .join('\t')
+        ).join('\n');
 
         // Tampilkan dialog dengan instruksi
         const modal = document.createElement('div');
@@ -5602,12 +5653,7 @@ async function exportStudentToGoogleSheet(userId) {
                     " style="flex:1;padding:0.75rem;background:#059669;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:0.9rem;">
                         📋 Salin Data
                     </button>
-                    <button onclick="
-                        const BOM='\\uFEFF';
-                        const csv='${header.join(',')}\n'+[${JSON.stringify(rows)}][0].map(r=>r.map(c=>'\"'+String(c).replace(/\"/g,'\"\"')+'\"').join(',')).join('\n');
-                        const blob=new Blob([BOM+csv],{type:'text/csv'});
-                        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='export_gsheet.csv';a.click();
-                    " style="padding:0.75rem 1rem;background:#3b82f6;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:0.9rem;">
+                    <button id="gsheetDownloadCsvBtn" style="padding:0.75rem 1rem;background:#3b82f6;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:0.9rem;">
                         💾 Download CSV
                     </button>
                     <button onclick="this.closest('div[style*=\"position:fixed\"]').remove()" style="padding:0.75rem 1rem;background:#6b7280;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:0.9rem;">
@@ -5617,6 +5663,17 @@ async function exportStudentToGoogleSheet(userId) {
             </div>`;
         document.body.appendChild(modal);
         modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+        // Tombol Download CSV — pakai safeRows (tanpa objek matrix)
+        const dlBtn = document.getElementById('gsheetDownloadCsvBtn');
+        if (dlBtn) {
+            dlBtn.addEventListener('click', () => {
+                const csvContent = [EXPORT_HEADER, ...safeRows]
+                    .map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','))
+                    .join('\n');
+                downloadCSV(csvContent, `export_gsheet_${new Date().toISOString().split('T')[0]}.csv`);
+            });
+        }
 
     } catch (error) {
         console.error('Error preparing Google Sheet export:', error);
@@ -5658,7 +5715,9 @@ async function pushDataToGoogleSheet() {
         let allRows = [];
         for (const student of students) {
             const rows = await buildStudentExportData(student.id);
-            if (rows) allRows = allRows.concat(rows);
+            // Terapkan exportSafeRow: buang index [16] (objek matrix) dan
+            // konversi kolom Peta Kompetensi menjadi teks ringkas
+            if (rows) allRows = allRows.concat(rows.map(exportSafeRow));
         }
 
         if (allRows.length === 0) {
@@ -5666,13 +5725,13 @@ async function pushDataToGoogleSheet() {
             return;
         }
 
-        const header = ['Nama Lengkap','Email Siswa','Kelas','Paket Soal',
-            'Tanggal Ujian','Durasi Pengerjaan','Nilai Akhir (Skor)','Peta Kompetensi','Jumlah Benar','Jumlah Salah','Tidak Dijawab',
-            'Ringkasan Kemampuan AI','Kekuatan Utama','Kelemahan Utama','Rekomendasi Belajar','Session ID'];
-
         // Format TSV untuk paste ke Google Sheet
-        const tsvRows = [header, ...allRows];
-        const tsvContent = tsvRows.map(r => r.map(c => String(c || '').replace(/\t/g, ' ')).join('\t')).join('\n');
+        // Newline dalam sel diganti " | " agar tidak merusak baris
+        const tsvRows = [EXPORT_HEADER, ...allRows];
+        const tsvContent = tsvRows.map(r =>
+            r.map(c => String(c ?? '').replace(/\t/g, ' ').replace(/\n/g, ' | '))
+             .join('\t')
+        ).join('\n');
 
 
         // Copy ke clipboard
