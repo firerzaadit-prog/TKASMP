@@ -6882,7 +6882,6 @@ async function showExamAnswerDetail(sessionId, studentName) {
                     correct_answer,
                     correct_answers,
                     category_options,
-                    category_statements,
                     category_mapping,
                     explanation,
                     bab,
