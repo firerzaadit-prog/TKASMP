@@ -46,6 +46,24 @@ class GeminiAnalytics {
         const levelKognitif = questionData.level_kognitif || '';
         const prosesBerpikir = questionData.proses_berpikir || '';
 
+        // DETEKSI APAKAH JAWABAN KOSONG
+        const tidakDijawab = (!jawabanSiswa || jawabanSiswa.trim() === '' || jawabanSiswa === '-');
+
+        // BUAT INSTRUKSI DINAMIS BERDASARKAN STATUS JAWABAN
+        let instruksiTugas = '';
+        let statusJawaban = '';
+
+        if (isCorrect) {
+            statusJawaban = 'BENAR';
+            instruksiTugas = `Jawaban siswa BENAR. Identifikasi kompetensi spesifik yang dikuasai siswa dari soal ini.`;
+        } else if (tidakDijawab) {
+            statusJawaban = 'TIDAK DIJAWAB (KOSONG)';
+            instruksiTugas = `Siswa TIDAK MENJAWAB soal ini (dibiarkan kosong, seharusnya: ${kunciJawaban}). Ini mengindikasikan siswa mungkin sama sekali belum memahami konsepnya, bingung cara memulai, atau kehabisan waktu. Identifikasi kelemahan mendasar ini dan berikan saran agar siswa berani mencoba atau menguasai dasar materinya.`;
+        } else {
+            statusJawaban = 'SALAH';
+            instruksiTugas = `Jawaban siswa SALAH (jawaban: ${jawabanSiswa}, seharusnya: ${kunciJawaban}). Identifikasi kesalahan konsep atau pemahaman spesifik yang menyebabkan siswa menjawab salah.`;
+        }
+
         return `Kamu adalah guru matematika SMP yang menganalisis jawaban siswa pada soal TKA (Tes Kemampuan Akademik).
 
 INFORMASI SOAL:
@@ -58,24 +76,21 @@ INFORMASI SOAL:
 - Kunci Jawaban: ${kunciJawaban}
 - Pembahasan: ${penjelasan}
 
-JAWABAN SISWA: ${jawabanSiswa}
-STATUS: ${isCorrect ? 'BENAR' : 'SALAH'}
+JAWABAN SISWA: ${tidakDijawab ? '[KOSONG / TIDAK DIJAWAB]' : jawabanSiswa}
+STATUS: ${statusJawaban}
 
 TUGAS:
-${isCorrect
-  ? `Jawaban siswa BENAR. Identifikasi kompetensi spesifik yang dikuasai siswa dari soal ini.`
-  : `Jawaban siswa SALAH (jawaban: ${jawabanSiswa}, seharusnya: ${kunciJawaban}). Identifikasi kesalahan konsep atau pemahaman yang menyebabkan siswa menjawab salah.`
-}
+${instruksiTugas}
 
 Aturan WAJIB:
 - Jika jawaban BENAR: strengths berisi kompetensi yang dikuasai, weaknesses HARUS array kosong []
-- Jika jawaban SALAH: weaknesses berisi kesalahan konsep spesifik, strengths boleh kosong []
+- Jika jawaban SALAH / TIDAK DIJAWAB: weaknesses berisi letak kelemahan konsep, strengths boleh kosong []
 - Jangan tulis "Tidak ada kelemahan" di weaknesses jika jawaban benar - tulis [] saja
 - Semua item dalam bahasa Indonesia, spesifik pada materi soal ini
-- learningSuggestions harus relevan dengan materi soal ini
+- learningSuggestions harus relevan dengan materi soal ini dan sangat membantu bagi siswa yang salah/tidak bisa menjawab.
 
 Output HANYA JSON valid tanpa markdown, tanpa teks lain:
-{"score":0-100,"correctness":"Benar/Salah/Sebagian","strengths":[],"weaknesses":[],"explanation":"ringkasan singkat 1 kalimat","learningSuggestions":[]}`;
+{"score":0-100,"correctness":"Benar/Salah/Tidak Dijawab","strengths":[],"weaknesses":[],"explanation":"ringkasan singkat 1 kalimat","learningSuggestions":[]}`;
     }
 
     getCompetencyDescription(bab, subBab) {
