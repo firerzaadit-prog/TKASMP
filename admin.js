@@ -5188,10 +5188,22 @@ async function buildCognitiveMatrixDataForStudent(userId) {
 
         if (ansErr || !answerRows || answerRows.length === 0) return null;
 
+        // LEVEL_MAP: mapping semua kemungkinan nilai difficulty/level_kognitif di database
+        // Nilai aktual bisa berbeda tergantung input admin — semua variasi dicakup di sini
         const LEVEL_MAP = {
-            'mudah': 'L1', 'easy': 'L1', '1': 'L1', 'l1': 'L1', 'pengetahuan': 'L1', 'knowledge': 'L1',
-            'sedang': 'L2', 'medium': 'L2', '2': 'L2', 'l2': 'L2', 'aplikasi': 'L2', 'application': 'L2',
-            'sulit': 'L3', 'hard': 'L3', '3': 'L3', 'l3': 'L3', 'penalaran': 'L3', 'reasoning': 'L3'
+            // Level 1 — Pengetahuan / Mudah
+            'mudah': 'L1', 'easy': 'L1', '1': 'L1', 'l1': 'L1',
+            'pengetahuan': 'L1', 'knowledge': 'L1', 'level 1': 'L1', 'level1': 'L1',
+            'ingatan': 'L1', 'hafalan': 'L1', 'c1': 'L1', 'low': 'L1',
+            // Level 2 — Aplikasi / Sedang
+            'sedang': 'L2', 'medium': 'L2', '2': 'L2', 'l2': 'L2',
+            'aplikasi': 'L2', 'application': 'L2', 'level 2': 'L2', 'level2': 'L2',
+            'pemahaman': 'L2', 'comprehension': 'L2', 'c2': 'L2', 'c3': 'L2', 'middle': 'L2',
+            // Level 3 — Penalaran / Sulit
+            'sulit': 'L3', 'hard': 'L3', '3': 'L3', 'l3': 'L3',
+            'penalaran': 'L3', 'reasoning': 'L3', 'level 3': 'L3', 'level3': 'L3',
+            'analisis': 'L3', 'analysis': 'L3', 'evaluasi': 'L3', 'evaluation': 'L3',
+            'c4': 'L3', 'c5': 'L3', 'c6': 'L3', 'high': 'L3', 'hots': 'L3'
         };
         const ALL_LEVELS = ['L1', 'L2', 'L3'];
 
@@ -5202,13 +5214,30 @@ async function buildCognitiveMatrixDataForStudent(userId) {
             }
         });
 
+        // Debug: log nilai level yang ditemukan di data (untuk troubleshooting)
+        const uniqueLevels = new Set();
+        Array.from(dedupMap.values()).forEach(row => {
+            const q = row.questions;
+            if (q) {
+                const raw = (q.level_kognitif || q.difficulty || 'KOSONG').toLowerCase().trim();
+                uniqueLevels.add(raw);
+            }
+        });
+        console.log('[CognitiveMatrix] Nilai level unik di data:', Array.from(uniqueLevels));
+
         const matrix = {};
         Array.from(dedupMap.values()).forEach(row => {
             const q = row.questions;
             if (!q) return;
             const bab = (q.bab || q.chapter || 'Lainnya').trim();
             const rawLevel = (q.level_kognitif || q.difficulty || '').toLowerCase().trim();
-            const level = LEVEL_MAP[rawLevel] || 'L2';
+            // Jika tidak cocok di map, cek apakah mengandung kata kunci
+            let level = LEVEL_MAP[rawLevel];
+            if (!level) {
+                if (rawLevel.includes('mudah') || rawLevel.includes('easy') || rawLevel.includes('1') || rawLevel.includes('penge')) level = 'L1';
+                else if (rawLevel.includes('sulit') || rawLevel.includes('hard') || rawLevel.includes('3') || rawLevel.includes('nalas') || rawLevel.includes('hots')) level = 'L3';
+                else level = 'L2'; // fallback ke L2
+            }
             if (!matrix[bab]) {
                 matrix[bab] = {};
                 ALL_LEVELS.forEach(l => { matrix[bab][l] = { benar: 0, total: 0 }; });
@@ -6931,23 +6960,23 @@ async function loadFullSummaryTable() {
                 : `<span style="color:#9ca3af;font-size:0.75rem;">Belum ujian</span>`;
 
             return `<tr style="background:${bgColor};border-bottom:3px solid #c4b5fd;">
-                <td style="padding:8px 12px;font-weight:600;color:#1f2937;white-space:nowrap;">${trim(nama)}</td>
-                <td style="padding:8px 12px;">
+                <td style="padding:8px 12px;font-weight:600;color:#1f2937;white-space:nowrap;vertical-align:top;">${trim(nama)}</td>
+                <td style="padding:8px 12px;vertical-align:top;">
                     <span style="background:#eef2ff;color:#4f46e5;padding:2px 8px;border-radius:12px;font-size:0.78rem;font-weight:600;white-space:nowrap;">
                         ${paket}
                     </span>
                 </td>
-                <td style="padding:8px 12px;white-space:nowrap;color:#6b7280;font-size:0.82rem;">${tanggal}</td>
-                <td style="padding:8px 12px;white-space:nowrap;font-size:0.82rem;">${durasi}</td>
-                <td style="padding:8px 12px;text-align:center;">
+                <td style="padding:8px 12px;white-space:nowrap;color:#6b7280;font-size:0.82rem;vertical-align:top;">${tanggal}</td>
+                <td style="padding:8px 12px;white-space:nowrap;font-size:0.82rem;vertical-align:top;">${durasi}</td>
+                <td style="padding:8px 12px;text-align:center;vertical-align:top;">
                     <span style="background:${skorColor};color:white;padding:3px 10px;border-radius:12px;font-weight:700;font-size:0.88rem;">
                         ${skor}
                     </span>
                 </td>
                 <td style="padding:6px 10px;vertical-align:top;min-width:240px;">${petaKompetensiCell}</td>
-                <td style="padding:8px 12px;text-align:center;color:#059669;font-weight:700;font-size:0.95rem;">${benar}</td>
-                <td style="padding:8px 12px;text-align:center;color:#dc2626;font-weight:700;font-size:0.95rem;">${salah}</td>
-                <td style="padding:8px 12px;text-align:center;color:#d97706;font-weight:700;font-size:0.95rem;">${tdkDijawab}</td>
+                <td style="padding:8px 12px;text-align:center;color:#059669;font-weight:700;font-size:0.95rem;vertical-align:top;">${benar}</td>
+                <td style="padding:8px 12px;text-align:center;color:#dc2626;font-weight:700;font-size:0.95rem;vertical-align:top;">${salah}</td>
+                <td style="padding:8px 12px;text-align:center;color:#d97706;font-weight:700;font-size:0.95rem;vertical-align:top;">${tdkDijawab}</td>
                 <td style="padding:8px 12px;font-size:0.78rem;min-width:180px;vertical-align:top;">${fmtAI(ringkasan)}</td>
                 <td style="padding:8px 12px;font-size:0.78rem;min-width:200px;vertical-align:top;">${fmtAI(kekuatan, '#059669')}</td>
                 <td style="padding:8px 12px;font-size:0.78rem;min-width:200px;vertical-align:top;">${fmtAI(kelemahan, '#dc2626')}</td>
