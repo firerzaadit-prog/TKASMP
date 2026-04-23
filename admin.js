@@ -6931,20 +6931,8 @@ async function loadFullSummaryTable() {
             // Kolom Peta Kompetensi: render matriks mini
             const petaKompetensiCell = renderMiniCognitiveMatrix(matrixData);
 
-            // Tombol Aksi — Lihat Detail + Lihat Jawaban
+            // Tombol Aksi — hanya Lihat Jawaban
             const namaSafe = String(nama).replace(/'/g, "\\'");
-            const btnLihatDetail = userId
-                ? `<button
-                        onclick="openStudentAnalyticsModal('${userId}')"
-                        style="background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;border:none;
-                               padding:5px 10px;border-radius:7px;cursor:pointer;font-size:0.75rem;
-                               display:inline-flex;align-items:center;gap:4px;white-space:nowrap;
-                               box-shadow:0 2px 5px rgba(79,70,229,0.35);margin-bottom:4px;"
-                        onmouseover="this.style.transform='translateY(-1px)'"
-                        onmouseout="this.style.transform=''">
-                        <i class="fas fa-chart-bar"></i> Lihat Detail
-                   </button>`
-                : '';
 
             const btnLihatJawaban = (sessionId && sessionId !== '-')
                 ? `<button
@@ -6982,10 +6970,7 @@ async function loadFullSummaryTable() {
                 <td style="padding:8px 12px;font-size:0.78rem;min-width:200px;vertical-align:top;">${fmtAI(kelemahan, '#dc2626')}</td>
                 <td style="padding:8px 12px;font-size:0.78rem;min-width:200px;vertical-align:top;">${fmtAI(rekomendasi, '#3b82f6')}</td>
                 <td style="padding:8px 12px;text-align:center;white-space:nowrap;vertical-align:top;">
-                    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
-                        ${btnLihatDetail}
-                        ${btnLihatJawaban}
-                    </div>
+                    ${btnLihatJawaban}
                 </td>
             </tr>`;
         }).filter(Boolean).join('');
