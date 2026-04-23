@@ -802,13 +802,25 @@ export function exportStudentAnalyticsToExcel(studentAnalytics) {
             });
         }
 
-        // Convert ke CSV format (karena JavaScript tidak punya Excel export native)
+        // Convert ke CSV format yang benar (RFC 4180 compliant)
+        // Setiap sel: dibungkus kutip ganda, kutip di dalam di-escape menjadi ""
+        // Ini memastikan sel dengan koma, newline, atau kutip tidak merusak format
         const csvContent = excelData.map(row =>
-            row.map(cell => `"${cell}"`).join(',')
+            row.map(cell => {
+                if (cell === null || cell === undefined) return '""';
+                if (Array.isArray(cell)) cell = cell.join('; ');
+                else if (typeof cell === 'object') {
+                    try { cell = JSON.stringify(cell); } catch(e) { cell = '[data]'; }
+                }
+                const str = String(cell);
+                return '"' + str.replace(/"/g, '""') + '"';
+            }).join(',')
         ).join('\n');
 
         // Download sebagai file CSV
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        // UTF-8 BOM (\uFEFF) ditambahkan agar Excel/Google Sheets membaca encoding dengan benar
+        const BOM = '\uFEFF';
+        const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
