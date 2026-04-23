@@ -4743,6 +4743,31 @@ function loadAIRecommendations(analyticsData) {
 }
 
 // ==========================================
+// HELPER: Bersihkan LaTeX untuk teks plain (tooltip, title, dsb.)
+// Mengubah \frac{a}{b} → a/b, menghapus \cmd{...} → isi,
+// lalu membuang sisa tanda $ dan backslash.
+// ==========================================
+function stripLatex(text) {
+    if (!text) return '';
+    let s = String(text);
+    // \frac{pembilang}{penyebut} → pembilang/penyebut
+    s = s.replace(/\\frac\s*\{([^}]*)\}\s*\{([^}]*)\}/g, '$1/$2');
+    // \sqrt{isi} → √isi
+    s = s.replace(/\\sqrt\s*\{([^}]*)\}/g, '\u221a$1');
+    // \text{isi}, \mathrm{isi}, dsb. → isi
+    s = s.replace(/\\[a-zA-Z]+\s*\{([^}]*)\}/g, '$1');
+    // perintah LaTeX tanpa argumen: \cdot, \times, \pm, dll. → spasi
+    s = s.replace(/\\[a-zA-Z]+/g, ' ');
+    // buang tanda dolar
+    s = s.replace(/\$/g, '');
+    // buang kurung kurawal sisa
+    s = s.replace(/[{}]/g, '');
+    // normalisasi spasi berlebih
+    s = s.replace(/\s{2,}/g, ' ').trim();
+    return s;
+}
+
+// ==========================================
 // PER-STUDENT ANALYTICS FUNCTIONS
 // ==========================================
 
@@ -4973,7 +4998,7 @@ async function showStudentDetail(userId, sessionId = null) {
                     : `<span style="color:#d1d5db;">—</span>`;
 
                 return `<tr style="border-bottom:2px solid #e9d5ff;">
-                    <td style="padding:8px 12px;border:1px solid #e9d5ff;font-weight:600;color:#374151;font-size:0.82rem;background:${bg};white-space:nowrap;">${bab}</td>
+                    <td style="padding:8px 12px;border:1px solid #e9d5ff;font-weight:600;color:#374151;font-size:0.82rem;background:${bg};white-space:nowrap;" title="${stripLatex(bab)}">${bab}</td>
                     ${cells}
                     <td style="padding:8px 10px;text-align:center;border:1px solid #e9d5ff;background:${totBgCell};">${totCell}</td>
                 </tr>`;
@@ -5119,6 +5144,21 @@ async function showStudentDetail(userId, sessionId = null) {
         `;
 
         document.body.appendChild(modal);
+
+        // Render KaTeX setelah modal ada di DOM (untuk nama bab dengan LaTeX)
+        if (window.renderMathInElement) {
+            try {
+                renderMathInElement(modal, {
+                    delimiters: [
+                        { left: '$$', right: '$$', display: true },
+                        { left: '\\[', right: '\\]', display: true },
+                        { left: '$',  right: '$',  display: false },
+                        { left: '\\(', right: '\\)', display: false }
+                    ],
+                    throwOnError: false
+                });
+            } catch(e) { console.warn('KaTeX render error (modal):', e); }
+        }
 
         // Render radar chart setelah modal ada di DOM
         if (chapterLabels.length > 0 && window.Chart) {
@@ -5286,7 +5326,7 @@ function renderMiniCognitiveMatrix(matrix) {
 
         const shortBab = bab.length > 14 ? bab.substring(0, 13) + '…' : bab;
         return `<tr>
-            <td style="padding:2px 5px;border:1px solid #e9d5ff;font-size:0.65rem;font-weight:600;color:#374151;background:${bg};white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;" title="${bab}">${shortBab}</td>
+            <td style="padding:2px 5px;border:1px solid #e9d5ff;font-size:0.65rem;font-weight:600;color:#374151;background:${bg};white-space:nowrap;max-width:100px;overflow:hidden;text-overflow:ellipsis;" title="${stripLatex(bab)}">${shortBab}</td>
             ${cells}
         </tr>`;
     }).join('');
@@ -6974,6 +7014,21 @@ async function loadFullSummaryTable() {
                 </td>
             </tr>`;
         }).filter(Boolean).join('');
+
+        // Render KaTeX setelah tabel dimuat (untuk nama bab yang mengandung LaTeX)
+        if (window.renderMathInElement) {
+            try {
+                renderMathInElement(document.getElementById('fullSummaryTableBody'), {
+                    delimiters: [
+                        { left: '$$', right: '$$', display: true },
+                        { left: '\\[', right: '\\]', display: true },
+                        { left: '$',  right: '$',  display: false },
+                        { left: '\\(', right: '\\)', display: false }
+                    ],
+                    throwOnError: false
+                });
+            } catch(e) { console.warn('KaTeX render error (summary table):', e); }
+        }
 
     } catch (error) {
         console.error('Error loading full summary table:', error);
