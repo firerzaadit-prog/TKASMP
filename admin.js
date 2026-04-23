@@ -4789,7 +4789,7 @@ async function loadStudentsList() {
                                 <span class="stat-label">Mastery</span>
                             </div>
                             <div class="stat" style="display: flex; gap: 5px;">
-                                <button onclick="event.stopPropagation(); showStudentDetail('${student.id}')" class="mini-btn" title="Lihat Detail">
+                                <button onclick="event.stopPropagation(); showStudentDetail('${student.id}', null)" class="mini-btn" title="Lihat Detail (sesi terbaru)">
                                     <i class="fas fa-eye"></i>
                                 </button>
                                 <button onclick="event.stopPropagation(); deleteStudentExamHistory('${student.id}', '${student.nama_langelog}')" class="mini-btn" style="background: #ef4444;" title="Hapus Riwayat Ujian">
@@ -4809,23 +4809,31 @@ async function loadStudentsList() {
 
 // Tampilkan detail analytics siswa
 // Tampilkan detail analytics siswa
-async function showStudentDetail(userId) {
+// sessionId: opsional — jika diberikan, matriks hanya untuk sesi ujian tersebut.
+//            Jika tidak diberikan, fungsi akan mengambil sesi terbaru siswa.
+async function showStudentDetail(userId, sessionId = null) {
     try {
-        const analytics = await getDetailedStudentAnalytics(userId);
+        const analytics = await getDetailedStudentAnalytics(userId, sessionId || undefined);
         if (!analytics) {
             alert('Data analytics siswa tidak ditemukan.');
             return;
         }
 
+        // Tentukan sessionIds yang dipakai untuk query turunan
+        // Jika sessionId eksplisit diberikan → pakai itu saja.
+        // Jika tidak → pakai sesi yang dikembalikan oleh analytics (sudah limit 1 / terbaru).
+        const targetSessionIds = sessionId
+            ? [sessionId]
+            : analytics.exams.map(e => e.sessionId);
+
         // Ambil analisis AI dari tabel gemini_analyses
         let aiAnalyses = [];
         try {
-            const sessionIds = analytics.exams.map(e => e.sessionId);
-            if (sessionIds.length > 0) {
+            if (targetSessionIds.length > 0) {
                 const { data: answerIds } = await supabase
                     .from('exam_answers')
                     .select('id, question_id')
-                    .in('exam_session_id', sessionIds)
+                    .in('exam_session_id', targetSessionIds)
                     .limit(50);
 
                 if (answerIds && answerIds.length > 0) {
@@ -4844,14 +4852,15 @@ async function showStudentDetail(userId) {
         // ── Fetch data jawaban + soal untuk Matriks Kognitif ─────────────
         // Kita ambil langsung dari exam_answers bergabung dengan questions
         // untuk mendapatkan bab dan level_kognitif / difficulty tiap soal.
+        // Hanya dari targetSessionIds agar tidak terjadi double-count antar ujian.
         let kognitifMatrix = null; // { [bab]: { L1:{benar,total}, L2:{..}, L3:{..} } }
         try {
-            const sessionIds = analytics.exams.map(e => e.sessionId);
-            if (sessionIds.length > 0) {
+            if (targetSessionIds.length > 0) {
                 const { data: answerRows, error: ansErr } = await supabase
                     .from('exam_answers')
                     .select(`
                         is_correct,
+                        question_id,
                         questions (
                             bab,
                             chapter,
@@ -4859,9 +4868,19 @@ async function showStudentDetail(userId) {
                             level_kognitif
                         )
                     `)
-                    .in('exam_session_id', sessionIds);
+                    .in('exam_session_id', targetSessionIds);
 
                 if (!ansErr && answerRows && answerRows.length > 0) {
+                    // ── Dedup per question_id sebelum membangun matriks ──────
+                    const dedupMap = new Map();
+                    answerRows.forEach(row => {
+                        if (row.question_id && !dedupMap.has(row.question_id)) {
+                            dedupMap.set(row.question_id, row);
+                        }
+                    });
+                    const uniqueRows = Array.from(dedupMap.values());
+                    console.log(`[Admin Matrix] answerRows: ${answerRows.length}, setelah dedup: ${uniqueRows.length}`);
+
                     // Bangun matriks { bab -> { 'Level 1' -> {benar, total}, ... } }
                     const matrix = {};
                     const LEVEL_MAP = {
@@ -4875,7 +4894,7 @@ async function showStudentDetail(userId) {
                     };
                     const ALL_LEVELS = ['Level 1', 'Level 2', 'Level 3'];
 
-                    answerRows.forEach(row => {
+                    uniqueRows.forEach(row => {
                         const q = row.questions;
                         if (!q) return;
                         const bab = (q.bab || q.chapter || 'Lainnya').trim();

@@ -192,7 +192,19 @@ async function triggerAIAnalysis(sessionId, userId) {
             return;
         }
 
-        const questionIds = [...new Set(answersData.map(a => a.question_id).filter(Boolean))];
+        // ── Dedup jawaban per question_id (ambil entri pertama per soal) ──
+        // Ini mencegah double-count jika ada baris duplikat di exam_answers
+        const dedupAnswersMap = new Map();
+        answersData.forEach(ans => {
+            const qid = ans.question_id;
+            if (qid && !dedupAnswersMap.has(qid)) {
+                dedupAnswersMap.set(qid, ans);
+            }
+        });
+        const uniqueAnswersData = Array.from(dedupAnswersMap.values());
+        console.log(`[AI Viewer] Total jawaban: ${answersData.length}, setelah dedup: ${uniqueAnswersData.length}`);
+
+        const questionIds = [...new Set(uniqueAnswersData.map(a => a.question_id).filter(Boolean))];
         setLoadingDetail(`Memuat ${questionIds.length} soal…`);
 
         const { data: questionsData, error: questionsError } = await supabase
@@ -204,8 +216,8 @@ async function triggerAIAnalysis(sessionId, userId) {
 
         const questionsMap = new Map((questionsData || []).map(q => [q.id, q]));
 
-        // 2. Bangun payload untuk AI
-        const payload = answersData.map(ans => {
+        // 2. Bangun payload untuk AI (gunakan uniqueAnswersData yang sudah terdedup)
+        const payload = uniqueAnswersData.map(ans => {
             const q = questionsMap.get(ans.question_id);
             if (!q) return null;
             return {

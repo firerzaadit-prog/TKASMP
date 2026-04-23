@@ -492,9 +492,12 @@ export function generateAIRecommendations(analyticsData) {
 // ==========================================
 
 // Dapatkan analytics detail untuk satu siswa
-export async function getDetailedStudentAnalytics(userId) {
+// Jika sessionId diberikan, hanya ambil data dari sesi tersebut.
+// Jika tidak, hanya ambil dari sesi terbaru (order by created_at desc limit 1)
+// untuk mencegah penggabungan soal dari ujian yang berbeda.
+export async function getDetailedStudentAnalytics(userId, sessionId = null) {
     try {
-        console.log('Getting detailed analytics for user:', userId);
+        console.log('Getting detailed analytics for user:', userId, sessionId ? `(session: ${sessionId})` : '(latest session only)');
 
         // Ambil data profil siswa
         const { data: profile, error: profileError } = await supabase
@@ -507,15 +510,27 @@ export async function getDetailedStudentAnalytics(userId) {
             console.warn('Profile not found for user:', userId);
         }
 
-        // Ambil semua sesi ujian siswa
+        // Ambil sesi ujian siswa
+        // - Jika sessionId diberikan → filter ke sesi tersebut saja
+        // - Jika tidak → ambil hanya sesi terbaru (limit 1) agar tidak double-count
         let examSessions = [];
         try {
-            const { data: sessions, error: sessionsError } = await supabase
+            let sessionQuery = supabase
                 .from('exam_sessions')
                 .select('id, user_id, started_at, completed_at, total_score, total_time_seconds, status, is_passed, question_type_variant')
                 .eq('user_id', userId)
                 .in('status', ['completed', 'selesai', 'done', 'finished'])
                 .order('completed_at', { ascending: false });
+
+            if (sessionId) {
+                // Filter ke sesi spesifik yang diminta
+                sessionQuery = sessionQuery.eq('id', sessionId);
+            } else {
+                // Hanya ambil sesi terbaru agar matriks tidak menggabungkan semua ujian
+                sessionQuery = sessionQuery.limit(1);
+            }
+
+            const { data: sessions, error: sessionsError } = await sessionQuery;
 
             if (sessionsError) {
                 console.error('Error loading exam sessions:', sessionsError);
@@ -1102,8 +1117,8 @@ async function getRealtimeAssessmentData(userId, limit = 5) {
 // Enhanced exam analytics with adaptive learning data
 export async function getEnhancedExamAnalytics(userId, examSessionId) {
     try {
-        // Get basic exam analytics
-        const basicAnalytics = await getDetailedStudentAnalytics(userId);
+        // Get basic exam analytics (pass sessionId to avoid double-counting across exams)
+        const basicAnalytics = await getDetailedStudentAnalytics(userId, examSessionId);
 
         // Add adaptive learning metrics
         const masteryLevels = await getStudentMasteryLevels(userId);
@@ -1125,7 +1140,7 @@ export async function getEnhancedExamAnalytics(userId, examSessionId) {
 
     } catch (error) {
         console.error('Error getting enhanced exam analytics:', error);
-        return await getDetailedStudentAnalytics(userId);
+        return await getDetailedStudentAnalytics(userId, examSessionId);
     }
 }
 
