@@ -22,24 +22,46 @@ serve(async (req) => {
     if (body.answers && Array.isArray(body.answers)) {
       const answers = body.answers;
       
-      // Gabungkan 30 soal menjadi satu teks prompt
-      let promptText = `Anda adalah guru matematika ahli. Analisis hasil ujian siswa berikut yang berisi ${answers.length} jawaban. Berikan evaluasi dalam format JSON murni.\n\n`;
+      // Gabungkan seluruh soal menjadi satu teks prompt dengan instruksi spesifik SMP
+      let promptText = `Anda adalah guru matematika SMP. Analisis hasil ujian siswa berikut (Total ${answers.length} soal). Evaluasi pemahaman siswa berdasarkan Elemen/Materi, Sub-materi, dan Level Kognitif.\n\n`;
       
       answers.forEach((item: any, idx: number) => {
-        promptText += `Soal ${idx + 1}: ${item.question?.question_text || '-'}\nJawaban Siswa: ${item.answer?.answer_value || '-'}\nKunci: ${item.question?.correct_answer || '-'}\nStatus: ${item.answer?.is_correct ? 'BENAR' : 'SALAH'}\n\n`;
+        // Ekstrak informasi dari database (jika ada)
+        const bab = item.question?.bab || item.question?.chapter || 'Materi Umum';
+        const subBab = item.question?.sub_bab || item.question?.sub_chapter || '-';
+        const kognitif = item.question?.level_kognitif || '-';
+        
+        // Deteksi jawaban kosong / tidak dijawab
+        const jwbSiswa = item.answer?.answer_value || item.answer?.selected_answer || '';
+        const isKosong = (!jwbSiswa || jwbSiswa === '-' || jwbSiswa.trim() === '');
+        const status = isKosong ? 'TIDAK DIJAWAB (KOSONG)' : (item.answer?.is_correct ? 'BENAR' : 'SALAH');
+
+        promptText += `Soal ${idx + 1}:\n`;
+        promptText += `- Materi: ${bab} (${subBab})\n`;
+        promptText += `- Level Kognitif: ${kognitif}\n`;
+        promptText += `- Pertanyaan: ${item.question?.question_text || '-'}\n`;
+        promptText += `- Jawaban Siswa: ${isKosong ? '[KOSONG]' : jwbSiswa}\n`;
+        promptText += `- Kunci Jawaban: ${item.question?.correct_answer || '-'}\n`;
+        promptText += `- Status: ${status}\n\n`;
       });
       
-      promptText += `\nBerikan output WAJIB HANYA berupa JSON dengan struktur: {"summary": "string", "strengths": ["string"], "weaknesses": ["string"], "learningSuggestions": ["string"]}`;
+      promptText += `Berikan output WAJIB HANYA berupa JSON murni (tanpa markdown, tanpa tag \`\`\`json) dengan struktur:
+{
+  "summary": "Ringkasan evaluasi performa secara keseluruhan (1-2 kalimat)",
+  "strengths": ["Kekuatan 1 (sebutkan materi/konsep spesifik yang dikuasai)", "Kekuatan 2"],
+  "weaknesses": ["Kelemahan 1 (identifikasi materi yang salah atau tidak dijawab oleh siswa)", "Kelemahan 2"],
+  "learningSuggestions": ["Saran belajar 1 (sesuai letak kelemahan materi)", "Saran belajar 2"]
+}`;
 
- 
- // Tembak ke API Google Gemini
+      // Tembak ke API Google Gemini
       const geminiResponse = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: promptText }] }],
+            // Memastikan AI selalu merespons dengan JSON valid
             generationConfig: { temperature: 0.2, responseMimeType: "application/json" }
           })
         }

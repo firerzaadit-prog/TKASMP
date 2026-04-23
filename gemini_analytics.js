@@ -93,54 +93,48 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
 {"score":0-100,"correctness":"Benar/Salah/Tidak Dijawab","strengths":[],"weaknesses":[],"explanation":"ringkasan singkat 1 kalimat","learningSuggestions":[]}`;
     }
 
-    getCompetencyDescription(bab, subBab) {
+ getCompetencyDescription(bab, subBab) {
+        // Fallback mapping if database doesn't have it
         const competencies = {
-            'Bilangan': {
-                'Bilangan Real': 'Perbandingan dan sifat bilangan; operasi aritmetika; estimasi; faktorisasi prima; rasio, skala, proporsi, laju perubahan; perbandingan senilai dan berbalik nilai. Mencakup bilangan bulat, rasional, irasional, berpangkat, akar, dan notasi ilmiah.',
-                'Bilangan real': 'Perbandingan dan sifat bilangan; operasi aritmetika; estimasi; faktorisasi prima; rasio, skala, proporsi, laju perubahan; perbandingan senilai dan berbalik nilai.'
-            },
-            'Aljabar': {
-                'Persamaan dan Pertidaksamaan Linier': 'Persamaan linear satu variabel; pertidaksamaan linear satu variabel; sistem persamaan linear dua variabel.',
-                'Persamaan dan pertidaksamaan linear': 'Persamaan linear satu variabel; pertidaksamaan linear satu variabel; sistem persamaan linear dua variabel.',
-                'Bentuk Aljabar': 'Bentuk aljabar dan sifat-sifat operasinya: komutatif, asosiatif, dan distributif.',
-                'Fungsi': 'Relasi dan fungsi (domain, kodomain, range), serta penyajiannya.',
-                'Barisan dan Deret': 'Barisan berhingga bilangan; deret berhingga bilangan.',
-                'fungsi dan barisan deret': 'Relasi dan fungsi, barisan dan deret berhingga bilangan.'
-            },
-            'Geometri dan Pengukuran': {
-                'Objek Geometri': 'Hubungan antar-sudut (dua garis berpotongan/sejajar); Teorema Pythagoras; kekongruenan dan kesebangunan bangun datar; jaring-jaring bangun ruang (prisma, tabung, limas, kerucut).',
-                'Objek geometri': 'Hubungan antar-sudut; Teorema Pythagoras; kesebangunan; jaring-jaring bangun ruang.',
-                'Transformasi Geometri': 'Transformasi tunggal: refleksi, translasi, rotasi, dan dilatasi terhadap titik, garis, dan bangun datar pada bidang.',
-                'transformasi geometri': 'Refleksi, translasi, rotasi, dan dilatasi terhadap bangun datar.',
-                'Pengukuran': 'Keliling dan luas bangun datar (segi banyak, lingkaran, gabungannya); volume bangun ruang (prisma, limas, bola).',
-                'pengukuran': 'Keliling, luas bangun datar, volume bangun ruang.'
-            },
-            'Geometri dan pengukuran': {
-                'Objek Geometri': 'Hubungan antar-sudut; Teorema Pythagoras; kekongruenan dan kesebangunan; jaring-jaring bangun ruang.',
-                'Transformasi Geometri': 'Refleksi, translasi, rotasi, dan dilatasi terhadap bangun datar.',
-                'Pengukuran': 'Keliling dan luas bangun datar; volume bangun ruang.'
-            },
-            'Data dan Peluang': {
-                'Data': 'Perumusan pertanyaan untuk data; penyajian dan interpretasi data (diagram batang, garis, lingkaran, tabel); mean, median, modus, jangkauan; perbandingan ukuran pemusatan dan penyebaran.',
-                'Peluang': 'Peluang dan frekuensi relatif dari kejadian tunggal.',
-                'Data dan peluang': 'Penyajian data, mean, median, modus, peluang kejadian tunggal.'
-            },
-            'Data dan peluang': {
-                'Data': 'Penyajian dan interpretasi data; mean, median, modus, jangkauan.',
-                'Peluang': 'Peluang dan frekuensi relatif dari kejadian tunggal.'
-            }
+            // 1. BILANGAN
+            'Bilangan': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Perbandingan dan sifat bilangan; Operasi aritmetika; Estimasi hasil; Faktorisasi prima; Rasio (skala, proporsi, laju perubahan); Perbandingan senilai dan berbalik nilai. Mencakup bilangan bulat, rasional, irasional, berpangkat bulat, akar, dan notasi ilmiah.',
+            'Bilangan Real': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Perbandingan dan sifat-sifat bilangan; Operasi aritmetika pada bilangan; Estimasi/perkiraan hasil perhitungan; Faktorisasi prima bilangan asli; Rasio (skala, proporsi, dan laju perubahan); Perbandingan senilai dan berbalik nilai. Mencakup bilangan bulat, rasional dan irasional, berpangkat bulat, akar, dan notasi ilmiah.',
+
+            // 2. ALJABAR
+            'Aljabar': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi pada persamaan/pertidaksamaan linear, bentuk aljabar, fungsi, serta barisan dan deret.',
+            'Persamaan dan Pertidaksamaan Linier': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Persamaan linear satu variabel; Pertidaksamaan linear satu variabel; Sistem persamaan linear dua variabel.',
+            'Bentuk Aljabar': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Bentuk aljabar dan sifat-sifat operasinya (komutatif, asosiatif, dan distributif).',
+            'Fungsi': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Relasi dan fungsi (domain, kodomain, range), serta penyajiannya.',
+            'Barisan dan Deret': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Barisan berhingga bilangan; Deret berhingga bilangan.',
+
+            // 3. GEOMETRI DAN PENGUKURAN
+            'Geometri dan Pengukuran': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi terkait objek geometri, transformasi geometri, dan pengukuran dua/tiga dimensi.',
+            'Objek Geometri': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Hubungan antar-sudut (berpotongan, sejajar, transversal, sudut segitiga); Teorema Pythagoras; Kekongruenan dan kesebangunan bangun datar; Jaring-jaring bangun ruang (prisma, tabung, limas, kerucut).',
+            'Transformasi Geometri': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Transformasi tunggal (refleksi, translasi, rotasi, dan dilatasi) terhadap titik, garis, dan bangun datar pada bidang.',
+            'Pengukuran': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Keliling dan luas bangun datar (daerah segi banyak, lingkaran, dan gabungannya); Volume bangun ruang (prisma, limas, dan bola).',
+
+            // 4. DATA DAN PELUANG
+            'Data dan Peluang': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk merumuskan, menyajikan, dan menginterpretasi data, serta analisis peluang kejadian.',
+            'Data': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Perumusan, penyajian (diagram batang, garis, lingkaran, tabel), dan interpretasi data; Penentuan/penaksiran rerata (mean), median, modus, dan jangkauan (range); Perbandingan ukuran pemusatan dan penyebaran kelompok data.',
+            'Peluang': 'Memahami, mengaplikasikan, dan bernalar yang lebih tinggi untuk menyelesaikan permasalahan terkait: Peluang dan frekuensi relatif dari kejadian tunggal.'
         };
-        // Cari exact match dulu, lalu case-insensitive
-        if (competencies[bab]?.[subBab]) return competencies[bab][subBab];
-        // Fallback: cari key yang mirip (case-insensitive)
-        for (const [k, v] of Object.entries(competencies)) {
-            if (k.toLowerCase() === bab?.toLowerCase()) {
-                for (const [sk, sv] of Object.entries(v)) {
-                    if (sk.toLowerCase() === subBab?.toLowerCase()) return sv;
-                }
-            }
+
+        // Normalize keys for case-insensitive matching
+        const normalizedBab = (bab || '').trim().toLowerCase();
+        const normalizedSubBab = (subBab || '').trim().toLowerCase();
+
+        // Cari berdasarkan Sub Bab terlebih dahulu (Lebih spesifik)
+        for (const [key, desc] of Object.entries(competencies)) {
+            if (normalizedSubBab === key.toLowerCase()) return desc;
         }
-        return 'Kompetensi umum matematika SMP';
+
+        // Jika tidak ketemu, cari berdasarkan Bab (Lebih umum)
+        for (const [key, desc] of Object.entries(competencies)) {
+            if (normalizedBab === key.toLowerCase()) return desc;
+            if (normalizedBab.includes(key.toLowerCase())) return desc;
+        }
+
+        return '';
     }
 
     async callGeminiAPI(prompt) {
