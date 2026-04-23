@@ -596,7 +596,8 @@ export async function getDetailedStudentAnalytics(userId) {
                             sub_chapter,
                             correct_answer,
                             scoring_weight,
-                            difficulty
+                            difficulty,
+                            level_kognitif
                         )
                     `)
                     .eq('exam_session_id', session.id);
@@ -641,7 +642,8 @@ export async function getDetailedStudentAnalytics(userId) {
                     isCorrect: answer.is_correct,
                     timeTaken: answer.time_taken_seconds,
                     score: answer.is_correct ? (answer.questions?.scoring_weight || 1) : 0,
-                    difficulty: answer.questions?.difficulty || ''
+                    difficulty: answer.questions?.difficulty || '',
+                    levelKognitif: answer.questions?.level_kognitif || answer.questions?.difficulty || ''
                 })) || [];
 
                 detailedExams.push(sessionStats);

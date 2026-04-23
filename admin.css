@@ -3914,3 +3914,68 @@ body::before {
     width: 100%;
     border: none;
 }
+
+/* ============================================================
+   ANALYTICS TABLE — Border pemisah antar siswa
+   ============================================================ */
+
+/* Tabel ringkasan lengkap (#fullSummaryTableBody) */
+#fullSummaryTableBody tr {
+    border-bottom: 3px solid #c4b5fd !important; /* ungu terang */
+    transition: background 0.15s ease;
+}
+#fullSummaryTableBody tr:hover {
+    filter: brightness(0.97);
+}
+
+/* Tabel ringkasan atas (#studentExamTable) */
+#studentExamTable tr {
+    border-bottom: 3px solid #e0e7ff !important; /* indigo muda */
+    transition: background 0.15s ease;
+}
+#studentExamTable tr:hover {
+    background: #eef2ff !important;
+}
+
+/* ============================================================
+   MATRIKS PERFORMA KOGNITIF — Styling sel Benar/Salah
+   ============================================================ */
+.kognitif-matrix-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+.kognitif-matrix-table th {
+    background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    color: white;
+    padding: 10px 12px;
+    text-align: center;
+    border: 1px solid #4f46e5;
+    white-space: nowrap;
+}
+.kognitif-matrix-table th:first-child {
+    text-align: left;
+}
+.kognitif-matrix-table td {
+    padding: 8px 10px;
+    border: 1px solid #e9d5ff;
+    text-align: center;
+    vertical-align: middle;
+}
+.kognitif-matrix-table tbody tr {
+    border-bottom: 2px solid #e9d5ff !important;
+}
+.kognitif-matrix-table tbody tr:hover td {
+    filter: brightness(0.96);
+}
+/* Label Benar (hijau) dan Salah (merah) dalam sel matriks */
+.cell-benar {
+    font-weight: 700;
+    color: #059669;
+    font-size: 0.82rem;
+}
+.cell-salah {
+    font-weight: 700;
+    color: #dc2626;
+    font-size: 0.82rem;
+}

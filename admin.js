@@ -4338,9 +4338,8 @@ function renderStudentExamRows(exams) {
         const examId = exam.id;
 
         return `
-            <tr>
+            <tr style="border-bottom:3px solid #e0e7ff;">
                 <td style="padding: 12px;">${studentName}</td>
-                <td style="padding: 12px;">${kelas}</td>
                 <td style="padding: 12px;">${tipe}</td>
                 <td style="padding: 12px;">${skor}</td>
                 <td style="padding: 12px;"><span class="status-badge status-${exam.status}">${status}</span></td>
@@ -4905,49 +4904,68 @@ async function showStudentDetail(userId) {
             const LEVELS = ['Level 1', 'Level 2', 'Level 3'];
 
             const headerRow = `<tr>
-                <th style="background:#f5f3ff;color:#6d28d9;padding:8px 10px;text-align:left;border:1px solid #e9d5ff;font-size:0.8rem;white-space:nowrap;">Bab / Materi</th>
-                <th style="background:#f5f3ff;color:#6d28d9;padding:8px 10px;text-align:center;border:1px solid #e9d5ff;font-size:0.8rem;white-space:nowrap;">Level 1<br><span style="font-weight:400;font-size:0.7rem;color:#8b5cf6;">Pengetahuan</span></th>
-                <th style="background:#f5f3ff;color:#6d28d9;padding:8px 10px;text-align:center;border:1px solid #e9d5ff;font-size:0.8rem;white-space:nowrap;">Level 2<br><span style="font-weight:400;font-size:0.7rem;color:#8b5cf6;">Aplikasi</span></th>
-                <th style="background:#f5f3ff;color:#6d28d9;padding:8px 10px;text-align:center;border:1px solid #e9d5ff;font-size:0.8rem;white-space:nowrap;">Level 3<br><span style="font-weight:400;font-size:0.7rem;color:#8b5cf6;">Penalaran</span></th>
-                <th style="background:#f5f3ff;color:#6d28d9;padding:8px 10px;text-align:center;border:1px solid #e9d5ff;font-size:0.8rem;white-space:nowrap;">Total</th>
+                <th style="background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;padding:10px 12px;text-align:left;border:1px solid #4f46e5;font-size:0.8rem;white-space:nowrap;border-radius:0;">Bab / Materi</th>
+                <th style="background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;padding:10px 12px;text-align:center;border:1px solid #4f46e5;font-size:0.8rem;white-space:nowrap;">
+                    Level 1<br><span style="font-weight:400;font-size:0.7rem;opacity:0.85;">Pengetahuan</span>
+                </th>
+                <th style="background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;padding:10px 12px;text-align:center;border:1px solid #4f46e5;font-size:0.8rem;white-space:nowrap;">
+                    Level 2<br><span style="font-weight:400;font-size:0.7rem;opacity:0.85;">Aplikasi</span>
+                </th>
+                <th style="background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;padding:10px 12px;text-align:center;border:1px solid #4f46e5;font-size:0.8rem;white-space:nowrap;">
+                    Level 3<br><span style="font-weight:400;font-size:0.7rem;opacity:0.85;">Penalaran</span>
+                </th>
+                <th style="background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;padding:10px 12px;text-align:center;border:1px solid #4f46e5;font-size:0.8rem;white-space:nowrap;">
+                    Total
+                </th>
             </tr>`;
 
             const bodyRows = babs.map((bab, i) => {
-                const bg = i % 2 === 0 ? '#ffffff' : '#faf5ff';
-                let totalBenar = 0, totalSoal = 0;
+                const bg = i % 2 === 0 ? '#ffffff' : '#f5f3ff';
+                let totalBenar = 0, totalSalah = 0, totalSoal = 0;
+
                 const cells = LEVELS.map(lv => {
                     const d = kognitifMatrix[bab][lv];
+                    const salah = Math.max(0, d.total - d.benar);
                     totalBenar += d.benar;
+                    totalSalah += salah;
                     totalSoal  += d.total;
+
                     if (d.total === 0) {
-                        return `<td style="padding:7px 10px;text-align:center;border:1px solid #f3f4f6;color:#d1d5db;background:${bg};">—</td>`;
+                        return `<td style="padding:8px 10px;text-align:center;border:1px solid #e9d5ff;color:#d1d5db;background:${bg};font-size:0.78rem;">—</td>`;
                     }
                     const pct = Math.round((d.benar / d.total) * 100);
-                    const c   = pct >= 70 ? '#059669' : pct >= 50 ? '#d97706' : '#dc2626';
-                    return `<td style="padding:7px 10px;text-align:center;border:1px solid #f3f4f6;background:${bg};">
-                        <span style="font-weight:700;color:${c};">${d.benar}</span>
-                        <span style="color:#9ca3af;font-size:0.75rem;">/${d.total}</span>
+                    const bgCell = pct >= 70 ? '#f0fdf4' : pct >= 50 ? '#fffbeb' : '#fef2f2';
+                    return `<td style="padding:8px 10px;text-align:center;border:1px solid #e9d5ff;background:${bgCell};">
+                        <div style="display:flex;flex-direction:column;gap:2px;align-items:center;">
+                            <span style="font-weight:700;color:#059669;font-size:0.82rem;">✔ Benar: ${d.benar}</span>
+                            <span style="font-weight:700;color:#dc2626;font-size:0.82rem;">✘ Salah: ${salah}</span>
+                        </div>
                     </td>`;
                 }).join('');
 
-                const totPct  = totalSoal > 0 ? Math.round((totalBenar / totalSoal) * 100) : 0;
-                const totColor = totPct >= 70 ? '#059669' : totPct >= 50 ? '#d97706' : '#dc2626';
-                const totCell = totalSoal > 0
-                    ? `<span style="font-weight:700;color:${totColor};">${totalBenar}</span><span style="color:#9ca3af;font-size:0.75rem;">/${totalSoal}</span>`
+                const totPct   = totalSoal > 0 ? Math.round((totalBenar / totalSoal) * 100) : 0;
+                const totBgCell = totPct >= 70 ? '#f0fdf4' : totPct >= 50 ? '#fffbeb' : '#fef2f2';
+                const totCell   = totalSoal > 0
+                    ? `<div style="display:flex;flex-direction:column;gap:2px;align-items:center;">
+                           <span style="font-weight:700;color:#059669;font-size:0.82rem;">✔ ${totalBenar}</span>
+                           <span style="font-weight:700;color:#dc2626;font-size:0.82rem;">✘ ${totalSalah}</span>
+                           <span style="font-size:0.7rem;color:#6b7280;">(${totPct}% benar)</span>
+                       </div>`
                     : `<span style="color:#d1d5db;">—</span>`;
 
-                return `<tr>
-                    <td style="padding:7px 10px;border:1px solid #f3f4f6;font-weight:600;color:#374151;font-size:0.82rem;background:${bg};">${bab}</td>
+                return `<tr style="border-bottom:2px solid #e9d5ff;">
+                    <td style="padding:8px 12px;border:1px solid #e9d5ff;font-weight:600;color:#374151;font-size:0.82rem;background:${bg};white-space:nowrap;">${bab}</td>
                     ${cells}
-                    <td style="padding:7px 10px;text-align:center;border:1px solid #f3f4f6;background:${bg};">${totCell}</td>
+                    <td style="padding:8px 10px;text-align:center;border:1px solid #e9d5ff;background:${totBgCell};">${totCell}</td>
                 </tr>`;
             }).join('');
 
             matrixHtml = `
-                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:1rem;margin-top:1.5rem;">
-                    <h4 style="margin:0 0 12px;color:#374151;font-size:0.92rem;display:flex;align-items:center;gap:6px;">
-                        <i class="fas fa-table" style="color:#8b5cf6;"></i> Matriks Performa Level Kognitif
-                        <span style="font-size:0.72rem;color:#9ca3af;font-weight:400;">Format: Benar/Total</span>
+                <div style="background:#fff;border:2px solid #e9d5ff;border-radius:12px;padding:1.2rem;margin-top:1.5rem;box-shadow:0 2px 8px rgba(124,58,237,0.08);">
+                    <h4 style="margin:0 0 12px;color:#4f46e5;font-size:0.92rem;display:flex;align-items:center;gap:8px;">
+                        <i class="fas fa-table" style="color:#8b5cf6;"></i>
+                        Matriks Performa: Materi × Level Kognitif
+                        <span style="font-size:0.7rem;background:#eef2ff;color:#6d28d9;padding:2px 8px;border-radius:20px;font-weight:500;">✔ Benar &amp; ✘ Salah per Sel</span>
                     </h4>
                     <div style="overflow-x:auto;">
                         <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
@@ -6643,7 +6661,7 @@ async function loadFullSummaryTable() {
     const tbody = document.getElementById('fullSummaryTableBody');
     if (!tbody) return;
 
-    const COL = 17; // total kolom yang tampil (termasuk Aksi)
+    const COL = 15; // total kolom yang tampil (Email & Kelas dihapus)
     tbody.innerHTML = `<tr><td colspan="${COL}" style="padding:2rem;text-align:center;color:#6b7280;">
         <i class="fas fa-spinner fa-spin"></i> Memuat data semua siswa...
     </td></tr>`;
@@ -6750,10 +6768,8 @@ async function loadFullSummaryTable() {
                    </button>`
                 : `<span style="color:#9ca3af;font-size:0.78rem;">Belum ujian</span>`;
 
-            return `<tr style="background:${bgColor};border-bottom:1px solid #f3f4f6;">
+            return `<tr style="background:${bgColor};border-bottom:3px solid #c4b5fd;">
                 <td style="padding:8px 12px;font-weight:600;color:#1f2937;white-space:nowrap;">${trim(nama)}</td>
-                <td style="padding:8px 12px;color:#6b7280;font-size:0.82rem;">${trim(email)}</td>
-                <td style="padding:8px 12px;font-size:0.82rem;">${trim(kelas, 20)}</td>
                 <td style="padding:8px 12px;">
                     <span style="background:#eef2ff;color:#4f46e5;padding:2px 8px;border-radius:12px;font-size:0.78rem;font-weight:600;white-space:nowrap;">
                         ${paket}
