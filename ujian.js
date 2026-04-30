@@ -173,6 +173,24 @@ async function loadExamQuestions() {
         questions = shuffleArray([...questionsData]);
         console.log(`Loaded and shuffled ${questions.length} questions of type ${assignedQuestionType}`);
 
+        // Acak urutan opsi jawaban untuk soal PG dan PGK MCMA.
+        // Dilakukan SEKALI di sini agar urutan tidak berubah saat render ulang.
+        const SHUFFLE_TYPES = ['Pilihan Ganda', 'PG', 'PGK MCMA'];
+        questions.forEach(question => {
+            // Fallback ke 'Pilihan Ganda' jika question_type null/kosong
+            const qType = question.question_type?.trim() || 'Pilihan Ganda';
+
+            if (SHUFFLE_TYPES.includes(qType)) {
+                // Kumpulkan hanya huruf opsi yang benar-benar terisi
+                const available = ['A', 'B', 'C', 'D', 'E'].filter(opt => {
+                    const val = question[`option_${opt.toLowerCase()}`];
+                    return val && val.trim() !== '';
+                });
+                // Simpan urutan teracak ke properti baru di objek soal
+                question.shuffled_options = shuffleArray([...available]);
+            }
+        });
+
         answers = new Array(questions.length).fill(null);
         doubtfulQuestions = new Array(questions.length).fill(false);
 
@@ -486,7 +504,9 @@ function addRipple(event, element) {
 
 // Render multiple choice options (Single Choice / Radio)
 function renderMultipleChoiceOptions(question, questionIndex) {
-    const options = ['A', 'B', 'C', 'D', 'E'].filter(opt => {
+    // Gunakan shuffled_options jika sudah digenerate di loadExamQuestions,
+    // fallback ke urutan default jika tidak ada (keamanan).
+    const options = question.shuffled_options || ['A', 'B', 'C', 'D', 'E'].filter(opt => {
         const optKey = `option_${opt.toLowerCase()}`;
         return question[optKey] && question[optKey].trim() !== '';
     });
@@ -522,7 +542,9 @@ function renderMultipleChoiceOptions(question, questionIndex) {
 
 // Render MCMA (Multiple Choice Multiple Answer) options
 function renderMCMAOptions(question, questionIndex) {
-    const options = ['A', 'B', 'C', 'D', 'E'].filter(opt => question[`option_${opt.toLowerCase()}`]);
+    // Gunakan shuffled_options jika sudah digenerate di loadExamQuestions,
+    // fallback ke urutan default jika tidak ada (keamanan).
+    const options = question.shuffled_options || ['A', 'B', 'C', 'D', 'E'].filter(opt => question[`option_${opt.toLowerCase()}`]);
 
     if (!options || options.length === 0) {
         return '<div class="error-message">Data opsi tidak tersedia. Silakan hubungi admin.</div>';
