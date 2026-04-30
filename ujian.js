@@ -1154,3 +1154,4 @@ window.selectAnswer = selectAnswer;
 window.toggleMCMA = toggleMCMA;
 window.selectCategoryAnswer = selectCategoryAnswer;
 window.toggleDoubt = toggleDoubt;
+window.addRipple = addRipple;
