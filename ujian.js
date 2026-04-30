@@ -518,7 +518,12 @@ function renderMultipleChoiceOptions(question, questionIndex) {
     const currentAnswer = answers[questionIndex];
     let html = '<div class="options">';
 
-    options.forEach(option => {
+    // Label visual selalu A, B, C, D, E berurutan (standar CBT)
+    // variabel 'option' tetap berisi huruf asli untuk sistem penilaian
+    const displayLabels = ['A', 'B', 'C', 'D', 'E'];
+
+    options.forEach((option, index) => {
+        const displayLabel = displayLabels[index];
         const rawOptionText = question[`option_${option.toLowerCase()}`] || '';
         const optionText = renderLatexString(rawOptionText.replace(/\n/g, '<br>'));
         const isSelected = currentAnswer === option;
@@ -530,7 +535,7 @@ function renderMultipleChoiceOptions(question, questionIndex) {
                  tabindex="0"
                  onclick="selectAnswer('${option}'); addRipple(event, this)"
                  onkeydown="if(event.key==='Enter'||event.key===' '){selectAnswer('${option}');addRipple(event,this);}">
-                <span class="option-letter">${option}</span>
+                <span class="option-letter">${displayLabel}</span>
                 <span class="option-text">${optionText}</span>
             </div>
         `;
@@ -561,7 +566,12 @@ function renderMCMAOptions(question, questionIndex) {
     let html = '<div class="mcma-instruction"><i class="fas fa-info-circle"></i> Pilih satu atau lebih jawaban yang benar</div>';
     html += '<div class="options mcma-options">';
 
-    options.forEach(option => {
+    // Label visual selalu A, B, C, D, E berurutan (standar CBT)
+    // variabel 'option' tetap berisi huruf asli untuk sistem penilaian
+    const displayLabels = ['A', 'B', 'C', 'D', 'E'];
+
+    options.forEach((option, index) => {
+        const displayLabel = displayLabels[index];
         const rawOptionText = question[`option_${option.toLowerCase()}`] || '';
         const optionText = renderLatexString(rawOptionText.replace(/\n/g, '<br>'));
         const isSelected = selectedOptions.includes(option);
@@ -576,7 +586,7 @@ function renderMCMAOptions(question, questionIndex) {
                 <span class="mcma-checkbox ${isSelected ? 'checked' : ''}">
                     <i class="fas fa-check"></i>
                 </span>
-                <span class="option-letter">${option}</span>
+                <span class="option-letter">${displayLabel}</span>
                 <span class="option-text">${optionText}</span>
             </div>
         `;
