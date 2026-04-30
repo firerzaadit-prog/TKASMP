@@ -461,33 +461,61 @@ async function showQuestion(index) {
     }
 }
 
-// Render multiple choice options
+// ============================================================
+// RIPPLE EFFECT — adds a subtle click animation on option cards
+// ============================================================
+function addRipple(event, element) {
+    const existing = element.querySelector('.option-ripple');
+    if (existing) existing.remove();
+
+    const ripple = document.createElement('span');
+    ripple.className = 'option-ripple';
+
+    const rect = element.getBoundingClientRect();
+    const size = 60;
+    // Use clientX/Y from mouse events; for keyboard fall back to element center
+    const x = (event.clientX || rect.left + rect.width / 2) - rect.left - size / 2;
+    const y = (event.clientY || rect.top + rect.height / 2) - rect.top - size / 2;
+
+    ripple.style.left = `${x}px`;
+    ripple.style.top  = `${y}px`;
+    element.appendChild(ripple);
+
+    ripple.addEventListener('animationend', () => ripple.remove());
+}
+
+// Render multiple choice options (Single Choice / Radio)
 function renderMultipleChoiceOptions(question, questionIndex) {
     const options = ['A', 'B', 'C', 'D', 'E'].filter(opt => {
         const optKey = `option_${opt.toLowerCase()}`;
         return question[optKey] && question[optKey].trim() !== '';
     });
-    
+
     if (!options || options.length === 0) {
         return '<div class="error-message">Data opsi tidak tersedia. Silakan hubungi admin.</div>';
     }
-    
+
     const currentAnswer = answers[questionIndex];
     let html = '<div class="options">';
-    
+
     options.forEach(option => {
         const rawOptionText = question[`option_${option.toLowerCase()}`] || '';
         const optionText = renderLatexString(rawOptionText.replace(/\n/g, '<br>'));
         const isSelected = currentAnswer === option;
-        
+
         html += `
-            <div class="option ${isSelected ? 'selected' : ''}" onclick="selectAnswer('${option}')">
+            <div class="option ${isSelected ? 'selected' : ''}"
+                 role="radio"
+                 aria-checked="${isSelected}"
+                 tabindex="0"
+                 onclick="selectAnswer('${option}'); addRipple(event, this)"
+                 onkeydown="if(event.key==='Enter'||event.key===' '){selectAnswer('${option}');addRipple(event,this);}">
                 <span class="option-letter">${option}</span>
                 <span class="option-text">${optionText}</span>
             </div>
         `;
     });
-    
+
     html += '</div>';
     return html;
 }
@@ -495,11 +523,11 @@ function renderMultipleChoiceOptions(question, questionIndex) {
 // Render MCMA (Multiple Choice Multiple Answer) options
 function renderMCMAOptions(question, questionIndex) {
     const options = ['A', 'B', 'C', 'D', 'E'].filter(opt => question[`option_${opt.toLowerCase()}`]);
-    
+
     if (!options || options.length === 0) {
         return '<div class="error-message">Data opsi tidak tersedia. Silakan hubungi admin.</div>';
     }
-    
+
     let selectedOptions = [];
     try {
         const currentAnswer = answers[questionIndex];
@@ -510,14 +538,19 @@ function renderMCMAOptions(question, questionIndex) {
 
     let html = '<div class="mcma-instruction"><i class="fas fa-info-circle"></i> Pilih satu atau lebih jawaban yang benar</div>';
     html += '<div class="options mcma-options">';
-    
+
     options.forEach(option => {
         const rawOptionText = question[`option_${option.toLowerCase()}`] || '';
         const optionText = renderLatexString(rawOptionText.replace(/\n/g, '<br>'));
         const isSelected = selectedOptions.includes(option);
-        
+
         html += `
-            <div class="option mcma-option ${isSelected ? 'selected' : ''}" onclick="toggleMCMA('${option}')">
+            <div class="option mcma-option ${isSelected ? 'selected' : ''}"
+                 role="checkbox"
+                 aria-checked="${isSelected}"
+                 tabindex="0"
+                 onclick="toggleMCMA('${option}'); addRipple(event, this)"
+                 onkeydown="if(event.key==='Enter'||event.key===' '){toggleMCMA('${option}');addRipple(event,this);}">
                 <span class="mcma-checkbox ${isSelected ? 'checked' : ''}">
                     <i class="fas fa-check"></i>
                 </span>
@@ -526,7 +559,7 @@ function renderMCMAOptions(question, questionIndex) {
             </div>
         `;
     });
-    
+
     html += '</div>';
     return html;
 }
