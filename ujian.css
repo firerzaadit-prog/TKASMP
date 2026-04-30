@@ -759,15 +759,17 @@
             font-size: 0.7rem;
         }
 
-        .option:hover .mcma-checkbox {
+        /* Hover hanya untuk opsi yang BELUM dipilih */
+        .option:hover .mcma-checkbox:not(.checked) {
             border-color: #667eea;
             background: #f5f3ff;
         }
 
+        /* Centang aktif — tidak boleh ditimpa oleh hover */
         .mcma-checkbox.checked {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            border-color: transparent;
-            color: #ffffff;
+            background: linear-gradient(135deg, #667eea, #764ba2) !important;
+            border-color: transparent !important;
+            color: #ffffff !important;
             box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
         }
 
