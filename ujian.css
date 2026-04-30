@@ -1,4 +1,4 @@
-        /* Modern E-Learning Exam Layout */
+/* Modern E-Learning Exam Layout */
         body {
             margin: 0 !important;
             padding: 0 !important;
@@ -738,6 +738,58 @@
         .option.selected .option-text {
             color: #1e1b4b;
             font-weight: 500;
+        }
+
+        /* ============================================
+           OPTION-TEXT: Normalisasi konten dari editor
+           ============================================ */
+
+        /* 1. Hilangkan margin bawaan <p> dan <div> agar baris pertama
+              sejajar rapi dengan bulatan .option-letter di sebelah kiri */
+        .option-text p,
+        .option-text div {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+
+        /* Jika ada beberapa paragraf berurutan, beri jarak antar paragraf
+           yang wajar (tapi baris pertama tetap flush ke atas) */
+        .option-text p + p,
+        .option-text p + div,
+        .option-text div + p {
+            margin-top: 0.4em;
+        }
+
+        /* 2. Batasi ukuran <img> agar tidak melebihi lebar card,
+              dan beri margin atas jika gambar letaknya di bawah teks */
+        .option-text img {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            border-radius: 6px;
+            margin-top: 0.5rem;
+            margin-bottom: 0;
+        }
+
+        /* Jika gambar adalah elemen pertama, tidak perlu margin atas */
+        .option-text > img:first-child,
+        .option-text > p:first-child > img:only-child {
+            margin-top: 0;
+        }
+
+        /* 3. Rapikan margin KaTeX display-mode agar tidak mendorong
+              konten terlalu jauh dari .option-letter */
+        .option-text .katex-display {
+            margin-top: 0.25em;
+            margin-bottom: 0.25em;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        /* KaTeX inline — pastikan tidak ada baseline shift */
+        .option-text .katex {
+            font-size: 1em;
+            vertical-align: middle;
         }
 
         /* ============================================
