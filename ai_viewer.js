@@ -1,8 +1,8 @@
-// ai_viewer.js - Halaman mandiri untuk Analisis AI Mendalam
-// Mengambil parameter session & user dari URL, lalu menjalankan analisis AI
+// ai_viewer.js - Halaman mandiri untuk menampilkan Analisis AI
+// REFACTORED: Hanya membaca (SELECT) dari tabel gemini_analyses.
+// TIDAK memanggil Gemini API sama sekali.
 
 import { supabase } from './clientSupabase.js';
-import { geminiAnalytics } from './gemini_analytics.js';
 
 // ────────────────────────────────────────────────
 // Helpers UI
@@ -20,48 +20,75 @@ function setStatus(text, state = 'loading') {
 }
 
 function showError(title, message) {
-    document.getElementById('aiLoadingCard').style.display = 'none';
+    const loadingCard = document.getElementById('aiLoadingCard');
+    if (loadingCard) loadingCard.style.display = 'none';
+
     const errCard = document.getElementById('aiErrorCard');
-    errCard.style.display = 'block';
-    document.getElementById('errorTitle').textContent = title;
-    document.getElementById('errorMessage').textContent = message;
+    if (errCard) errCard.style.display = 'block';
+
+    const errTitle = document.getElementById('errorTitle');
+    if (errTitle) errTitle.textContent = title;
+
+    const errMsg = document.getElementById('errorMessage');
+    if (errMsg) errMsg.textContent = message;
+
     setStatus('Gagal memuat analisis', 'error');
+}
+
+/**
+ * Tampilkan pesan khusus ketika analisis belum tersedia di database.
+ * Berbeda dengan showError — ini bukan error teknis, hanya belum diproses.
+ */
+function showPendingMessage() {
+    const loadingCard = document.getElementById('aiLoadingCard');
+    if (loadingCard) loadingCard.style.display = 'none';
+
+    // Cek apakah ada elemen pending khusus, jika tidak pakai errCard
+    const pendingCard = document.getElementById('aiPendingCard');
+    if (pendingCard) {
+        pendingCard.style.display = 'block';
+        setStatus('Menunggu diproses admin', 'loading');
+        return;
+    }
+
+    // Fallback: gunakan errCard dengan pesan custom
+    const errCard = document.getElementById('aiErrorCard');
+    if (errCard) {
+        errCard.style.display = 'block';
+        errCard.style.borderColor = '#f59e0b';
+        errCard.style.background = 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)';
+    }
+
+    const errTitle = document.getElementById('errorTitle');
+    if (errTitle) {
+        errTitle.textContent = '⏳ Analisis Belum Tersedia';
+        errTitle.style.color = '#d97706';
+    }
+
+    const errMsg = document.getElementById('errorMessage');
+    if (errMsg) {
+        errMsg.innerHTML = `
+            Analisis AI untuk sesi ujian ini belum tersedia. 
+            <br><br>
+            <strong>Apa yang terjadi?</strong><br>
+            Guru/admin sedang memproses analisis AI untuk hasil ujianmu. 
+            Proses ini biasanya memakan waktu beberapa saat setelah ujian selesai.
+            <br><br>
+            Silakan kembali ke <a href="halamanpertama.html" style="color:#2563eb;font-weight:600;">Halaman Utama</a> 
+            dan cek kembali nanti melalui menu <strong>Riwayat Ujian</strong>.
+        `;
+    }
+
+    // Sembunyikan tombol retry jika ada
+    const retryBtn = document.querySelector('#aiErrorCard button[onclick*="retry"]');
+    if (retryBtn) retryBtn.style.display = 'none';
+
+    setStatus('Menunggu diproses admin', 'loading');
 }
 
 function setLoadingDetail(text) {
     const el = document.getElementById('loadingDetail');
     if (el) el.textContent = text;
-}
-
-// ────────────────────────────────────────────────
-// Helper: cek jawaban benar (semua tipe soal)
-// ────────────────────────────────────────────────
-function checkAnswerCorrectness(question, answer) {
-    if (!answer || !question) return false;
-    try {
-        if (question.question_type === 'PGK MCMA') {
-            const sel = (answer || '').split(',').sort();
-            const cor = Array.isArray(question.correct_answers)
-                ? question.correct_answers.sort()
-                : (question.correct_answers || '').split(',').sort();
-            return JSON.stringify(sel) === JSON.stringify(cor);
-        } else if (question.question_type === 'PGK Kategori') {
-            const sel = typeof answer === 'string' ? JSON.parse(answer) : answer;
-            const map = typeof question.category_mapping === 'string'
-                ? JSON.parse(question.category_mapping)
-                : question.category_mapping;
-            if (!map || !sel) return false;
-            for (const [k, v] of Object.entries(sel)) {
-                if (map[k] !== v) return false;
-            }
-            for (const [k, v] of Object.entries(map)) {
-                if (v && sel[k] !== true) return false;
-            }
-            return true;
-        } else {
-            return answer === question.correct_answer;
-        }
-    } catch (e) { return false; }
 }
 
 // ────────────────────────────────────────────────
@@ -79,10 +106,9 @@ function renderGlobalAiAnalysis(data, analyticsData) {
         const matrix = analyticsData.levelKognitif;
 
         const rows = CHAPTERS.map(bab => {
-            const babKey = bab;
             let totalBenar = 0, totalSalah = 0;
             const cells = LEVELS.map(lv => {
-                const cell = (matrix[babKey] && matrix[babKey][lv]) || { benar: 0, salah: 0 };
+                const cell = (matrix[bab] && matrix[bab][lv]) || { benar: 0, salah: 0 };
                 totalBenar += cell.benar;
                 totalSalah += cell.salah;
                 if (cell.benar === 0 && cell.salah === 0) {
@@ -124,7 +150,21 @@ function renderGlobalAiAnalysis(data, analyticsData) {
         </div>`;
     }
 
+    // Tanggal analisis
+    const analyzedAt = data.analyzed_at
+        ? new Date(data.analyzed_at).toLocaleString('id-ID', {
+            day: 'numeric', month: 'long', year: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+          })
+        : null;
+
     container.innerHTML = `
+        <!-- Info waktu analisis -->
+        ${analyzedAt ? `
+        <div style="text-align:right;margin-bottom:8px;">
+            <span style="font-size:0.78rem;color:#9ca3af;"><i class="fas fa-clock"></i> Dianalisis: ${analyzedAt}</span>
+        </div>` : ''}
+
         <!-- Ringkasan -->
         <div class="ai-summary-card">
             <h3><i class="fas fa-info-circle"></i> Ringkasan Evaluasi</h3>
@@ -168,138 +208,70 @@ function renderGlobalAiAnalysis(data, analyticsData) {
         </div>
     `;
 
-    document.getElementById('aiAnalysisContent').style.display = 'block';
+    container.style.display = 'block';
     setStatus('Analisis selesai', 'done');
 }
 
 // ────────────────────────────────────────────────
-// Fungsi utama: jalankan analisis AI
+// Helper: hitung matriks kognitif dari data jawaban
+// (digunakan jika data tersimpan masih perlu di-compute ulang)
 // ────────────────────────────────────────────────
-async function triggerAIAnalysis(sessionId, userId) {
+function buildCognitiveMatrix(analysisData) {
+    // Jika data sudah menyimpan levelKognitif, gunakan langsung
+    if (analysisData.levelKognitif) {
+        return { levelKognitif: analysisData.levelKognitif };
+    }
+    return null;
+}
+
+// ────────────────────────────────────────────────
+// Fungsi utama: HANYA baca dari database
+// ────────────────────────────────────────────────
+async function loadAIAnalysisFromDB(sessionId) {
     try {
-        setStatus('Mengambil data ujian…', 'loading');
-        setLoadingDetail('Menghubungkan ke database dan memuat jawaban siswa…');
+        setStatus('Mengambil data analisis dari database…', 'loading');
+        setLoadingDetail('Menghubungkan ke database…');
 
-        // 1. Ambil soal yang dikerjakan
-        const { data: answersData, error: answersError } = await supabase
-            .from('exam_answers')
-            .select('*')
-            .eq('exam_session_id', sessionId);
-
-        if (answersError) throw new Error('Gagal memuat jawaban: ' + answersError.message);
-        if (!answersData || answersData.length === 0) {
-            showError('Tidak Ada Data Jawaban', 'Tidak ditemukan jawaban untuk sesi ujian ini. Pastikan ujian sudah diselesaikan.');
-            return;
-        }
-
-        // ── Dedup jawaban per question_id (ambil entri pertama per soal) ──
-        // Ini mencegah double-count jika ada baris duplikat di exam_answers
-        const dedupAnswersMap = new Map();
-        answersData.forEach(ans => {
-            const qid = ans.question_id;
-            if (qid && !dedupAnswersMap.has(qid)) {
-                dedupAnswersMap.set(qid, ans);
-            }
-        });
-        const uniqueAnswersData = Array.from(dedupAnswersMap.values());
-        console.log(`[AI Viewer] Total jawaban: ${answersData.length}, setelah dedup: ${uniqueAnswersData.length}`);
-
-        const questionIds = [...new Set(uniqueAnswersData.map(a => a.question_id).filter(Boolean))];
-        setLoadingDetail(`Memuat ${questionIds.length} soal…`);
-
-        const { data: questionsData, error: questionsError } = await supabase
-            .from('questions')
-            .select('*')
-            .in('id', questionIds);
-
-        if (questionsError) throw new Error('Gagal memuat soal: ' + questionsError.message);
-
-        const questionsMap = new Map((questionsData || []).map(q => [q.id, q]));
-
-        // 2. Bangun payload untuk AI (gunakan uniqueAnswersData yang sudah terdedup)
-        const payload = uniqueAnswersData.map(ans => {
-            const q = questionsMap.get(ans.question_id);
-            if (!q) return null;
-            return {
-                answer: {
-                    answer_value: ans.selected_answer || ans.user_answer,
-                    is_correct: checkAnswerCorrectness(q, ans.selected_answer || ans.user_answer)
-                },
-                question: q
-            };
-        }).filter(Boolean);
-
-        if (payload.length === 0) {
-            showError('Data Tidak Lengkap', 'Tidak dapat memproses jawaban karena data soal tidak ditemukan.');
-            return;
-        }
-
-        // 3. Hitung matriks kognitif (bab × level kognitif)
-        const levelKognitif = {};
-        const CHAPTER_MAP = {
-            'bilangan': 'Bilangan',
-            'aljabar': 'Aljabar',
-            'geometri': 'Geometri & Pengukuran',
-            'pengukuran': 'Geometri & Pengukuran',
-            'geometri & pengukuran': 'Geometri & Pengukuran',
-            'data': 'Data dan Peluang',
-            'peluang': 'Data dan Peluang',
-            'data dan peluang': 'Data dan Peluang'
-        };
-
-        payload.forEach(({ answer, question }) => {
-            const rawChapter = (question.bab || question.chapter || '').toLowerCase().trim();
-            let chapter = 'Lainnya';
-            for (const [key, label] of Object.entries(CHAPTER_MAP)) {
-                if (rawChapter.includes(key)) { chapter = label; break; }
-            }
-
-            const difficulty = (question.difficulty || '').toLowerCase();
-            let levelKey = 'Level 2';
-            if (difficulty === 'mudah' || difficulty === 'easy' || difficulty === 'l1') levelKey = 'Level 1';
-            else if (difficulty === 'sulit' || difficulty === 'hard' || difficulty === 'l3') levelKey = 'Level 3';
-
-            if (!levelKognitif[chapter]) levelKognitif[chapter] = {};
-            if (!levelKognitif[chapter][levelKey]) levelKognitif[chapter][levelKey] = { benar: 0, salah: 0 };
-
-            if (answer.is_correct) levelKognitif[chapter][levelKey].benar++;
-            else levelKognitif[chapter][levelKey].salah++;
-        });
-
-        setLoadingDetail('Menghubungi model AI Gemini…');
-        setStatus('Memanggil AI…', 'loading');
-
-        // 4. Cek cache di database
-        let analysisResult = null;
-        const { data: existingBatch } = await supabase
+        // Query ke tabel gemini_analyses berdasarkan session ID
+        const { data: analysisRecord, error } = await supabase
             .from('gemini_analyses')
-            .select('analysis_data')
+            .select('analysis_data, updated_at')
             .eq('answer_id', sessionId)
             .maybeSingle();
 
-        if (existingBatch?.analysis_data) {
-            analysisResult = existingBatch.analysis_data;
-            setLoadingDetail('Memuat dari cache database…');
-            console.log('[AI Viewer] Mengambil dari cache');
-        } else {
-            setLoadingDetail('Memproses dengan AI Gemini (mungkin memerlukan beberapa saat)…');
-            analysisResult = await geminiAnalytics.analyzeBatchAnswers(payload);
-            // Simpan ke cache
-            try {
-                await geminiAnalytics.storeBatchResult(sessionId, analysisResult);
-            } catch (e) {
-                console.warn('[AI Viewer] Gagal menyimpan cache:', e);
-            }
-        }
-
-        if (!analysisResult) {
-            showError('Analisis Tidak Tersedia', 'Model AI tidak menghasilkan respons. Silakan coba lagi nanti.');
+        if (error) {
+            console.error('[AI Viewer] DB error:', error);
+            showError(
+                'Gagal Mengambil Data',
+                'Terjadi kesalahan saat mengambil data dari database. Silakan coba lagi nanti. (' + error.message + ')'
+            );
             return;
         }
 
-        // 5. Render ke UI
-        document.getElementById('aiLoadingCard').style.display = 'none';
-        renderGlobalAiAnalysis(analysisResult, { levelKognitif });
+        // Jika data tidak ada → analisis belum diproses admin
+        if (!analysisRecord || !analysisRecord.analysis_data) {
+            console.log('[AI Viewer] Analisis belum tersedia untuk session:', sessionId);
+            showPendingMessage();
+            return;
+        }
+
+        const analysisData = analysisRecord.analysis_data;
+        console.log('[AI Viewer] Data analisis ditemukan:', analysisData);
+
+        setLoadingDetail('Merender hasil analisis…');
+
+        // Sembunyikan loading card
+        const loadingCard = document.getElementById('aiLoadingCard');
+        if (loadingCard) loadingCard.style.display = 'none';
+
+        // Tambahkan timestamp ke analysisData jika ada
+        if (analysisRecord.updated_at && !analysisData.analyzed_at) {
+            analysisData.analyzed_at = analysisRecord.updated_at;
+        }
+
+        // Render ke UI
+        const extraData = buildCognitiveMatrix(analysisData);
+        renderGlobalAiAnalysis(analysisData, extraData);
 
     } catch (err) {
         console.error('[AI Viewer] Error:', err);
@@ -336,21 +308,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!_sessionId || _sessionId === 'null' || _sessionId === 'undefined') {
         showError(
             'Parameter URL Tidak Valid',
-            'ID sesi ujian tidak ditemukan di URL. Silakan kembali ke halaman hasil ujian dan klik tombol "Lihat Analisis AI Mendalam" lagi.'
+            'ID sesi ujian tidak ditemukan di URL. Silakan kembali ke halaman utama dan buka analisis melalui menu Riwayat Ujian.'
         );
         return;
     }
 
-    // Jalankan analisis
-    await triggerAIAnalysis(_sessionId, _userId);
+    // REFACTORED: Hanya baca dari DB, tidak panggil Gemini API
+    await loadAIAnalysisFromDB(_sessionId);
 });
 
-// Retry dari tombol error
-window.retryAnalysis = async function() {
-    document.getElementById('aiErrorCard').style.display = 'none';
-    document.getElementById('aiLoadingCard').style.display = 'block';
-    document.getElementById('aiAnalysisContent').style.display = 'none';
-    document.getElementById('aiAnalysisContent').innerHTML = '';
-    setStatus('Mencoba ulang…', 'loading');
-    await triggerAIAnalysis(_sessionId, _userId);
+// Tombol kembali ke halaman utama (global)
+window.goToHomePage = function () {
+    window.location.href = 'halamanpertama.html';
+};
+
+// Refresh: coba baca ulang dari DB (bukan retry API)
+window.retryAnalysis = async function () {
+    const errCard = document.getElementById('aiErrorCard');
+    if (errCard) {
+        errCard.style.display = 'none';
+        errCard.style.borderColor = '';
+        errCard.style.background = '';
+    }
+
+    const pendingCard = document.getElementById('aiPendingCard');
+    if (pendingCard) pendingCard.style.display = 'none';
+
+    const loadingCard = document.getElementById('aiLoadingCard');
+    if (loadingCard) loadingCard.style.display = 'block';
+
+    const content = document.getElementById('aiAnalysisContent');
+    if (content) {
+        content.style.display = 'none';
+        content.innerHTML = '';
+    }
+
+    const errTitle = document.getElementById('errorTitle');
+    if (errTitle) errTitle.style.color = '';
+
+    const retryBtn = document.querySelector('#aiErrorCard button[onclick*="retry"]');
+    if (retryBtn) retryBtn.style.display = '';
+
+    setStatus('Memeriksa ulang database…', 'loading');
+    await loadAIAnalysisFromDB(_sessionId);
 };

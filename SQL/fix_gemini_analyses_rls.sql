@@ -1,29 +1,31 @@
--- ==========================================
--- FIX: Gemini Analyses RLS Policy (Error 403)
--- ==========================================
--- Masalah: Siswa tidak bisa menyimpan analisis AI karena RLS hanya mengizinkan admin
--- Solusi: Tambahkan policy agar siswa bisa mengelola analisis untuk jawaban mereka sendiri
-
--- 1. Hapus policy yang bermasalah (jika ada)
+-- 1. Hapus policy lama yang salah target
 DROP POLICY IF EXISTS "Users can manage analyses for their answers" ON gemini_analyses;
+DROP POLICY IF EXISTS "Users can view their own session analysis" ON gemini_analyses;
 
--- 2. Buat policy baru yang mengizinkan siswa mengelola analisis jawaban mereka sendiri
-CREATE POLICY "Users can manage analyses for their answers" ON gemini_analyses
+-- 2. Buat policy BARU: Siswa HANYA BISA MEMBACA (SELECT) hasil analisis sesi mereka
+CREATE POLICY "Users can view their own session analysis" ON gemini_analyses
+    FOR SELECT
+    TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM exam_sessions
+            WHERE exam_sessions.id = gemini_analyses.answer_id
+            AND exam_sessions.user_id = auth.uid()
+        )
+    );
+
+-- 3. Pastikan Admin tetap bisa menambah/mengubah data (INSERT/UPDATE)
+-- (Lewati langkah ini jika Admin melakukan bypass RLS bawaan Supabase)
+CREATE POLICY "Admins can insert and update analyses" ON gemini_analyses
     FOR ALL
     TO authenticated
     USING (
         EXISTS (
-            SELECT 1 FROM exam_answers
-            WHERE exam_answers.id = gemini_analyses.answer_id
-            AND exam_answers.user_id = auth.uid()
+            SELECT 1 FROM admin_users 
+            WHERE admin_users.id = auth.uid() 
+            AND admin_users.is_admin = true
         )
     );
 
--- 3. Verifikasi policy sudah aktif
-SELECT schemaname, tablename, policyname, permissive, roles, cmd, qual
-FROM pg_policies
-WHERE tablename = 'gemini_analyses'
-ORDER BY policyname;
-
--- 4. Test query (ganti dengan UUID yang valid)
--- SELECT * FROM gemini_analyses WHERE answer_id = 'your-answer-uuid-here';</content>
+-- 4. Aktifkan RLS di tabel jika belum aktif
+ALTER TABLE gemini_analyses ENABLE ROW LEVEL SECURITY;

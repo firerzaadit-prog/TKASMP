@@ -156,6 +156,93 @@
                 </div>
             </div>
         </section>
+
+        <!-- ═══════════════════════════════════════════════════
+             RIWAYAT UJIAN — Fitur baru (AI asinkron/admin)
+             ═══════════════════════════════════════════════════ -->
+        <section class="exam-history-section" style="
+            margin: 32px auto;
+            max-width: 1100px;
+            padding: 0 20px 40px;
+        ">
+            <!-- Section Header -->
+            <div style="
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 12px;
+                margin-bottom: 18px;
+            ">
+                <h2 style="
+                    font-size: 1.25rem;
+                    font-weight: 700;
+                    color: #1e1b4b;
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    margin: 0;
+                ">
+                    <span style="
+                        background: linear-gradient(135deg, #4f46e5, #7c3aed);
+                        color: white;
+                        border-radius: 10px;
+                        width: 38px; height: 38px;
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 1rem;
+                        flex-shrink: 0;
+                    "><i class="fas fa-clipboard-list"></i></span>
+                    Riwayat Ujian &amp; Analisis AI
+                </h2>
+                <button
+                    onclick="loadExamHistory()"
+                    title="Refresh daftar riwayat ujian"
+                    style="
+                        background: white;
+                        color: #4f46e5;
+                        border: 1.5px solid #4f46e5;
+                        border-radius: 8px;
+                        padding: 8px 16px;
+                        font-size: 0.85rem;
+                        font-weight: 600;
+                        cursor: pointer;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                    "
+                >
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+
+            <!-- Info banner -->
+            <div style="
+                background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+                border: 1px solid #bfdbfe;
+                border-radius: 10px;
+                padding: 12px 18px;
+                margin-bottom: 18px;
+                font-size: 0.85rem;
+                color: #1e40af;
+                display: flex;
+                align-items: flex-start;
+                gap: 10px;
+            ">
+                <i class="fas fa-info-circle" style="margin-top:2px;flex-shrink:0;"></i>
+                <span>
+                    Setelah ujian selesai, guru/admin akan memproses <strong>Analisis AI</strong> untuk hasil ujianmu.
+                    Tombol <strong>"Lihat Analisis AI"</strong> akan aktif (berwarna biru) setelah analisis tersedia.
+                    Jika masih abu-abu, silakan cek kembali beberapa saat lagi.
+                </span>
+            </div>
+
+            <!-- Container diisi oleh loadExamHistory() di halamanpertama.js -->
+            <div id="examHistoryContainer">
+                <!-- JS akan mengisi konten di sini -->
+            </div>
+        </section>
     </main>
 
     <!-- Footer -->
@@ -525,4 +612,3 @@
                         <i class="fas fa-trash"></i> Ya, Hapus Akun Saya
                     </button>
                 </div>
-         

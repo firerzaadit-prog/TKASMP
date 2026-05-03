@@ -8847,3 +8847,481 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+// ══════════════════════════════════════════════════════════════════════
+// MODUL AI MANAGEMENT — ADMIN PANEL
+// Mengelola analisis AI secara massal maupun satu-per-satu
+// ══════════════════════════════════════════════════════════════════════
+
+// ── State ──────────────────────────────────────────────────────────────
+let _aiAllCompletedSessions = [];
+let _aiBatchRunning = false;
+
+// ── Helpers UI ─────────────────────────────────────────────────────────
+function aiSetLog(message, type = 'info') {
+    const logEl = document.getElementById('aiMgmtLog');
+    if (!logEl) return;
+    const colors = { info: '#1d4ed8', success: '#16a34a', error: '#dc2626', warn: '#d97706', muted: '#6b7280' };
+    const now = new Date().toLocaleTimeString('id-ID');
+    const entry = document.createElement('div');
+    entry.style.cssText = `padding:5px 0;border-bottom:1px solid #f3f4f6;font-size:0.82rem;color:${colors[type]||colors.info};display:flex;gap:8px;`;
+    entry.innerHTML = `<span style="color:#9ca3af;flex-shrink:0;">[${now}]</span><span>${message}</span>`;
+    logEl.insertBefore(entry, logEl.firstChild);
+    while (logEl.children.length > 50) logEl.removeChild(logEl.lastChild);
+}
+
+function aiUpdateProgress(current, total) {
+    const bar = document.getElementById('aiMgmtProgressBar');
+    const label = document.getElementById('aiMgmtProgressLabel');
+    if (!bar || !label) return;
+    const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+    bar.style.width = `${pct}%`;
+    label.textContent = `${current} / ${total} sesi (${pct}%)`;
+}
+
+function aiSetBatchBtnState(running) {
+    const btn = document.getElementById('btnBatchAI');
+    if (!btn) return;
+    btn.disabled = running;
+    btn.innerHTML = running
+        ? `<i class="fas fa-spinner fa-spin"></i> Sedang Memproses...`
+        : `<i class="fas fa-robot"></i> Mulai Analisis AI Massal`;
+}
+
+// ── Load data utama ─────────────────────────────────────────────────────
+async function loadAIManagementData() {
+    const tableBody = document.getElementById('aiSessionsTableBody');
+    const loadingEl = document.getElementById('aiMgmtLoading');
+    const summaryEl = document.getElementById('aiMgmtSummary');
+
+    if (tableBody) tableBody.innerHTML = '';
+    if (loadingEl) loadingEl.style.display = 'flex';
+    if (summaryEl) summaryEl.style.display = 'none';
+
+    aiSetLog('Mengambil data sesi ujian dari database...', 'info');
+
+    try {
+        // Ambil semua sesi 'completed'
+        const { data: sessions, error: sessErr } = await supabase
+            .from('exam_sessions')
+            .select('id, created_at, total_score, is_passed, status, user_id')
+            .eq('status', 'completed')
+            .order('created_at', { ascending: false });
+
+        if (sessErr) throw new Error('Gagal memuat sesi ujian: ' + sessErr.message);
+
+        if (!sessions || sessions.length === 0) {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (tableBody) tableBody.innerHTML = `
+                <tr><td colspan="5" style="text-align:center;padding:32px;color:#9ca3af;">
+                    <i class="fas fa-inbox" style="font-size:2rem;display:block;margin-bottom:8px;"></i>
+                    Belum ada sesi ujian yang selesai.
+                </td></tr>`;
+            aiSetLog('Tidak ada sesi ujian selesai ditemukan.', 'warn');
+            return;
+        }
+
+        aiSetLog(`Ditemukan ${sessions.length} sesi. Memeriksa status analisis AI...`, 'info');
+
+        // Ambil profil user secara terpisah (untuk menghindari join error)
+        const userIds = [...new Set(sessions.map(s => s.user_id).filter(Boolean))];
+        let profilesMap = {};
+        if (userIds.length > 0) {
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, nama_lengkap, email')
+                .in('id', userIds);
+            if (profiles) profiles.forEach(p => { profilesMap[p.id] = p; });
+        }
+
+        // Cek status analisis di gemini_analyses
+        const sessionIds = sessions.map(s => s.id);
+        const { data: analyses, error: analyErr } = await supabase
+            .from('gemini_analyses')
+            .select('answer_id, updated_at')
+            .in('answer_id', sessionIds);
+
+        if (analyErr) aiSetLog('Peringatan: Gagal cek status analisis. ' + analyErr.message, 'warn');
+
+        const analysisMap = new Map((analyses || []).map(a => [a.answer_id, a.updated_at]));
+
+        _aiAllCompletedSessions = sessions.map(s => ({
+            ...s,
+            profiles: profilesMap[s.user_id] || {},
+            hasAnalysis: analysisMap.has(s.id),
+            analyzedAt: analysisMap.get(s.id) || null
+        }));
+
+        // Update summary
+        const totalSessions = _aiAllCompletedSessions.length;
+        const analyzedCount = _aiAllCompletedSessions.filter(s => s.hasAnalysis).length;
+        const pendingCount = totalSessions - analyzedCount;
+
+        if (summaryEl) {
+            summaryEl.style.display = 'grid';
+            const setVal = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+            setVal('aiMgmtTotal', totalSessions);
+            setVal('aiMgmtAnalyzed', analyzedCount);
+            setVal('aiMgmtPending', pendingCount);
+        }
+
+        if (loadingEl) loadingEl.style.display = 'none';
+        aiRenderSessionsTable(_aiAllCompletedSessions);
+        aiSetLog(`Selesai. ${analyzedCount} sudah dianalisis, ${pendingCount} belum.`, 'success');
+
+    } catch (error) {
+        console.error('[AI Mgmt] Error:', error);
+        if (loadingEl) loadingEl.style.display = 'none';
+        aiSetLog('Error: ' + error.message, 'error');
+        if (tableBody) tableBody.innerHTML = `
+            <tr><td colspan="5" style="text-align:center;padding:20px;color:#dc2626;">
+                Error: ${error.message}
+            </td></tr>`;
+    }
+}
+
+// ── Render tabel sesi ──────────────────────────────────────────────────
+function aiRenderSessionsTable(sessions) {
+    const tableBody = document.getElementById('aiSessionsTableBody');
+    if (!tableBody) return;
+
+    if (sessions.length === 0) {
+        tableBody.innerHTML = `
+            <tr><td colspan="5" style="text-align:center;padding:32px;color:#9ca3af;">
+                Tidak ada sesi yang cocok dengan filter.
+            </td></tr>`;
+        return;
+    }
+
+    tableBody.innerHTML = sessions.map(session => {
+        const namaSiswa = session.profiles?.nama_lengkap || session.profiles?.email || (session.user_id ? session.user_id.slice(0, 8) + '...' : '-');
+        const tanggal = new Date(session.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+        const waktu  = new Date(session.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        const skor   = session.total_score !== null ? session.total_score : '-';
+        const isPassed = session.is_passed || (session.total_score >= 50);
+
+        const statusBadge = session.hasAnalysis
+            ? `<span class="ai-status-badge analyzed"><i class="fas fa-check-circle"></i> Sudah Dianalisis</span>`
+            : `<span class="ai-status-badge pending"><i class="fas fa-clock"></i> Belum</span>`;
+
+        const analyzedAtText = session.hasAnalysis && session.analyzedAt
+            ? `<div style="font-size:0.72rem;color:#9ca3af;margin-top:3px;">
+                ${new Date(session.analyzedAt).toLocaleString('id-ID', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
+               </div>` : '';
+
+        const actionBtn = session.hasAnalysis
+            ? `<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;">
+                <button onclick="window.open('ai_viewer.html?session=${session.id}','_blank')" class="ai-action-btn view" title="Lihat hasil analisis">
+                    <i class="fas fa-eye"></i> Lihat
+                </button>
+                <button onclick="aiRegenerateSingle('${session.id}',this)" class="ai-action-btn regen" title="Regenerate (timpa hasil lama)">
+                    <i class="fas fa-redo"></i>
+                </button>
+               </div>`
+            : `<button onclick="aiGenerateSingle('${session.id}',this)" class="ai-action-btn generate" title="Generate analisis AI">
+                <i class="fas fa-robot"></i> Generate AI
+               </button>`;
+
+        return `
+            <tr id="ai-session-row-${session.id}">
+                <td style="padding:10px 12px;">
+                    <div style="font-weight:600;font-size:0.85rem;color:#1e293b;">${namaSiswa}</div>
+                    <div style="font-size:0.73rem;color:#9ca3af;">${session.user_id ? session.user_id.slice(0,12)+'...' : ''}</div>
+                </td>
+                <td style="padding:10px 12px;text-align:center;">
+                    <div style="font-size:0.83rem;color:#374151;">${tanggal}</div>
+                    <div style="font-size:0.72rem;color:#9ca3af;">${waktu}</div>
+                </td>
+                <td style="padding:10px 12px;text-align:center;">
+                    <span style="font-size:1.3rem;font-weight:700;color:#1d4ed8;">${skor}</span>
+                    <div style="font-size:0.72rem;color:${isPassed?'#16a34a':'#dc2626'};">
+                        ${isPassed ? '✅ Lulus' : '❌ Tidak Lulus'}
+                    </div>
+                </td>
+                <td style="padding:10px 12px;text-align:center;">
+                    ${statusBadge}${analyzedAtText}
+                </td>
+                <td style="padding:10px 12px;text-align:center;" id="ai-action-cell-${session.id}">
+                    ${actionBtn}
+                </td>
+            </tr>`;
+    }).join('');
+}
+
+// ── Fitur 1: Batch Analysis ────────────────────────────────────────────
+async function startBatchAnalysis() {
+    if (_aiBatchRunning) { alert('Analisis massal sedang berjalan. Mohon tunggu.'); return; }
+
+    const pending = _aiAllCompletedSessions.filter(s => !s.hasAnalysis);
+    if (pending.length === 0) { alert('Semua sesi sudah dianalisis!'); return; }
+
+    if (!confirm(`Akan memproses ${pending.length} sesi ujian secara berurutan.\n\nJangan tutup halaman ini selama proses berjalan.\n\nLanjutkan?`)) return;
+
+    _aiBatchRunning = true;
+    aiSetBatchBtnState(true);
+    aiUpdateProgress(0, pending.length);
+    const progressWrap = document.getElementById('aiMgmtProgressWrap');
+    if (progressWrap) progressWrap.style.display = 'block';
+    aiSetLog(`Memulai analisis massal untuk ${pending.length} sesi...`, 'info');
+
+    let successCount = 0, errorCount = 0;
+
+    for (let i = 0; i < pending.length; i++) {
+        const session = pending[i];
+        const nama = session.profiles?.nama_lengkap || session.user_id?.slice(0, 8);
+        aiSetLog(`[${i+1}/${pending.length}] Memproses: ${nama} (Skor: ${session.total_score})`, 'info');
+
+        try {
+            await aiRunAnalysisForSession(session.id);
+            successCount++;
+            aiUpdateRowStatus(session.id, true);
+            aiSetLog(`✓ Berhasil: ${nama}`, 'success');
+        } catch (err) {
+            errorCount++;
+            aiSetLog(`✗ Gagal: ${nama} — ${err.message}`, 'error');
+        }
+
+        aiUpdateProgress(i + 1, pending.length);
+
+        // Delay 2 detik antar sesi untuk menghindari rate limit Gemini
+        if (i < pending.length - 1) {
+            aiSetLog(`Menunggu 2 detik...`, 'muted');
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    }
+
+    _aiBatchRunning = false;
+    aiSetBatchBtnState(false);
+    aiSetLog(`Selesai! ✅ ${successCount} berhasil, ❌ ${errorCount} gagal.`, errorCount === 0 ? 'success' : 'warn');
+    alert(`Analisis massal selesai!\n✅ Berhasil: ${successCount}\n❌ Gagal: ${errorCount}`);
+    await loadAIManagementData();
+}
+
+// ── Fitur 2: Single Session Analysis ──────────────────────────────────
+async function aiGenerateSingle(sessionId, btn) {
+    if (!confirm('Generate analisis AI untuk sesi ini?')) return;
+
+    const origHTML = btn ? btn.innerHTML : '';
+    if (btn) { btn.disabled = true; btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Memproses...`; }
+
+    const sesi = _aiAllCompletedSessions.find(s => s.id === sessionId);
+    const nama = sesi?.profiles?.nama_lengkap || sessionId.slice(0, 8);
+    aiSetLog(`Memulai analisis untuk: ${nama}...`, 'info');
+
+    try {
+        await aiRunAnalysisForSession(sessionId);
+        aiUpdateRowStatus(sessionId, true);
+        aiSetLog(`✓ Analisis berhasil: ${nama}`, 'success');
+
+        if (sesi) { sesi.hasAnalysis = true; sesi.analyzedAt = new Date().toISOString(); }
+
+        const analyzedCount = _aiAllCompletedSessions.filter(s => s.hasAnalysis).length;
+        const eA = document.getElementById('aiMgmtAnalyzed'); if (eA) eA.textContent = analyzedCount;
+        const eP = document.getElementById('aiMgmtPending');  if (eP) eP.textContent = _aiAllCompletedSessions.length - analyzedCount;
+
+    } catch (err) {
+        aiSetLog(`✗ Gagal: ${nama} — ${err.message}`, 'error');
+        alert('Gagal generate analisis: ' + err.message);
+        if (btn) { btn.disabled = false; btn.innerHTML = origHTML; }
+    }
+}
+
+async function aiRegenerateSingle(sessionId, btn) {
+    if (!confirm('Regenerate akan MENIMPA hasil analisis lama untuk sesi ini.\nLanjutkan?')) return;
+    await aiGenerateSingle(sessionId, btn);
+}
+
+// ── Inti: jalankan analisis satu sesi ─────────────────────────────────
+async function aiRunAnalysisForSession(sessionId) {
+    // 1. Ambil jawaban
+    const { data: answersData, error: answersError } = await supabase
+        .from('exam_answers')
+        .select('*')
+        .eq('exam_session_id', sessionId);
+
+    if (answersError) throw new Error('Gagal memuat jawaban: ' + answersError.message);
+    if (!answersData || answersData.length === 0) throw new Error('Tidak ada jawaban untuk sesi ini');
+
+    // Dedup per question_id
+    const dedupMap = new Map();
+    answersData.forEach(ans => { if (ans.question_id && !dedupMap.has(ans.question_id)) dedupMap.set(ans.question_id, ans); });
+    const uniqueAnswers = Array.from(dedupMap.values());
+
+    // 2. Ambil soal
+    const questionIds = uniqueAnswers.map(a => a.question_id).filter(Boolean);
+    const { data: questionsData, error: questionsError } = await supabase
+        .from('questions')
+        .select('*')
+        .in('id', questionIds);
+
+    if (questionsError) throw new Error('Gagal memuat soal: ' + questionsError.message);
+
+    const questionsMap = new Map((questionsData || []).map(q => [q.id, q]));
+
+    // 3. Bangun payload
+    const payload = uniqueAnswers.map(ans => {
+        const q = questionsMap.get(ans.question_id);
+        if (!q) return null;
+        return {
+            answer: { answer_value: ans.selected_answer || ans.user_answer, is_correct: aiCheckAnswer(q, ans.selected_answer || ans.user_answer) },
+            question: q
+        };
+    }).filter(Boolean);
+
+    if (payload.length === 0) throw new Error('Tidak ada payload valid');
+
+    // 4. Panggil Gemini AI via geminiAnalytics (sudah di-import di gemini_analytics.js)
+    // Gunakan window.geminiAnalyticsInstance jika tersedia, atau panggil Edge Function langsung
+    const EDGE_FUNCTION_URL = 'https://tsgldkyuktqpsbeuevsn.supabase.co/functions/v1/gemini-chat';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2xka3l1a3RxcHNiZXVldnNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDA4MDYwNjcsImV4cCI6MjA1NjM4MjA2N30.tQSNSjP1G-HONEnRmKCE73nMgFrHFXJWyJ_PbuwuBHA';
+
+    const maxRetries = 3;
+    let attempt = 0;
+    let analysisResult = null;
+
+    while (attempt < maxRetries) {
+        try {
+            const response = await fetch(EDGE_FUNCTION_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+                body: JSON.stringify({ answers: payload, sessionInfo: { timestamp: new Date().toISOString() } })
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                if (response.status === 429 || response.status >= 500) {
+                    attempt++;
+                    if (attempt >= maxRetries) throw new Error(`Max retries: ${errText}`);
+                    const waitMs = Math.pow(2, attempt) * 5000;
+                    aiSetLog(`Rate limit/error ${response.status}, retry ${attempt}/${maxRetries} in ${waitMs/1000}s...`, 'warn');
+                    await new Promise(r => setTimeout(r, waitMs));
+                    continue;
+                }
+                throw new Error(`Batch error ${response.status}: ${errText}`);
+            }
+
+            const data = await response.json();
+            const textResult = data.choices?.[0]?.message?.content;
+            if (!textResult) throw new Error('Format balasan server tidak sesuai');
+
+            const cleanJson = textResult.replace(/```json/g, '').replace(/```/g, '').trim();
+            analysisResult = JSON.parse(cleanJson);
+            break;
+
+        } catch (err) {
+            attempt++;
+            if (attempt >= maxRetries) throw err;
+            const waitMs = Math.pow(2, attempt) * 5000;
+            aiSetLog(`Retry ${attempt}/${maxRetries} in ${waitMs/1000}s...`, 'warn');
+            await new Promise(r => setTimeout(r, waitMs));
+        }
+    }
+
+    if (!analysisResult) throw new Error('AI tidak menghasilkan respons');
+
+    // 5. Simpan ke tabel gemini_analyses
+    const dataToStore = {
+        answer_id: sessionId,
+        analysis_data: {
+            summary: analysisResult.summary || '',
+            strengths: Array.isArray(analysisResult.strengths) ? analysisResult.strengths : [],
+            weaknesses: Array.isArray(analysisResult.weaknesses) ? analysisResult.weaknesses : [],
+            learningSuggestions: Array.isArray(analysisResult.learningSuggestions) ? analysisResult.learningSuggestions : [],
+            is_batch: true,
+            analyzed_at: new Date().toISOString()
+        },
+        updated_at: new Date().toISOString()
+    };
+
+    const { error: storeErr } = await supabase
+        .from('gemini_analyses')
+        .upsert(dataToStore, { onConflict: 'answer_id' });
+
+    if (storeErr) throw new Error('Gagal menyimpan hasil: ' + storeErr.message);
+}
+
+// ── Helper cek jawaban ─────────────────────────────────────────────────
+function aiCheckAnswer(question, answer) {
+    if (!answer || !question) return false;
+    try {
+        if (question.question_type === 'PGK MCMA') {
+            const sel = (answer || '').split(',').sort();
+            const cor = Array.isArray(question.correct_answers) ? question.correct_answers.sort() : (question.correct_answers || '').split(',').sort();
+            return JSON.stringify(sel) === JSON.stringify(cor);
+        } else if (question.question_type === 'PGK Kategori') {
+            const sel = typeof answer === 'string' ? JSON.parse(answer) : answer;
+            const map = typeof question.category_mapping === 'string' ? JSON.parse(question.category_mapping) : question.category_mapping;
+            if (!map || !sel) return false;
+            for (const [k, v] of Object.entries(sel)) { if (map[k] !== v) return false; }
+            for (const [k, v] of Object.entries(map)) { if (v && sel[k] !== true) return false; }
+            return true;
+        } else {
+            return answer === question.correct_answer;
+        }
+    } catch (e) { return false; }
+}
+
+// ── Update satu baris setelah analisis ────────────────────────────────
+function aiUpdateRowStatus(sessionId, analyzed) {
+    const actionCell = document.getElementById(`ai-action-cell-${sessionId}`);
+    const badge = document.querySelector(`#ai-session-row-${sessionId} .ai-status-badge`);
+    if (badge) {
+        badge.className = `ai-status-badge ${analyzed ? 'analyzed' : 'pending'}`;
+        badge.innerHTML = analyzed ? `<i class="fas fa-check-circle"></i> Sudah Dianalisis` : `<i class="fas fa-clock"></i> Belum`;
+    }
+    if (actionCell && analyzed) {
+        actionCell.innerHTML = `
+            <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;">
+                <button onclick="window.open('ai_viewer.html?session=${sessionId}','_blank')" class="ai-action-btn view">
+                    <i class="fas fa-eye"></i> Lihat
+                </button>
+                <button onclick="aiRegenerateSingle('${sessionId}',this)" class="ai-action-btn regen" title="Regenerate">
+                    <i class="fas fa-redo"></i>
+                </button>
+            </div>`;
+    }
+}
+
+// ── Filter tabel ───────────────────────────────────────────────────────
+function aiFilterSessionsTable() {
+    const filterVal  = document.getElementById('aiStatusFilter')?.value || 'all';
+    const searchVal  = (document.getElementById('aiSessionSearch')?.value || '').toLowerCase().trim();
+
+    const filtered = _aiAllCompletedSessions.filter(s => {
+        if (filterVal === 'analyzed' && !s.hasAnalysis) return false;
+        if (filterVal === 'pending'   &&  s.hasAnalysis) return false;
+        if (searchVal) {
+            const name = (s.profiles?.nama_lengkap || s.profiles?.email || '').toLowerCase();
+            const uid  = (s.user_id || '').toLowerCase();
+            if (!name.includes(searchVal) && !uid.includes(searchVal)) return false;
+        }
+        return true;
+    });
+
+    aiRenderSessionsTable(filtered);
+}
+
+// ── Event listeners AI Management ─────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    const btnBatch   = document.getElementById('btnBatchAI');
+    const btnRefresh = document.getElementById('btnRefreshAI');
+    const filterSel  = document.getElementById('aiStatusFilter');
+    const searchInp  = document.getElementById('aiSessionSearch');
+    const btnClear   = document.getElementById('btnClearLog');
+
+    if (btnBatch)   btnBatch.addEventListener('click', startBatchAnalysis);
+    if (btnRefresh) btnRefresh.addEventListener('click', loadAIManagementData);
+    if (filterSel)  filterSel.addEventListener('change', aiFilterSessionsTable);
+    if (searchInp)  searchInp.addEventListener('input', aiFilterSessionsTable);
+    if (btnClear)   btnClear.addEventListener('click', () => {
+        const logEl = document.getElementById('aiMgmtLog');
+        if (logEl) logEl.innerHTML = '';
+    });
+});
+
+// ── Export ke window ───────────────────────────────────────────────────
+window.loadAIManagementData  = loadAIManagementData;
+window.startBatchAnalysis    = startBatchAnalysis;
+window.aiGenerateSingle      = aiGenerateSingle;
+window.aiRegenerateSingle    = aiRegenerateSingle;
+window.aiFilterSessionsTable = aiFilterSessionsTable;

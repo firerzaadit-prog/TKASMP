@@ -89,6 +89,157 @@
         .materi-content sup, .ql-editor sup { vertical-align: super !important; font-size: 0.8em !important; }
         .materi-content sub, .ql-editor sub { vertical-align: sub !important; font-size: 0.8em !important; }
     </style>
+    <!-- ═══════════════════════════════════════════════════════════
+         CSS: AI Management Tab
+         ═══════════════════════════════════════════════════════════ -->
+    <style>
+        /* ── AI Management Tab Styles ── */
+        .ai-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            margin-bottom: 20px;
+        }
+        .ai-sum-card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+            border-top: 3px solid #4f46e5;
+        }
+        .ai-sum-card.success { border-top-color: #16a34a; }
+        .ai-sum-card.warning { border-top-color: #d97706; }
+        .ai-sum-card .sum-value { font-size: 2rem; font-weight: 700; color: #1e1b4b; }
+        .ai-sum-card .sum-label { font-size: 0.78rem; color: #6b7280; margin-top: 4px; }
+
+        .ai-controls-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+            padding: 14px;
+            background: #f8fafc;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+        }
+        .ai-controls-bar select,
+        .ai-controls-bar input {
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 7px;
+            font-size: 0.85rem;
+            background: white;
+            color: #374151;
+        }
+        .ai-controls-bar input { flex: 1; min-width: 180px; }
+
+        .btn-batch-ai {
+            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 9px 18px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            transition: opacity 0.2s;
+        }
+        .btn-batch-ai:hover  { opacity: 0.9; }
+        .btn-batch-ai:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-refresh-ai {
+            background: white;
+            color: #4f46e5;
+            border: 1.5px solid #4f46e5;
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-refresh-ai:hover { background: #eff6ff; }
+
+        .ai-sessions-table-wrap {
+            overflow-x: auto;
+            border-radius: 10px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+            margin-bottom: 20px;
+        }
+        .ai-sessions-table { width: 100%; border-collapse: collapse; background: white; }
+        .ai-sessions-table thead tr { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white; }
+        .ai-sessions-table th { padding: 12px 14px; font-size: 0.82rem; font-weight: 600; text-align: center; }
+        .ai-sessions-table th:first-child { text-align: left; }
+        .ai-sessions-table tbody tr:nth-child(even) { background: #f9fafb; }
+        .ai-sessions-table tbody tr:hover { background: #eff6ff; }
+
+        .ai-status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+        .ai-status-badge.analyzed { background: #dcfce7; color: #16a34a; }
+        .ai-status-badge.pending  { background: #fef9c3; color: #b45309; }
+
+        .ai-action-btn {
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: opacity 0.2s;
+        }
+        .ai-action-btn:hover    { opacity: 0.85; }
+        .ai-action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .ai-action-btn.generate { background: #4f46e5; color: white; }
+        .ai-action-btn.view     { background: #0ea5e9; color: white; }
+        .ai-action-btn.regen    { background: #f59e0b; color: white; }
+
+        .ai-mgmt-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 32px;
+            color: #6b7280;
+            font-size: 0.9rem;
+        }
+
+        .ai-progress-wrap {
+            background: #f3f4f6;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+        }
+        .ai-progress-lbl  { font-size: 0.82rem; color: #374151; margin-bottom: 8px; font-weight: 600; }
+        .ai-progress-track { background: #e5e7eb; border-radius: 99px; height: 10px; overflow: hidden; }
+        .ai-progress-bar   { background: linear-gradient(90deg, #4f46e5, #7c3aed); height: 100%; border-radius: 99px; width: 0%; transition: width 0.3s ease; }
+
+        .ai-log-panel { background: #1e1b4b; border-radius: 10px; padding: 14px; margin-top: 20px; }
+        .ai-log-panel h4 { color: #a5b4fc; font-size: 0.85rem; margin: 0 0 10px 0; display: flex; justify-content: space-between; align-items: center; }
+        .ai-log-panel h4 button { background: transparent; border: 1px solid #4f46e5; color: #a5b4fc; border-radius: 5px; padding: 3px 8px; font-size: 0.72rem; cursor: pointer; }
+        #aiMgmtLog { max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.78rem; }
+        #aiMgmtLog::-webkit-scrollbar { width: 4px; }
+        #aiMgmtLog::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 99px; }
+
+        @media (max-width: 640px) {
+            .ai-summary-grid { grid-template-columns: 1fr 1fr; }
+            .ai-summary-grid .ai-sum-card:last-child { grid-column: span 2; }
+        }
+    </style>
+
     <script>
         // Fungsi untuk membersihkan HTML dari MS Word
         function stripWordStyles(html) {
@@ -274,6 +425,11 @@
                     <i class="fas fa-broadcast-tower"></i>
                     <span>Live Monitor</span>
                     <span class="live-indicator" id="liveIndicator" style="display: none;"></span>
+                </button>
+                <!-- TAB BARU: AI Management -->
+                <button class="nav-tab" onclick="showTab('aiManagement'); loadAIManagementData();" id="aiManagementTabBtn">
+                    <i class="fas fa-robot"></i>
+                    <span>AI Management</span>
                 </button>
             </div>
             <div class="nav-actions">
@@ -1351,6 +1507,103 @@
         </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════════
+         TAB: AI MANAGEMENT
+         ═══════════════════════════════════════════════════════════ -->
+    <div id="aiManagement" class="tab-content">
+
+        <!-- Header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+            <h2 style="margin:0;font-size:1.2rem;font-weight:700;color:#1e1b4b;">
+                <i class="fas fa-robot" style="color:#4f46e5;"></i> Manajemen Analisis AI
+            </h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <button id="btnBatchAI" class="btn-batch-ai">
+                    <i class="fas fa-robot"></i> Mulai Analisis AI Massal
+                </button>
+                <button id="btnRefreshAI" class="btn-refresh-ai">
+                    <i class="fas fa-sync-alt"></i> Refresh Data
+                </button>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div id="aiMgmtSummary" class="ai-summary-grid" style="display:none;">
+            <div class="ai-sum-card">
+                <div class="sum-value" id="aiMgmtTotal">-</div>
+                <div class="sum-label">Total Sesi Selesai</div>
+            </div>
+            <div class="ai-sum-card success">
+                <div class="sum-value" id="aiMgmtAnalyzed">-</div>
+                <div class="sum-label">Sudah Dianalisis AI</div>
+            </div>
+            <div class="ai-sum-card warning">
+                <div class="sum-value" id="aiMgmtPending">-</div>
+                <div class="sum-label">Belum Dianalisis</div>
+            </div>
+        </div>
+
+        <!-- Progress Bar (tersembunyi sampai batch dimulai) -->
+        <div id="aiMgmtProgressWrap" class="ai-progress-wrap" style="display:none;">
+            <div class="ai-progress-lbl">
+                Progress Analisis Massal: <span id="aiMgmtProgressLabel">0 / 0 (0%)</span>
+            </div>
+            <div class="ai-progress-track">
+                <div class="ai-progress-bar" id="aiMgmtProgressBar"></div>
+            </div>
+        </div>
+
+        <!-- Filter & Search -->
+        <div class="ai-controls-bar">
+            <label style="font-size:0.83rem;color:#374151;font-weight:600;">Filter:</label>
+            <select id="aiStatusFilter">
+                <option value="all">Semua Sesi</option>
+                <option value="pending">Belum Dianalisis</option>
+                <option value="analyzed">Sudah Dianalisis</option>
+            </select>
+            <input type="text" id="aiSessionSearch" placeholder="🔍 Cari nama siswa...">
+        </div>
+
+        <!-- Loading State -->
+        <div id="aiMgmtLoading" class="ai-mgmt-loading">
+            <i class="fas fa-spinner fa-spin" style="font-size:1.3rem;color:#4f46e5;"></i>
+            <span>Memuat data sesi ujian...</span>
+        </div>
+
+        <!-- Tabel Sesi Ujian -->
+        <div class="ai-sessions-table-wrap">
+            <table class="ai-sessions-table">
+                <thead>
+                    <tr>
+                        <th style="text-align:left;">Siswa</th>
+                        <th>Tanggal Ujian</th>
+                        <th>Skor</th>
+                        <th>Status AI</th>
+                        <th>Aksi</th>
+                    </tr>
+                </thead>
+                <tbody id="aiSessionsTableBody">
+                    <!-- Diisi oleh admin.js (modul AI Management) -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Log Panel -->
+        <div class="ai-log-panel">
+            <h4>
+                <span><i class="fas fa-terminal"></i> Log Proses</span>
+                <button id="btnClearLog">Bersihkan</button>
+            </h4>
+            <div id="aiMgmtLog">
+                <div style="color:#64748b;font-size:0.78rem;font-family:monospace;">
+                    Klik "Refresh Data" atau buka tab ini untuk memulai...
+                </div>
+            </div>
+        </div>
+
+    </div>
+    <!-- END TAB: AI MANAGEMENT -->
+
     <!-- Login Section -->
     <div id="adminLoginSection" class="admin-container">
         <div class="form-container" style="max-width: 400px; margin: 5rem auto;">
@@ -1399,6 +1652,11 @@
                 // Load activities when activities tab is activated
                 if (tabName === 'activities') {
                     loadAllActivities();
+                }
+
+                // Load AI Management data when tab is activated
+                if (tabName === 'aiManagement') {
+                    if (typeof loadAIManagementData === 'function') loadAIManagementData();
                 }
         
                 // Load materials when materials tab is activated

@@ -177,6 +177,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Load recent activities
         await loadRecentActivities();
 
+        // Load riwayat ujian (fitur baru AI asinkron)
+        await loadExamHistory();
+
         console.log('User info displayed successfully:', {
             user: result.user,
             profile: profileData,
@@ -1553,3 +1556,205 @@ window.deleteAccount = deleteAccount;
 window.logout = performLogout; // Make logout function globally accessible
 window.showRecentActivities = showRecentActivities; // Make recent activities function globally accessible
 window.loadRecentActivities = loadRecentActivities; // Export for potential future use
+
+// ════════════════════════════════════════════════════════════════
+// RIWAYAT UJIAN — Fitur baru (arsitektur AI asinkron/admin)
+// Menampilkan daftar sesi ujian 'completed' beserta status AI-nya.
+// ════════════════════════════════════════════════════════════════
+
+/**
+ * Fungsi utama: ambil semua sesi ujian selesai milik user,
+ * lakukan cek ke tabel gemini_analyses, lalu render ke tabel.
+ */
+async function loadExamHistory() {
+    const container = document.getElementById('examHistoryContainer');
+    if (!container) return;
+
+    // Tampilkan loading state
+    container.innerHTML = `
+        <div style="text-align:center;padding:32px;color:#6b7280;">
+            <i class="fas fa-spinner fa-spin" style="font-size:1.5rem;color:#4f46e5;"></i>
+            <p style="margin-top:10px;font-size:0.9rem;">Memuat riwayat ujian...</p>
+        </div>`;
+
+    try {
+        // 1. Dapatkan user yang sedang login
+        const result = await getCurrentUser();
+        if (!result.success || !result.user) return;
+        const userId = result.user.id;
+
+        // 2. Ambil semua sesi ujian berstatus 'completed' milik user ini
+        const { data: sessions, error: sessionsError } = await supabase
+            .from('exam_sessions')
+            .select('id, total_score, completed_at, created_at, question_type_variant, status')
+            .eq('user_id', userId)
+            .eq('status', 'completed')
+            .order('completed_at', { ascending: false });
+
+        if (sessionsError) throw sessionsError;
+
+        if (!sessions || sessions.length === 0) {
+            container.innerHTML = `
+                <div style="
+                    text-align:center;padding:40px 20px;
+                    background:#f9fafb;border-radius:12px;
+                    border:1.5px dashed #d1d5db;
+                ">
+                    <i class="fas fa-clipboard-list" style="font-size:2.5rem;color:#d1d5db;"></i>
+                    <p style="margin-top:12px;color:#9ca3af;font-size:0.95rem;">
+                        Belum ada riwayat ujian yang selesai.
+                    </p>
+                    <button onclick="startExam()" style="
+                        margin-top:14px;background:#4f46e5;color:white;border:none;
+                        border-radius:8px;padding:10px 22px;font-size:0.88rem;
+                        font-weight:600;cursor:pointer;
+                    "><i class="fas fa-brain"></i> Kerjakan Simulasi Sekarang</button>
+                </div>`;
+            return;
+        }
+
+        // 3. Ambil semua session ID yang sudah ada di tabel gemini_analyses
+        const sessionIds = sessions.map(s => s.id);
+        const { data: analysesData, error: analysesError } = await supabase
+            .from('gemini_analyses')
+            .select('answer_id')
+            .in('answer_id', sessionIds);
+
+        if (analysesError) {
+            console.warn('[Riwayat Ujian] Gagal cek gemini_analyses:', analysesError);
+        }
+
+        // Buat Set untuk O(1) lookup
+        const analyzedSessionIds = new Set(
+            (analysesData || []).map(a => a.answer_id)
+        );
+
+        // 4. Render tabel
+        renderExamHistoryTable(sessions, analyzedSessionIds, container);
+
+    } catch (err) {
+        console.error('[Riwayat Ujian] Error:', err);
+        container.innerHTML = `
+            <div style="
+                background:#fef2f2;border:1.5px solid #fca5a5;
+                border-radius:12px;padding:20px 24px;color:#dc2626;
+                font-size:0.88rem;
+            ">
+                <i class="fas fa-exclamation-circle"></i>
+                Gagal memuat riwayat ujian: ${err.message}
+                <br><button onclick="loadExamHistory()" style="
+                    margin-top:10px;background:#dc2626;color:white;border:none;
+                    border-radius:6px;padding:7px 14px;font-size:0.82rem;cursor:pointer;
+                "><i class="fas fa-redo"></i> Coba Lagi</button>
+            </div>`;
+    }
+}
+
+/**
+ * Render tabel riwayat ujian ke dalam container.
+ * @param {Array} sessions - daftar sesi ujian
+ * @param {Set} analyzedSet - Set berisi session ID yang sudah dianalisis
+ * @param {HTMLElement} container - elemen target
+ */
+function renderExamHistoryTable(sessions, analyzedSet, container) {
+    const rows = sessions.map((session, index) => {
+        const isAnalyzed = analyzedSet.has(session.id);
+        const score = session.total_score ?? '-';
+        const variant = session.question_type_variant || 'Umum';
+
+        // Format tanggal
+        const rawDate = session.completed_at || session.created_at;
+        const tanggal = rawDate
+            ? new Date(rawDate).toLocaleDateString('id-ID', {
+                day: 'numeric', month: 'long', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+              })
+            : '-';
+
+        // Warna skor
+        let scoreColor = '#f59e0b';
+        if (typeof score === 'number') {
+            if (score >= 80) scoreColor = '#16a34a';
+            else if (score < 60) scoreColor = '#dc2626';
+        }
+
+        // Tombol Analisis AI
+        const aiButton = isAnalyzed
+            ? `<button
+                onclick="window.location.href='ai_viewer.html?session=${session.id}'"
+                title="Lihat Analisis AI"
+                style="
+                    background:#2563eb;color:white;border:none;
+                    border-radius:8px;padding:7px 14px;font-size:0.8rem;
+                    font-weight:600;cursor:pointer;display:inline-flex;
+                    align-items:center;gap:5px;white-space:nowrap;
+                ">
+                <i class="fas fa-robot"></i> Lihat Analisis AI
+               </button>`
+            : `<button
+                disabled
+                title="Analisis sedang diproses admin"
+                style="
+                    background:#e5e7eb;color:#9ca3af;border:none;
+                    border-radius:8px;padding:7px 14px;font-size:0.8rem;
+                    font-weight:600;cursor:not-allowed;display:inline-flex;
+                    align-items:center;gap:5px;white-space:nowrap;
+                ">
+                <i class="fas fa-clock"></i> Sedang Diproses Admin
+               </button>`;
+
+        return `
+            <tr style="border-bottom:1px solid #f3f4f6;transition:background 0.15s;">
+                <td style="padding:14px 12px;font-weight:600;color:#374151;">${index + 1}</td>
+                <td style="padding:14px 12px;font-size:0.88rem;color:#6b7280;">${tanggal}</td>
+                <td style="padding:14px 12px;">
+                    <span style="
+                        background:${scoreColor}18;color:${scoreColor};
+                        padding:4px 12px;border-radius:20px;font-weight:700;font-size:0.9rem;
+                    ">${score}</span>
+                </td>
+                <td style="padding:14px 12px;">
+                    <span style="
+                        background:#ede9fe;color:#6d28d9;
+                        padding:4px 10px;border-radius:8px;font-size:0.78rem;font-weight:600;
+                    ">${variant}</span>
+                </td>
+                <td style="padding:14px 12px;">
+                    ${isAnalyzed
+                        ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#dcfce7;color:#16a34a;padding:4px 10px;border-radius:20px;font-size:0.78rem;font-weight:600;">
+                            <i class="fas fa-check-circle"></i> Tersedia
+                           </span>`
+                        : `<span style="display:inline-flex;align-items:center;gap:4px;background:#fef9c3;color:#b45309;padding:4px 10px;border-radius:20px;font-size:0.78rem;font-weight:600;">
+                            <i class="fas fa-hourglass-half"></i> Diproses Admin
+                           </span>`}
+                </td>
+                <td style="padding:14px 12px;">${aiButton}</td>
+            </tr>`;
+    }).join('');
+
+    container.innerHTML = `
+        <div style="overflow-x:auto;border-radius:12px;box-shadow:0 1px 6px rgba(0,0,0,0.07);">
+            <table style="width:100%;border-collapse:collapse;background:white;">
+                <thead>
+                    <tr style="background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;">
+                        <th style="padding:13px 12px;font-size:0.82rem;font-weight:600;text-align:left;width:40px;">#</th>
+                        <th style="padding:13px 12px;font-size:0.82rem;font-weight:600;text-align:left;">Tanggal &amp; Waktu</th>
+                        <th style="padding:13px 12px;font-size:0.82rem;font-weight:600;text-align:left;">Skor</th>
+                        <th style="padding:13px 12px;font-size:0.82rem;font-weight:600;text-align:left;">Tipe Soal</th>
+                        <th style="padding:13px 12px;font-size:0.82rem;font-weight:600;text-align:left;">Analisis AI</th>
+                        <th style="padding:13px 12px;font-size:0.82rem;font-weight:600;text-align:left;">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody id="examHistoryTableBody">
+                    ${rows}
+                </tbody>
+            </table>
+        </div>
+        <p style="font-size:0.78rem;color:#9ca3af;margin-top:10px;text-align:right;">
+            <i class="fas fa-info-circle"></i> 
+            Tombol "Lihat Analisis AI" aktif setelah guru/admin memproses analisis.
+        </p>`;
+}
+
+// Export fungsi riwayat ujian ke window
+window.loadExamHistory = loadExamHistory;

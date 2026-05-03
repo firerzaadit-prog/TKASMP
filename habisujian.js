@@ -1,4 +1,5 @@
 // habisujian.js - Exam completion page with results and answer review
+// REFACTORED: AI analysis dipindah ke sisi admin (tidak lagi dipanggil di sini)
 import { supabase } from './clientSupabase.js';
 import { getCurrentUser } from './auth.js';
 import { getItemParameters } from './irt_analysis.js';
@@ -109,13 +110,15 @@ async function loadExamResults() {
         // Display results
         displayExamResults(session);
 
-        // Simpan session & user ID untuk tombol AI viewer
+        // Simpan session & user ID untuk keperluan navigasi
         window._examSessionId = examSessionId;
         window._examUserId = session.user_id || null;
 
-        // Tampilkan tombol analisis AI setelah data dimuat
-        const aiPrompt = document.getElementById('aiDeepAnalysisPrompt');
-        if (aiPrompt) aiPrompt.style.display = 'block';
+        // ─────────────────────────────────────────────────────────────
+        // REFACTORED: AI TIDAK dipanggil di sini.
+        // Tampilkan banner informasi bahwa analisis AI sedang diproses admin.
+        // ─────────────────────────────────────────────────────────────
+        showAIPendingBanner();
 
     } catch (error) {
         console.error('Error loading exam results:', error);
@@ -123,8 +126,60 @@ async function loadExamResults() {
     }
 }
 
+/**
+ * Menampilkan banner informasi bahwa analisis AI akan diproses oleh admin.
+ * Siswa bisa mengecek hasilnya nanti di halamanpertama.html (Riwayat Ujian).
+ */
+function showAIPendingBanner() {
+    const aiPrompt = document.getElementById('aiDeepAnalysisPrompt');
+    if (!aiPrompt) return;
+
+    aiPrompt.innerHTML = `
+        <div style="
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            border: 1.5px solid #93c5fd;
+            border-radius: 14px;
+            padding: 20px 24px;
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            margin-top: 20px;
+        ">
+            <div style="font-size: 2rem; flex-shrink: 0;">⏳</div>
+            <div>
+                <h4 style="margin: 0 0 6px 0; color: #1d4ed8; font-size: 1rem;">
+                    Analisis AI Sedang Diproses
+                </h4>
+                <p style="margin: 0 0 12px 0; color: #1e40af; font-size: 0.88rem; line-height: 1.6;">
+                    Hasil analisis AI mendalam untuk ujian ini akan diproses oleh guru/admin 
+                    dan tersedia dalam waktu dekat. Kamu bisa mengeceknya kembali melalui 
+                    menu <strong>Riwayat Ujian</strong> di halaman utama.
+                </p>
+                <button
+                    onclick="window.location.href='halamanpertama.html'"
+                    style="
+                        background: #2563eb;
+                        color: white;
+                        border: none;
+                        border-radius: 8px;
+                        padding: 9px 20px;
+                        font-size: 0.88rem;
+                        font-weight: 600;
+                        cursor: pointer;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                    "
+                >
+                    <i class="fas fa-home"></i> Ke Halaman Utama
+                </button>
+            </div>
+        </div>
+    `;
+    aiPrompt.style.display = 'block';
+}
+
 // Helper: cek jawaban PGK Kategori
-// category_mapping key = teks pernyataan, jawaban siswa key = index angka
 function checkKategoriHabisUjian(answer, question) {
     try {
         if (!answer) return false;
@@ -202,14 +257,15 @@ function displayExamResults(session) {
             if (!userAnswer) return;
 
             let isCorrect = false;
-            if (question.question_type === 'PGK MCMA') {
+
+            if (question.question_type === 'PGK Kategori') {
+                isCorrect = checkKategoriHabisUjian(userAnswer, question);
+            } else if (question.question_type === 'PGK MCMA') {
                 const selectedAnswers = (userAnswer || '').split(',').sort();
                 const correctAnswers = Array.isArray(question.correct_answers)
                     ? question.correct_answers.sort()
                     : (question.correct_answers || '').split(',').sort();
                 isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
-            } else if (question.question_type === 'PGK Kategori') {
-                isCorrect = checkKategoriHabisUjian(userAnswer, question);
             } else {
                 isCorrect = userAnswer === question.correct_answer;
             }
@@ -220,115 +276,108 @@ function displayExamResults(session) {
         correctAnswersElement.textContent = correctCount;
     }
 
-    // Calculate and display IRT ability estimate (θ)
-    const theta = estimateAbility(questions, answers);
-    displayIRTResults(theta);
+    // Render answer review if container exists
+    const reviewContainer = document.getElementById('answersReview');
+    if (reviewContainer && questions.length > 0) {
+        renderAnswerReview(reviewContainer);
+    }
 
-    // Show answer review
-    showAnswerReview(questions, answers);
+    // IRT Analysis (jika elemen tersedia)
+    try {
+        const itemParams = questions.map(q => getItemParameters(q));
+        if (itemParams && itemParams.length > 0) {
+            const theta = estimateTheta(answers, questions, itemParams);
+            displayIRTResults(theta);
+        }
+    } catch (irtErr) {
+        console.warn('IRT analysis skipped:', irtErr.message);
+    }
 }
 
-// ==========================================
-// IRT ABILITY ESTIMATION FUNCTIONS
-// ==========================================
+// Render answer review
+function renderAnswerReview(container) {
+    const html = questions.map((question, index) => {
+        const userAnswer = answers[index];
+        let isCorrect = false;
 
-/**
- * Estimate student ability (θ) using Maximum Likelihood Estimation
- * @param {Array} questions - Array of question objects with IRT parameters
- * @param {Array} answers - Array of student answers
- * @returns {number} - Estimated ability (θ) value between -3 and 3
- */
-function estimateAbility(questions, answers) {
-    let theta = 0; // Initial ability estimate (average)
-    let iteration = 0;
-    const maxIterations = 50;
+        if (question.question_type === 'PGK Kategori') {
+            isCorrect = checkKategoriHabisUjian(userAnswer, question);
+        } else if (question.question_type === 'PGK MCMA') {
+            const selectedAnswers = (userAnswer || '').split(',').sort();
+            const correctAnswers = Array.isArray(question.correct_answers)
+                ? question.correct_answers.sort()
+                : (question.correct_answers || '').split(',').sort();
+            isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
+        } else {
+            isCorrect = userAnswer === question.correct_answer;
+        }
+
+        const statusIcon = !userAnswer ? '⏭️' : isCorrect ? '✅' : '❌';
+        const statusClass = !userAnswer ? 'skipped' : isCorrect ? 'correct' : 'incorrect';
+
+        return `
+            <div class="answer-review-item ${statusClass}">
+                <div class="answer-number">${index + 1}</div>
+                <div class="answer-details">
+                    <div class="answer-status">${statusIcon}</div>
+                    <div class="answer-text">
+                        <span class="label">Jawaban Anda:</span>
+                        <span class="value">${userAnswer || '(tidak dijawab)'}</span>
+                    </div>
+                    ${!isCorrect && userAnswer ? `
+                    <div class="correct-answer">
+                        <span class="label">Jawaban Benar:</span>
+                        <span class="value">${question.correct_answer || (Array.isArray(question.correct_answers) ? question.correct_answers.join(', ') : '-')}</span>
+                    </div>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = html;
+}
+
+// Theta estimation (simplified EAP)
+function estimateTheta(answers, questions, itemParams) {
+    let theta = 0;
+    const maxIterations = 20;
     const tolerance = 0.001;
-    
-    // Filter questions that have answers
-    const answeredQuestions = questions.filter((q, i) => {
-        const answer = answers[i];
-        return answer !== null && answer !== undefined;
-    });
-    
-    if (answeredQuestions.length === 0) {
-        console.log('No answers to estimate ability');
-        return 0;
-    }
-    
-    console.log('Starting IRT ability estimation...');
-    
-    while (iteration < maxIterations) {
-        let sumNumerator = 0;
-        let sumDenominator = 0;
-        
-        questions.forEach((q, i) => {
-            const answer = answers[i];
-            if (answer === null || answer === undefined) return;
-            
-            // Get IRT parameters for this question
-            const params = getItemParameters(q.id);
-            let a, b, c;
-            
-            if (params) {
-                a = params.a || 1.0;
-                b = params.b || 0.0;
-                c = params.c || 0.25;
-            } else {
-                // Use default values if no IRT parameters exist
-                a = q.irt_a_parameter || 1.0;
-                b = q.irt_b_parameter || 0.0;
-                c = q.irt_c_parameter || 0.25;
+
+    for (let iter = 0; iter < maxIterations; iter++) {
+        let numerator = 0;
+        let denominator = 0;
+
+        questions.forEach((question, index) => {
+            const params = itemParams[index];
+            if (!params) return;
+
+            const { a = 1, b = 0, c = 0.25 } = params;
+            const userAnswer = answers[index];
+            const isCorrect = isAnswerCorrect(question, userAnswer);
+
+            const p = c + (1 - c) / (1 + Math.exp(-1.7 * a * (theta - b)));
+            const q = 1 - p;
+
+            if (p > 0 && q > 0) {
+                const w = a * a * p * q;
+                numerator += w * (isCorrect ? (1 - p) / p : -1);
+                denominator += w;
             }
-            
-            // Check if answer is correct
-            const isCorrect = checkAnswerCorrectness(q, answer);
-            
-            // Calculate probability using 3PL IRT model
-            // P(θ) = c + (1 - c) / (1 + e^(-a(θ - b)))
-            const expTerm = Math.exp(-a * (theta - b));
-            const P = c + (1 - c) / (1 + expTerm);
-            const Q = 1 - P;
-            
-            // Calculate derivatives for Newton-Raphson
-            // First derivative: a * (P - c) / (1 - c) * (X - P)
-            // Second derivative (for weighting): a² * P * Q * ((P - c) / (1 - c))²
-            const pCorrection = (P - c) / (1 - c);
-            const W = a * a * P * Q * pCorrection * pCorrection;
-            
-            sumNumerator += a * pCorrection * (isCorrect ? (1 - P) : -P);
-            sumDenominator += W;
         });
-        
-        if (Math.abs(sumDenominator) < 0.0001) {
-            console.log('Denominator too small, stopping iteration');
-            break;
-        }
-        
-        const deltaTheta = sumNumerator / sumDenominator;
-        theta += deltaTheta;
-        
-        // Clamp theta to reasonable range
+
+        if (denominator === 0) break;
+
+        const delta = numerator / denominator;
+        theta += delta;
         theta = Math.max(-3, Math.min(3, theta));
-        
-        if (Math.abs(deltaTheta) < tolerance) {
-            console.log(`Converged after ${iteration + 1} iterations`);
-            break;
-        }
-        
-        iteration++;
+
+        if (Math.abs(delta) < tolerance) break;
     }
-    
-    console.log(`Final θ estimate: ${theta.toFixed(3)} (after ${iteration} iterations)`);
+
     return theta;
 }
 
-/**
- * Check if an answer is correct for a given question
- * @param {Object} question - Question object
- * @param {*} answer - Student's answer
- * @returns {boolean} - Whether the answer is correct
- */
-function checkAnswerCorrectness(question, answer) {
+function isAnswerCorrect(question, answer) {
     if (!answer) return false;
     
     try {
@@ -346,7 +395,6 @@ function checkAnswerCorrectness(question, answer) {
             
             if (!correctMapping || !selectedAnswers) return false;
             
-            // Check if all answers match
             for (const [stmtIndex, isTrue] of Object.entries(selectedAnswers)) {
                 if (correctMapping[stmtIndex] !== isTrue) return false;
             }
@@ -365,7 +413,6 @@ function checkAnswerCorrectness(question, answer) {
 
 /**
  * Display IRT results in the UI
- * @param {number} theta - Estimated ability value
  */
 function displayIRTResults(theta) {
     const irtResultElement = document.getElementById('irtResult');
@@ -374,11 +421,8 @@ function displayIRTResults(theta) {
         return;
     }
     
-    // Interpret ability level
     const abilityLevel = interpretAbilityLevel(theta);
     const abilityDescription = getAbilityDescription(theta);
-    
-    // Calculate standard error (approximate)
     const standardError = calculateStandardError(theta);
     
     irtResultElement.innerHTML = `
@@ -426,11 +470,6 @@ function displayIRTResults(theta) {
     irtResultElement.style.display = 'block';
 }
 
-/**
- * Interpret ability level based on theta value
- * @param {number} theta - Estimated ability value
- * @returns {Object} - Object with label, class, and icon
- */
 function interpretAbilityLevel(theta) {
     if (theta >= 2.0) {
         return { label: 'Sangat Tinggi', class: 'ability-very-high', icon: '🌟' };
@@ -445,11 +484,6 @@ function interpretAbilityLevel(theta) {
     }
 }
 
-/**
- * Get description based on ability level
- * @param {number} theta - Estimated ability value
- * @returns {string} - Description text
- */
 function getAbilityDescription(theta) {
     if (theta >= 2.0) {
         return 'Siswa memiliki kemampuan sangat tinggi dalam matematika. Mampu mengerjakan soal dengan tingkat kesulitan tinggi dengan baik.';
@@ -464,31 +498,28 @@ function getAbilityDescription(theta) {
     }
 }
 
-/**
- * Calculate approximate standard error for the ability estimate
- * @param {number} theta - Estimated ability value
- * @returns {number} - Standard error value
- */
 function calculateStandardError(theta) {
-    // Approximate standard error based on test information
-    // This is a simplified calculation
-    const averageInformation = 2.0; // Assumed average test information
+    const averageInformation = 2.0;
     return 1 / Math.sqrt(averageInformation);
 }
 
 // Function to retake exam
 function retakeExam() {
- alert("Kesempatan ujian hanya 1 kali. Silakan cek analisis nilai Anda.");
+    alert("Kesempatan ujian hanya 1 kali. Silakan cek analisis nilai Anda di Riwayat Ujian.");
     window.location.href = 'halamanpertama.html';
 }
 
-// Arahkan ke halaman AI Viewer dengan parameter session & user
+/**
+ * goToAIViewer: Arahkan ke halaman AI Viewer dengan parameter session.
+ * Tetap dipertahankan untuk kasus admin men-share link langsung,
+ * tapi tombol utama siswa seharusnya ada di halamanpertama (Riwayat Ujian).
+ */
 function goToAIViewer() {
     const sessionId = window._examSessionId || examSessionId;
     const userId = window._examUserId;
 
     if (!sessionId || sessionId === 'null' || sessionId === 'undefined') {
-        alert('Session ID tidak ditemukan. Tidak dapat membuka analisis AI.');
+        alert('Session ID tidak ditemukan.');
         return;
     }
 
@@ -500,9 +531,13 @@ function goToAIViewer() {
     window.location.href = url;
 }
 
-// Show notification that AI analysis is ready
+/**
+ * showAIAnalysisNotification — dipertahankan dari versi lama.
+ * Menampilkan toast notification bahwa analisis AI sudah tersedia.
+ * Bisa dipanggil dari luar (misal: setelah admin selesai generate).
+ * @param {number} analysisCount - jumlah jawaban yang dianalisis
+ */
 function showAIAnalysisNotification(analysisCount) {
-    // Create notification element
     const notification = document.createElement('div');
     notification.className = 'ai-analysis-notification';
     notification.innerHTML = `
@@ -510,7 +545,7 @@ function showAIAnalysisNotification(analysisCount) {
             <i class="fas fa-brain"></i>
             <div class="notification-text">
                 <strong>AI Analysis Selesai!</strong>
-                <p>${analysisCount} jawaban telah dianalisis oleh AI. Lihat analisis detail di dashboard admin.</p>
+                <p>${analysisCount} jawaban telah dianalisis oleh AI. Lihat analisis detail melalui menu <strong>Riwayat Ujian</strong> di halaman utama.</p>
             </div>
             <button onclick="this.parentElement.parentElement.remove()" class="notification-close">
                 <i class="fas fa-times"></i>
@@ -518,7 +553,6 @@ function showAIAnalysisNotification(analysisCount) {
         </div>
     `;
 
-    // Add to page
     document.body.appendChild(notification);
 
     // Auto-remove after 10 seconds
@@ -532,3 +566,4 @@ function showAIAnalysisNotification(analysisCount) {
 // Export functions for global access
 window.retakeExam = retakeExam;
 window.goToAIViewer = goToAIViewer;
+window.showAIAnalysisNotification = showAIAnalysisNotification;
