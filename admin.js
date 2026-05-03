@@ -9010,16 +9010,11 @@ function aiRenderSessionsTable(sessions) {
                </div>` : '';
 
         const actionBtn = session.hasAnalysis
-            ? `<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;">
-                <button onclick="window.open('ai_viewer.html?session=${session.id}','_blank')" class="ai-action-btn view" title="Lihat hasil analisis">
-                    <i class="fas fa-eye"></i> Lihat
-                </button>
-                <button onclick="aiRegenerateSingle('${session.id}',this)" class="ai-action-btn regen" title="Regenerate (timpa hasil lama)">
-                    <i class="fas fa-redo"></i>
-                </button>
-               </div>`
-            : `<button onclick="aiGenerateSingle('${session.id}',this)" class="ai-action-btn generate" title="Generate analisis AI">
-                <i class="fas fa-robot"></i> Generate AI
+            ? `<button onclick="aiRegenerateSingle('${session.id}',this)" class="ai-action-btn generate" title="Ulangi analisis AI (timpa hasil lama)">
+                <i class="fas fa-robot"></i> Mulai Analisis AI
+               </button>`
+            : `<button onclick="aiGenerateSingle('${session.id}',this)" class="ai-action-btn generate" title="Mulai analisis AI untuk sesi ini">
+                <i class="fas fa-robot"></i> Mulai Analisis AI
                </button>`;
 
         return `
@@ -9099,7 +9094,7 @@ async function startBatchAnalysis() {
 
 // ── Fitur 2: Single Session Analysis ──────────────────────────────────
 async function aiGenerateSingle(sessionId, btn) {
-    if (!confirm('Generate analisis AI untuk sesi ini?')) return;
+    if (!confirm('Mulai analisis AI untuk sesi ini?')) return;
 
     const origHTML = btn ? btn.innerHTML : '';
     if (btn) { btn.disabled = true; btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Memproses...`; }
@@ -9127,7 +9122,7 @@ async function aiGenerateSingle(sessionId, btn) {
 }
 
 async function aiRegenerateSingle(sessionId, btn) {
-    if (!confirm('Regenerate akan MENIMPA hasil analisis lama untuk sesi ini.\nLanjutkan?')) return;
+    if (!confirm('Sesi ini sudah memiliki analisis AI.\n\nMemulai analisis baru akan MENIMPA hasil yang lama.\nLanjutkan?')) return;
     await aiGenerateSingle(sessionId, btn);
 }
 
@@ -9271,14 +9266,9 @@ function aiUpdateRowStatus(sessionId, analyzed) {
     }
     if (actionCell && analyzed) {
         actionCell.innerHTML = `
-            <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;">
-                <button onclick="window.open('ai_viewer.html?session=${sessionId}','_blank')" class="ai-action-btn view">
-                    <i class="fas fa-eye"></i> Lihat
-                </button>
-                <button onclick="aiRegenerateSingle('${sessionId}',this)" class="ai-action-btn regen" title="Regenerate">
-                    <i class="fas fa-redo"></i>
-                </button>
-            </div>`;
+            <button onclick="aiRegenerateSingle('${sessionId}',this)" class="ai-action-btn generate" title="Ulangi analisis AI (timpa hasil lama)">
+                <i class="fas fa-robot"></i> Mulai Analisis AI
+            </button>`;
     }
 }
 
