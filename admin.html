@@ -93,89 +93,122 @@
          CSS: AI Management Tab
          ═══════════════════════════════════════════════════════════ -->
     <style>
-        /* ── AI Management Tab Styles ── */
+        /* ── AI Management Tab Styles - Redesigned ── */
         .ai-summary-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 14px;
-            margin-bottom: 20px;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
         }
         .ai-sum-card {
             background: white;
-            border-radius: 12px;
-            padding: 16px;
+            border-radius: 14px;
+            padding: 1.4rem 1.6rem;
             text-align: center;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.07);
-            border-top: 3px solid #4f46e5;
+            box-shadow: 0 2px 12px rgba(67,97,238,0.07);
+            border: 1px solid #e4e8f0;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
-        .ai-sum-card.success { border-top-color: #16a34a; }
-        .ai-sum-card.warning { border-top-color: #d97706; }
-        .ai-sum-card .sum-value { font-size: 2rem; font-weight: 700; color: #1e1b4b; }
-        .ai-sum-card .sum-label { font-size: 0.78rem; color: #6b7280; margin-top: 4px; }
+        .ai-sum-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 24px rgba(67,97,238,0.12);
+        }
+        .ai-sum-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #4361ee, #7b2ff7);
+        }
+        .ai-sum-card.success::before { background: linear-gradient(90deg, #00b894, #0abde3); }
+        .ai-sum-card.warning::before { background: linear-gradient(90deg, #fdcb6e, #f7a400); }
+        .ai-sum-card .sum-value { font-size: 2.2rem; font-weight: 700; color: #1a1d2e; letter-spacing: -0.02em; }
+        .ai-sum-card .sum-label { font-size: 0.76rem; color: #5a6282; margin-top: 4px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
 
         .ai-controls-bar {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 0.75rem;
             flex-wrap: wrap;
-            margin-bottom: 16px;
-            padding: 14px;
-            background: #f8fafc;
-            border-radius: 10px;
-            border: 1px solid #e2e8f0;
+            margin-bottom: 1.25rem;
+            padding: 0.9rem 1.1rem;
+            background: white;
+            border-radius: 12px;
+            border: 1px solid #e4e8f0;
+            box-shadow: 0 1px 6px rgba(67,97,238,0.05);
         }
         .ai-controls-bar select,
         .ai-controls-bar input {
-            padding: 8px 12px;
-            border: 1px solid #d1d5db;
-            border-radius: 7px;
-            font-size: 0.85rem;
+            padding: 0.5rem 0.85rem;
+            border: 1px solid #e4e8f0;
+            border-radius: 8px;
+            font-size: 0.84rem;
+            background: #f6f8ff;
+            color: #1a1d2e;
+            font-family: inherit;
+            transition: border-color 0.15s;
+        }
+        .ai-controls-bar select:focus, .ai-controls-bar input:focus {
+            outline: none;
+            border-color: #4361ee;
             background: white;
-            color: #374151;
         }
         .ai-controls-bar input { flex: 1; min-width: 180px; }
 
         .btn-batch-ai {
-            background: linear-gradient(135deg, #4f46e5, #7c3aed);
+            background: linear-gradient(135deg, #4361ee, #7b2ff7);
             color: white;
             border: none;
-            border-radius: 8px;
-            padding: 9px 18px;
-            font-size: 0.88rem;
+            border-radius: 9px;
+            padding: 0.6rem 1.2rem;
+            font-size: 0.85rem;
             font-weight: 600;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
-            gap: 7px;
-            transition: opacity 0.2s;
+            gap: 6px;
+            transition: all 0.2s;
+            box-shadow: 0 3px 10px rgba(67,97,238,0.25);
+            font-family: inherit;
         }
-        .btn-batch-ai:hover  { opacity: 0.9; }
-        .btn-batch-ai:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-batch-ai:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(67,97,238,0.35); }
+        .btn-batch-ai:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
         .btn-refresh-ai {
             background: white;
-            color: #4f46e5;
-            border: 1.5px solid #4f46e5;
-            border-radius: 8px;
-            padding: 8px 14px;
+            color: #4361ee;
+            border: 1.5px solid #c5cef7;
+            border-radius: 9px;
+            padding: 0.6rem 1.1rem;
             font-size: 0.85rem;
             font-weight: 600;
             cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: inherit;
+            transition: all 0.2s;
         }
-        .btn-refresh-ai:hover { background: #eff6ff; }
+        .btn-refresh-ai:hover { background: #f6f8ff; border-color: #4361ee; }
 
         .ai-sessions-table-wrap {
             overflow-x: auto;
-            border-radius: 10px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.07);
-            margin-bottom: 20px;
+            border-radius: 14px;
+            box-shadow: 0 2px 12px rgba(67,97,238,0.07);
+            margin-bottom: 1.5rem;
+            border: 1px solid #e4e8f0;
         }
         .ai-sessions-table { width: 100%; border-collapse: collapse; background: white; }
-        .ai-sessions-table thead tr { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white; }
-        .ai-sessions-table th { padding: 12px 14px; font-size: 0.82rem; font-weight: 600; text-align: center; }
-        .ai-sessions-table th:first-child { text-align: left; }
-        .ai-sessions-table tbody tr:nth-child(even) { background: #f9fafb; }
-        .ai-sessions-table tbody tr:hover { background: #eff6ff; }
+        .ai-sessions-table thead tr { background: linear-gradient(135deg, #4361ee, #7b2ff7); color: white; }
+        .ai-sessions-table th { padding: 0.9rem 1rem; font-size: 0.8rem; font-weight: 600; text-align: center; letter-spacing: 0.03em; text-transform: uppercase; }
+        .ai-sessions-table th:first-child { text-align: left; padding-left: 1.25rem; }
+        .ai-sessions-table tbody tr { border-bottom: 1px solid #f0f2f8; transition: background 0.15s; }
+        .ai-sessions-table tbody tr:last-child { border-bottom: none; }
+        .ai-sessions-table tbody tr:hover { background: #f6f8ff; }
+        .ai-sessions-table td { padding: 0.85rem 1rem; font-size: 0.85rem; text-align: center; vertical-align: middle; }
+        .ai-sessions-table td:first-child { text-align: left; padding-left: 1.25rem; }
 
         .ai-status-badge {
             display: inline-flex;
@@ -183,56 +216,69 @@
             gap: 5px;
             padding: 4px 10px;
             border-radius: 20px;
-            font-size: 0.78rem;
+            font-size: 0.75rem;
             font-weight: 600;
         }
-        .ai-status-badge.analyzed { background: #dcfce7; color: #16a34a; }
-        .ai-status-badge.pending  { background: #fef9c3; color: #b45309; }
+        .ai-status-badge.analyzed { background: #e6faf5; color: #00956d; border: 1px solid #b3f0de; }
+        .ai-status-badge.pending  { background: #fffbec; color: #b47d00; border: 1px solid #ffe18a; }
 
         .ai-action-btn {
             border: none;
-            border-radius: 6px;
-            padding: 6px 12px;
-            font-size: 0.78rem;
+            border-radius: 7px;
+            padding: 5px 11px;
+            font-size: 0.76rem;
             font-weight: 600;
             cursor: pointer;
             display: inline-flex;
             align-items: center;
             gap: 4px;
-            transition: opacity 0.2s;
+            transition: all 0.2s;
+            font-family: inherit;
         }
-        .ai-action-btn:hover    { opacity: 0.85; }
-        .ai-action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .ai-action-btn.generate { background: #4f46e5; color: white; }
-        .ai-action-btn.view     { background: #0ea5e9; color: white; }
-        .ai-action-btn.regen    { background: #f59e0b; color: white; }
+        .ai-action-btn:hover    { transform: translateY(-1px); filter: brightness(1.05); }
+        .ai-action-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+        .ai-action-btn.generate { background: #4361ee; color: white; box-shadow: 0 2px 6px rgba(67,97,238,0.3); }
+        .ai-action-btn.view     { background: #0abde3; color: white; box-shadow: 0 2px 6px rgba(10,189,227,0.3); }
+        .ai-action-btn.regen    { background: #f7a400; color: white; box-shadow: 0 2px 6px rgba(247,164,0,0.3); }
 
         .ai-mgmt-loading {
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 10px;
-            padding: 32px;
-            color: #6b7280;
+            padding: 36px;
+            color: #5a6282;
             font-size: 0.9rem;
+            background: white;
+            border-radius: 14px;
+            border: 1px solid #e4e8f0;
+            margin-bottom: 1.25rem;
         }
 
         .ai-progress-wrap {
-            background: #f3f4f6;
-            border-radius: 8px;
-            padding: 12px 16px;
-            margin-bottom: 16px;
+            background: #f6f8ff;
+            border-radius: 10px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1.25rem;
+            border: 1px solid #e4e8f0;
         }
-        .ai-progress-lbl  { font-size: 0.82rem; color: #374151; margin-bottom: 8px; font-weight: 600; }
-        .ai-progress-track { background: #e5e7eb; border-radius: 99px; height: 10px; overflow: hidden; }
-        .ai-progress-bar   { background: linear-gradient(90deg, #4f46e5, #7c3aed); height: 100%; border-radius: 99px; width: 0%; transition: width 0.3s ease; }
+        .ai-progress-lbl  { font-size: 0.8rem; color: #1a1d2e; margin-bottom: 8px; font-weight: 600; }
+        .ai-progress-track { background: #e4e8f0; border-radius: 99px; height: 8px; overflow: hidden; }
+        .ai-progress-bar   { background: linear-gradient(90deg, #4361ee, #7b2ff7); height: 100%; border-radius: 99px; width: 0%; transition: width 0.35s ease; }
 
-        .ai-log-panel { background: #1e1b4b; border-radius: 10px; padding: 14px; margin-top: 20px; }
-        .ai-log-panel h4 { color: #a5b4fc; font-size: 0.85rem; margin: 0 0 10px 0; display: flex; justify-content: space-between; align-items: center; }
-        .ai-log-panel h4 button { background: transparent; border: 1px solid #4f46e5; color: #a5b4fc; border-radius: 5px; padding: 3px 8px; font-size: 0.72rem; cursor: pointer; }
-        #aiMgmtLog { max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.78rem; }
+        .ai-log-panel { background: #13152a; border-radius: 12px; padding: 1rem 1.1rem; margin-top: 1.5rem; border: 1px solid #2a2e4a; }
+        .ai-log-panel h4 { color: #8892d4; font-size: 0.82rem; margin: 0 0 10px 0; display: flex; justify-content: space-between; align-items: center; font-weight: 600; letter-spacing: 0.02em; }
+        .ai-log-panel h4 button { background: transparent; border: 1px solid #3a4080; color: #8892d4; border-radius: 5px; padding: 3px 8px; font-size: 0.7rem; cursor: pointer; font-family: inherit; }
+        #aiMgmtLog { max-height: 200px; overflow-y: auto; font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: 0.76rem; }
         #aiMgmtLog::-webkit-scrollbar { width: 4px; }
-        #aiMgmtLog::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 99px; }
+        #aiMgmtLog::-webkit-scrollbar-thumb { background: #4361ee; border-radius: 99px; }
+
+        /* AI Management Tab Header */
+        #aiManagement > div:first-child h2 {
+            font-size: 1.15rem !important;
+            font-weight: 700 !important;
+            color: #1a1d2e !important;
+        }
 
         @media (max-width: 640px) {
             .ai-summary-grid { grid-template-columns: 1fr 1fr; }
