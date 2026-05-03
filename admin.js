@@ -4827,23 +4827,16 @@ async function showStudentDetail(userId, sessionId = null) {
             : analytics.exams.map(e => e.sessionId);
 
         // Ambil analisis AI dari tabel gemini_analyses
+        // answer_id di gemini_analyses menyimpan session ID (bukan exam_answer ID)
         let aiAnalyses = [];
         try {
             if (targetSessionIds.length > 0) {
-                const { data: answerIds } = await supabase
-                    .from('exam_answers')
-                    .select('id, question_id')
-                    .in('exam_session_id', targetSessionIds)
-                    .limit(50);
-
-                if (answerIds && answerIds.length > 0) {
-                    const { data: geminiData } = await supabase
-                        .from('gemini_analyses')
-                        .select('*')
-                        .in('answer_id', answerIds.map(a => a.id))
-                        .limit(20);
-                    aiAnalyses = geminiData || [];
-                }
+                const { data: geminiData } = await supabase
+                    .from('gemini_analyses')
+                    .select('*')
+                    .in('answer_id', targetSessionIds)
+                    .limit(20);
+                aiAnalyses = geminiData || [];
             }
         } catch (e) {
             console.warn('Could not load AI analyses:', e);
