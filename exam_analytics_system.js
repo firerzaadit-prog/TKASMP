@@ -529,10 +529,9 @@ export async function getDetailedStudentAnalytics(userId, sessionId = null) {
             if (sessionId) {
                 // Filter ke sesi spesifik yang diminta
                 sessionQuery = sessionQuery.eq('id', sessionId);
-            } else {
-                // Hanya ambil sesi terbaru agar matriks tidak menggabungkan semua ujian
-                sessionQuery = sessionQuery.limit(1);
             }
+            // [FIX MASALAH 1] Hapus .limit(1) — semua riwayat ujian dikembalikan
+            // agar admin bisa melihat percobaan ke-1, ke-2, dst.
 
             const { data: sessions, error: sessionsError } = await sessionQuery;
 
@@ -637,6 +636,14 @@ export async function getDetailedStudentAnalytics(userId, sessionId = null) {
                 });
                 const uniqueAnswers = Array.from(dedupMap.values());
 
+                // [FIX MASALAH 2] Hitung soal yang benar-benar dijawab
+                // (selected_answer tidak null/kosong/undefined)
+                const answeredCount = uniqueAnswers.filter(a =>
+                    a.selected_answer !== null &&
+                    a.selected_answer !== undefined &&
+                    a.selected_answer !== ''
+                ).length;
+
                 // Process answers...
                 const sessionStats = {
                     sessionId: session.id,
@@ -644,6 +651,7 @@ export async function getDetailedStudentAnalytics(userId, sessionId = null) {
                     startedAt: session.started_at,
                     totalQuestions: uniqueAnswers.length || 0,
                     correctAnswers: uniqueAnswers.filter(a => a.is_correct).length || 0,
+                    answeredCount: answeredCount,   // [FIX MASALAH 2] jumlah soal yang dijawab
                     totalScore: session.total_score || 0,
                     timeSpent: session.total_time_seconds || 0,
                     isPassed: session.is_passed || false,
