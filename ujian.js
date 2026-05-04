@@ -893,8 +893,8 @@ async function saveAllAnswers() {
     if (!examSessionId) return;
 
     // ── LANGKAH 1: Ambil semua record yang sudah ada di DB untuk sesi ini ──
-    // Tujuan: hindari duplikat. saveOneAnswer() mungkin sudah menyimpan
-    // beberapa soal yang dijawab. Kita perlu tahu id-nya agar bisa upsert.
+    // Tujuan: pisahkan soal yang sudah ada di DB (UPDATE) vs belum ada (INSERT).
+    // saveOneAnswer() mungkin sudah menyimpan beberapa soal yang dijawab.
     const { data: existingRows, error: fetchError } = await supabase
         .from('exam_answers')
         .select('id, question_id')
@@ -910,7 +910,8 @@ async function saveAllAnswers() {
     );
 
     // ── LANGKAH 2: Bangun payload untuk SEMUA soal (termasuk yang kosong) ──
-    const payload = [];
+    const toUpdate = []; // soal yang sudah ada di DB → UPDATE via id
+    const toInsert = []; // soal baru (belum pernah dijawab) → INSERT
 
     for (let i = 0; i < questions.length; i++) {
         const question = questions[i];
@@ -953,37 +954,45 @@ async function saveAllAnswers() {
             answered_at: new Date().toISOString()
         };
 
-        // ── LANGKAH 3: Sisipkan 'id' jika baris sudah ada di DB (untuk upsert) ──
+        // ── LANGKAH 3: Pisahkan UPDATE vs INSERT berdasarkan keberadaan di DB ──
         const existingId = existingMap.get(question.id);
         if (existingId) {
-            record.id = existingId; // Supabase upsert akan UPDATE baris ini
+            // Baris sudah ada → UPDATE menggunakan id yang diketahui
+            toUpdate.push({ ...record, id: existingId });
+        } else {
+            // Baris belum ada → INSERT baru (tanpa field 'id')
+            toInsert.push(record);
         }
-        // Jika tidak ada existingId, biarkan tanpa 'id' → Supabase akan INSERT baru
-
-        payload.push(record);
     }
 
-    if (payload.length === 0) {
-        console.warn('[saveAllAnswers] Payload kosong, tidak ada soal untuk disimpan.');
-        return;
-    }
+    console.log(`[saveAllAnswers] UPDATE: ${toUpdate.length} baris | INSERT: ${toInsert.length} baris`);
 
-    console.log(`[saveAllAnswers] Menyimpan ${payload.length} baris (termasuk soal kosong) via upsert...`);
-
-    // ── LANGKAH 4: Upsert dalam batch 50 ──
+    // ── LANGKAH 4a: UPDATE baris yang sudah ada (onConflict: 'id') ──
     const chunkSize = 50;
-    for (let i = 0; i < payload.length; i += chunkSize) {
-        const chunk = payload.slice(i, i + chunkSize);
-        const { error: upsertError } = await supabase
+    for (let i = 0; i < toUpdate.length; i += chunkSize) {
+        const chunk = toUpdate.slice(i, i + chunkSize);
+        const { error: updateError } = await supabase
             .from('exam_answers')
             .upsert(chunk, { onConflict: 'id', ignoreDuplicates: false });
 
-        if (upsertError) {
-            console.error(`[saveAllAnswers] Upsert gagal pada chunk ${Math.floor(i / chunkSize) + 1}:`, upsertError.message);
+        if (updateError) {
+            console.error(`[saveAllAnswers] UPDATE gagal chunk ${Math.floor(i / chunkSize) + 1}:`, updateError.message);
         }
     }
 
-    console.log('[saveAllAnswers] Selesai.');
+    // ── LANGKAH 4b: INSERT baris baru (soal yang belum pernah dijawab) ──
+    for (let i = 0; i < toInsert.length; i += chunkSize) {
+        const chunk = toInsert.slice(i, i + chunkSize);
+        const { error: insertError } = await supabase
+            .from('exam_answers')
+            .insert(chunk);
+
+        if (insertError) {
+            console.error(`[saveAllAnswers] INSERT gagal chunk ${Math.floor(i / chunkSize) + 1}:`, insertError.message);
+        }
+    }
+
+    console.log('[saveAllAnswers] Selesai. Semua soal (termasuk tidak dijawab) tersimpan.');
 }
 
 // Setup navigation listeners
