@@ -1406,7 +1406,50 @@
                     <div id="aiRecommendations"></div>
                 </div>
 
-                <!-- Charts (Simple) -->
+                <!-- ══════════════════════════════════════════════════════════
+                     TABEL BARU: Daftar Seluruh Percobaan Ujian (per sesi)
+                     Menampilkan setiap percobaan siswa secara individual,
+                     termasuk jika siswa ujian lebih dari satu kali.
+                     ══════════════════════════════════════════════════════════ -->
+                <div class="content-section" style="margin-top: 2rem;">
+                    <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                        <h3 class="section-title" style="margin:0;">
+                            <i class="fas fa-list-ol" style="color:#0891b2;"></i>
+                            Daftar Seluruh Percobaan Ujian
+                        </h3>
+                        <button onclick="loadAllExamSessionsDetailed()" class="add-btn" style="background:#0891b2;font-size:0.85rem;">
+                            <i class="fas fa-sync"></i> Refresh
+                        </button>
+                    </div>
+                    <p style="color:#6b7280;font-size:0.82rem;margin:0 0 1rem 0;">
+                        Setiap baris = satu percobaan ujian. Siswa yang ujian 2× akan muncul 2 baris.
+                    </p>
+                    <div style="overflow-x:auto;border-radius:12px;border:1px solid #e5e7eb;">
+                        <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+                            <thead>
+                                <tr style="background:linear-gradient(135deg,#0891b2,#06b6d4);color:white;">
+                                    <th style="padding:10px 14px;text-align:left;white-space:nowrap;">#</th>
+                                    <th style="padding:10px 14px;text-align:left;white-space:nowrap;">Nama Siswa</th>
+                                    <th style="padding:10px 14px;text-align:left;white-space:nowrap;">Kelas</th>
+                                    <th style="padding:10px 14px;text-align:left;white-space:nowrap;">Paket</th>
+                                    <th style="padding:10px 14px;text-align:left;white-space:nowrap;">Tanggal Ujian</th>
+                                    <th style="padding:10px 14px;text-align:center;white-space:nowrap;">Skor</th>
+                                    <th style="padding:10px 14px;text-align:center;white-space:nowrap;">Status</th>
+                                    <th style="padding:10px 14px;text-align:center;white-space:nowrap;">Analisis AI</th>
+                                    <th style="padding:10px 14px;text-align:center;white-space:nowrap;">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="allExamSessionsTableBody">
+                                <tr>
+                                    <td colspan="9" style="padding:2rem;text-align:center;color:#6b7280;">
+                                        Klik <strong>Refresh</strong> untuk memuat data semua percobaan ujian.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <!-- ══ END: Daftar Seluruh Percobaan Ujian ══ -->
             </div>
         </div>
 
@@ -1694,6 +1737,7 @@
                     loadAnalytics();
                     loadStudentsList();
                     loadStudentExamHistory();
+                    if (typeof loadAllExamSessionsDetailed === 'function') loadAllExamSessionsDetailed();
                 }
         
                 // Load activities when activities tab is activated

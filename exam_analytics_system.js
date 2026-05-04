@@ -919,6 +919,74 @@ export async function getAllStudentsAnalytics() {
 }
 
 // ==========================================
+// FUNGSI BARU: DAFTAR SEMUA PERCOBAAN UJIAN (PER SESI, TANPA GROUPING)
+// ==========================================
+
+/**
+ * Mengambil SEMUA baris exam_sessions secara individual — tidak ada grouping per user_id.
+ * Setiap percobaan ujian (termasuk ujian ulang) tampil sebagai satu baris tersendiri.
+ * Di-JOIN ke tabel profiles untuk mendapatkan nama siswa.
+ * Di-JOIN ke tabel gemini_analyses untuk mengetahui status analisis AI.
+ *
+ * @returns {Promise<Array>} Array of session objects, diurutkan dari terbaru.
+ */
+export async function getAllExamSessionsDetailed() {
+    try {
+        // 1. Ambil semua sesi ujian (completed) tanpa grouping
+        const { data: sessions, error: sessionsError } = await supabase
+            .from('exam_sessions')
+            .select('id, user_id, total_score, status, is_passed, completed_at, created_at, question_type_variant, total_time_seconds')
+            .in('status', ['completed', 'selesai', 'done', 'finished'])
+            .order('completed_at', { ascending: false });
+
+        if (sessionsError) {
+            console.error('[getAllExamSessionsDetailed] Error fetching sessions:', sessionsError);
+            return [];
+        }
+
+        if (!sessions || sessions.length === 0) return [];
+
+        // 2. Ambil profil siswa untuk semua user_id unik (satu query, efisien)
+        const uniqueUserIds = [...new Set(sessions.map(s => s.user_id).filter(Boolean))];
+        const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, nama_lengkap, class_name')
+            .in('id', uniqueUserIds);
+
+        const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+        // 3. Ambil semua session_id yang sudah punya analisis AI di gemini_analyses
+        const sessionIds = sessions.map(s => s.id);
+        const { data: analyses } = await supabase
+            .from('gemini_analyses')
+            .select('answer_id')
+            .in('answer_id', sessionIds);
+
+        const analyzedSet = new Set((analyses || []).map(a => a.answer_id));
+
+        // 4. Gabungkan: setiap sesi mendapat info profil + status AI
+        return sessions.map(session => {
+            const profile = profileMap.get(session.user_id) || {};
+            return {
+                sessionId:    session.id,
+                userId:       session.user_id,
+                namaSiswa:    profile.nama_lengkap || 'Tanpa Nama',
+                kelas:        profile.class_name   || '-',
+                totalScore:   session.total_score  ?? 0,
+                isPassed:     session.is_passed     || false,
+                paket:        session.question_type_variant || '-',
+                completedAt:  session.completed_at || session.created_at,
+                hasAI:        analyzedSet.has(session.id)
+            };
+        });
+
+    } catch (error) {
+        console.error('[getAllExamSessionsDetailed] Unexpected error:', error);
+        return [];
+    }
+}
+
+// ==========================================
 // REAL-TIME ASSESSMENT INTEGRATION
 // ==========================================
 

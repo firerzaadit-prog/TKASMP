@@ -3,7 +3,8 @@ import { supabase } from './clientSupabase.js';
 import {
     getDetailedStudentAnalytics,
     exportStudentAnalyticsToExcel,
-    getAllStudentsAnalytics
+    getAllStudentsAnalytics,
+    getAllExamSessionsDetailed
 } from './exam_analytics_system.js';
 
 // KEAMANAN: Admin authentication sekarang menggunakan Supabase Auth
@@ -9284,6 +9285,119 @@ function aiFilterSessionsTable() {
     aiRenderSessionsTable(filtered);
 }
 
+// ============================================================
+// FUNGSI BARU: Render tabel "Daftar Seluruh Percobaan Ujian"
+// Setiap percobaan ujian (termasuk ujian ulang) = 1 baris.
+// ============================================================
+async function loadAllExamSessionsDetailed() {
+    const tbody = document.getElementById('allExamSessionsTableBody');
+    if (!tbody) return;
+
+    const COL = 9;
+    tbody.innerHTML = `<tr><td colspan="${COL}" style="padding:2rem;text-align:center;color:#6b7280;">
+        <i class="fas fa-spinner fa-spin"></i> Memuat semua percobaan ujian…
+    </td></tr>`;
+
+    try {
+        // Gunakan fungsi dari exam_analytics_system.js
+        const sessions = await getAllExamSessionsDetailed();
+
+        if (!sessions || sessions.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="${COL}" style="padding:2rem;text-align:center;color:#6b7280;">
+                <i class="fas fa-inbox"></i> Belum ada percobaan ujian yang selesai.
+            </td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = sessions.map((s, idx) => {
+            const bg = idx % 2 === 0 ? '#ffffff' : '#f0f9ff';
+
+            // Format tanggal
+            const tanggal = s.completedAt
+                ? new Date(s.completedAt).toLocaleString('id-ID', {
+                    day: '2-digit', month: 'short', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                  })
+                : '-';
+
+            // Badge skor
+            const skorColor = s.totalScore >= 70 ? '#059669' : s.totalScore >= 50 ? '#d97706' : '#dc2626';
+            const skorBadge = `<span style="background:${skorColor};color:white;padding:3px 12px;
+                border-radius:12px;font-weight:700;font-size:0.88rem;">${s.totalScore}</span>`;
+
+            // Badge lulus/tidak
+            const statusBadge = s.isPassed
+                ? `<span style="background:#d1fae5;color:#065f46;padding:3px 10px;border-radius:20px;font-size:0.78rem;font-weight:600;">
+                       <i class="fas fa-check-circle"></i> Lulus
+                   </span>`
+                : `<span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:20px;font-size:0.78rem;font-weight:600;">
+                       <i class="fas fa-times-circle"></i> Tidak Lulus
+                   </span>`;
+
+            // Badge status AI
+            const aiBadge = s.hasAI
+                ? `<span style="background:#dbeafe;color:#1d4ed8;padding:3px 10px;border-radius:20px;font-size:0.78rem;font-weight:600;">
+                       <i class="fas fa-robot"></i> Tersedia
+                   </span>`
+                : `<span style="background:#f3f4f6;color:#9ca3af;padding:3px 10px;border-radius:20px;font-size:0.78rem;">
+                       <i class="fas fa-hourglass-half"></i> Belum
+                   </span>`;
+
+            // Tombol aksi: selalu tampil untuk Lihat Detail Jawaban; AI Viewer hanya jika AI tersedia
+            const namaSafe = String(s.namaSiswa).replace(/'/g, "\\'");
+            const btnDetail = `<button
+                onclick="showExamAnswerDetail('${s.sessionId}', '${namaSafe}')"
+                style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;
+                       padding:5px 10px;border-radius:7px;cursor:pointer;font-size:0.75rem;
+                       display:inline-flex;align-items:center;gap:4px;white-space:nowrap;
+                       margin-bottom:4px;"
+                onmouseover="this.style.opacity='0.85'"
+                onmouseout="this.style.opacity='1'">
+                <i class="fas fa-eye"></i> Lihat Jawaban
+            </button>`;
+
+            const btnAI = s.hasAI
+                ? `<a href="ai_viewer.html?session=${encodeURIComponent(s.sessionId)}"
+                      target="_blank"
+                      style="display:inline-flex;align-items:center;gap:4px;
+                             background:#1d4ed8;color:#fff;border:none;
+                             padding:5px 10px;border-radius:7px;cursor:pointer;
+                             font-size:0.75rem;white-space:nowrap;text-decoration:none;">
+                       <i class="fas fa-robot"></i> Lihat AI
+                   </a>`
+                : `<span style="color:#9ca3af;font-size:0.75rem;display:inline-block;padding:5px 0;">
+                       <i class="fas fa-lock"></i> AI belum ada
+                   </span>`;
+
+            return `<tr style="background:${bg};border-bottom:1px solid #e5e7eb;">
+                <td style="padding:10px 14px;color:#6b7280;font-size:0.8rem;">${idx + 1}</td>
+                <td style="padding:10px 14px;font-weight:600;color:#1f2937;white-space:nowrap;">${s.namaSiswa}</td>
+                <td style="padding:10px 14px;color:#6b7280;white-space:nowrap;">${s.kelas}</td>
+                <td style="padding:10px 14px;">
+                    <span style="background:#eef2ff;color:#4f46e5;padding:2px 8px;
+                                 border-radius:12px;font-size:0.78rem;font-weight:600;">${s.paket}</span>
+                </td>
+                <td style="padding:10px 14px;color:#6b7280;font-size:0.82rem;white-space:nowrap;">${tanggal}</td>
+                <td style="padding:10px 14px;text-align:center;">${skorBadge}</td>
+                <td style="padding:10px 14px;text-align:center;">${statusBadge}</td>
+                <td style="padding:10px 14px;text-align:center;">${aiBadge}</td>
+                <td style="padding:10px 14px;text-align:center;">
+                    <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+                        ${btnDetail}
+                        ${btnAI}
+                    </div>
+                </td>
+            </tr>`;
+        }).join('');
+
+    } catch (error) {
+        console.error('[loadAllExamSessionsDetailed] Error:', error);
+        tbody.innerHTML = `<tr><td colspan="${COL}" style="padding:2rem;text-align:center;color:#ef4444;">
+            <i class="fas fa-exclamation-triangle"></i> Gagal memuat data: ${error.message}
+        </td></tr>`;
+    }
+}
+
 // ── Event listeners AI Management ─────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     const btnBatch   = document.getElementById('btnBatchAI');
@@ -9308,3 +9422,4 @@ window.startBatchAnalysis    = startBatchAnalysis;
 window.aiGenerateSingle      = aiGenerateSingle;
 window.aiRegenerateSingle    = aiRegenerateSingle;
 window.aiFilterSessionsTable = aiFilterSessionsTable;
+window.loadAllExamSessionsDetailed = loadAllExamSessionsDetailed;
