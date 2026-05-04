@@ -50,62 +50,66 @@ export async function updateStudentAnalyticsAfterExam(questions, answers, examSe
             const question = questions[i];
             const answer = answers[i];
 
-            if (!answer) continue;
+            // ── DIHAPUS: if (!answer) continue ──
+            // Soal kosong tetap diproses agar chapterPerformance.total akurat.
+            // isCorrect akan tetap false untuk soal kosong.
 
             let isCorrect = false;
 
-            if (question.question_type === 'PGK MCMA') {
-                const selectedAnswers = answer.split(',').sort();
-                const correctAnswers = Array.isArray(question.correct_answers)
-                    ? question.correct_answers.sort()
-                    : (question.correct_answers || '').split(',').sort();
-                isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
-            } else if (question.question_type === 'PGK Kategori') {
-                const selectedAnswers = typeof answer === 'string' ? JSON.parse(answer) : answer;
-                const correctMapping = typeof question.category_mapping === 'string'
-                    ? JSON.parse(question.category_mapping)
-                    : question.category_mapping;
+            if (answer !== null && answer !== undefined) {
+                if (question.question_type === 'PGK MCMA') {
+                    const selectedAnswers = answer.split(',').sort();
+                    const correctAnswers = Array.isArray(question.correct_answers)
+                        ? question.correct_answers.sort()
+                        : (question.correct_answers || '').split(',').sort();
+                    isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
 
-                let allCorrect = true;
-                for (const [stmtIndex, isTrue] of Object.entries(selectedAnswers || {})) {
-                    if (correctMapping[stmtIndex] !== isTrue) {
-                        allCorrect = false;
-                        break;
+                } else if (question.question_type === 'PGK Kategori') {
+                    try {
+                        const selectedAnswers = typeof answer === 'string' ? JSON.parse(answer) : answer;
+                        const correctMapping = typeof question.category_mapping === 'string'
+                            ? JSON.parse(question.category_mapping)
+                            : question.category_mapping;
+
+                        let allCorrect = true;
+                        for (const [stmtIndex, isTrue] of Object.entries(selectedAnswers || {})) {
+                            if (correctMapping[stmtIndex] !== isTrue) {
+                                allCorrect = false;
+                                break;
+                            }
+                        }
+                        for (const [stmtIndex, shouldBeTrue] of Object.entries(correctMapping || {})) {
+                            if (shouldBeTrue && (selectedAnswers || {})[stmtIndex] !== true) {
+                                allCorrect = false;
+                                break;
+                            }
+                        }
+                        isCorrect = allCorrect;
+                    } catch (parseErr) {
+                        console.warn(`[analytics] Gagal parse jawaban PGK Kategori soal ${i + 1}:`, parseErr);
+                        isCorrect = false;
                     }
+
+                } else {
+                    isCorrect = answer === question.correct_answer;
                 }
-
-                for (const [stmtIndex, shouldBeTrue] of Object.entries(correctMapping || {})) {
-                    if (shouldBeTrue && selectedAnswers[stmtIndex] !== true) {
-                        allCorrect = false;
-                        break;
-                    }
-                }
-
-                isCorrect = allCorrect;
-            } else {
-                isCorrect = answer === question.correct_answer;
             }
+            // Jika answer null → isCorrect tetap false
 
-            if (isCorrect) {
-                totalCorrect++;
-            }
+            if (isCorrect) totalCorrect++;
 
-            // Track performa per bab
+            // ── Selalu dihitung, termasuk soal kosong, agar pembagi akurat ──
             const chapter = question.bab;
             if (chapter) {
                 if (!chapterPerformance[chapter]) {
-                    chapterPerformance[chapter] = {
-                        total: 0,
-                        correct: 0
-                    };
+                    chapterPerformance[chapter] = { total: 0, correct: 0 };
                 }
                 chapterPerformance[chapter].total++;
-                if (isCorrect) {
-                    chapterPerformance[chapter].correct++;
-                }
+                if (isCorrect) chapterPerformance[chapter].correct++;
             }
         }
 
+        // masteryLevel dari questions.length penuh, bukan hanya yang dijawab
         const masteryLevel = questions.length > 0 ? totalCorrect / questions.length : 0;
 
         // Siapkan data skill radar
@@ -121,7 +125,7 @@ export async function updateStudentAnalyticsAfterExam(questions, answers, examSe
                 user_id: userId,
                 chapter: 'Overall',
                 sub_chapter: 'Recent Exam',
-                total_questions_attempted: questions.length,
+                total_questions_attempted: questions.length,  // Selalu 30, bukan hanya yang dijawab
                 correct_answers: totalCorrect,
                 mastery_level: masteryLevel,
                 skill_radar_data: skillRadarData,

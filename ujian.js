@@ -892,60 +892,98 @@ async function saveAllAnswers() {
 
     if (!examSessionId) return;
 
+    // ── LANGKAH 1: Ambil semua record yang sudah ada di DB untuk sesi ini ──
+    // Tujuan: hindari duplikat. saveOneAnswer() mungkin sudah menyimpan
+    // beberapa soal yang dijawab. Kita perlu tahu id-nya agar bisa upsert.
+    const { data: existingRows, error: fetchError } = await supabase
+        .from('exam_answers')
+        .select('id, question_id')
+        .eq('exam_session_id', examSessionId);
+
+    if (fetchError) {
+        console.error('[saveAllAnswers] Gagal fetch existing rows:', fetchError.message);
+    }
+
+    // Buat Map: question_id → existing row id (untuk lookup O(1))
+    const existingMap = new Map(
+        (existingRows || []).map(row => [row.question_id, row.id])
+    );
+
+    // ── LANGKAH 2: Bangun payload untuk SEMUA soal (termasuk yang kosong) ──
     const payload = [];
+
     for (let i = 0; i < questions.length; i++) {
-        const answer = answers[i];
-        if (answer === null || answer === undefined) continue;
         const question = questions[i];
         if (!question || !question.id) continue;
 
+        const answer = answers[i]; // bisa null jika soal tidak dijawab
+
+        // Serialisasi jawaban PGK Kategori ke JSON string; null tetap null
         let answerValue = answer;
-        if (question.question_type === 'PGK Kategori') {
-            answerValue = typeof answer === 'object' ? JSON.stringify(answer) : answer;
+        if (answer !== null && answer !== undefined) {
+            if (question.question_type === 'PGK Kategori') {
+                answerValue = typeof answer === 'object' ? JSON.stringify(answer) : answer;
+            }
         }
 
+        // Hitung is_correct — soal kosong (null) selalu false
         let isCorrect = false;
-        if (question.question_type === 'PGK MCMA') {
-            const sel = (answerValue || '').split(',').sort();
-            const cor = Array.isArray(question.correct_answers)
-                ? [...question.correct_answers].sort()
-                : (question.correct_answers || '').split(',').sort();
-            isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
-        } else if (question.question_type === 'PGK Kategori') {
-            isCorrect = checkKategoriAnswer(answer, question);
-        } else {
-            isCorrect = answerValue === question.correct_answer;
+        if (answerValue !== null && answerValue !== undefined) {
+            if (question.question_type === 'PGK MCMA') {
+                const sel = (answerValue || '').split(',').sort();
+                const cor = Array.isArray(question.correct_answers)
+                    ? [...question.correct_answers].sort()
+                    : (question.correct_answers || '').split(',').sort();
+                isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
+            } else if (question.question_type === 'PGK Kategori') {
+                isCorrect = checkKategoriAnswer(answer, question);
+            } else {
+                isCorrect = answerValue === question.correct_answer;
+            }
         }
 
-        payload.push({
+        const record = {
             exam_session_id: examSessionId,
             question_id: question.id,
-            selected_answer: answerValue,
-            user_answer: answerValue,
+            selected_answer: answerValue,   // null untuk soal kosong
+            user_answer: answerValue,       // null untuk soal kosong
             is_correct: isCorrect,
             time_taken_seconds: 0,
             is_doubtful: doubtfulQuestions[i] || false,
             answered_at: new Date().toISOString()
-        });
+        };
+
+        // ── LANGKAH 3: Sisipkan 'id' jika baris sudah ada di DB (untuk upsert) ──
+        const existingId = existingMap.get(question.id);
+        if (existingId) {
+            record.id = existingId; // Supabase upsert akan UPDATE baris ini
+        }
+        // Jika tidak ada existingId, biarkan tanpa 'id' → Supabase akan INSERT baru
+
+        payload.push(record);
     }
 
-    if (payload.length === 0) return;
-
-    const testRecord = payload[0];
-    const { error: testError } = await supabase.from('exam_answers').insert([testRecord]).select('id');
-
-    if (testError) {
-        alert('Gagal menyimpan jawaban: ' + testError.message);
+    if (payload.length === 0) {
+        console.warn('[saveAllAnswers] Payload kosong, tidak ada soal untuk disimpan.');
         return;
     }
 
-    const remaining = payload.slice(1);
-    const chunkSize = 50;
+    console.log(`[saveAllAnswers] Menyimpan ${payload.length} baris (termasuk soal kosong) via upsert...`);
 
-    for (let i = 0; i < remaining.length; i += chunkSize) {
-        const chunk = remaining.slice(i, i + chunkSize);
-        await supabase.from('exam_answers').insert(chunk);
+    // ── LANGKAH 4: Upsert dalam batch 50 ──
+    const chunkSize = 50;
+    for (let i = 0; i < payload.length; i += chunkSize) {
+        const chunk = payload.slice(i, i + chunkSize);
+        const { error: upsertError } = await supabase
+            .from('exam_answers')
+            .upsert(chunk, { onConflict: 'id', ignoreDuplicates: false });
+
+        if (upsertError) {
+            console.error(`[saveAllAnswers] Upsert gagal pada chunk ${Math.floor(i / chunkSize) + 1}:`, upsertError.message);
+        }
     }
+
+    console.log('[saveAllAnswers] Selesai.');
 }
 
 // Setup navigation listeners
@@ -1080,24 +1118,28 @@ async function updateStudentAnalyticsAfterExam() {
             const question = questions[i];
             const answer = answers[i];
 
-            if (!answer) continue;
+            // ── DIHAPUS: if (!answer) continue ──
+            // Soal kosong tetap diproses agar chapterPerformance.total akurat.
 
             let isCorrect = false;
 
-            if (question.question_type === 'PGK MCMA') {
-                const selectedAnswers = answer.split(',').sort();
-                const correctAnswers = Array.isArray(question.correct_answers)
-                    ? question.correct_answers.sort()
-                    : (question.correct_answers || '').split(',').sort();
-                isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
-            } else if (question.question_type === 'PGK Kategori') {
-                isCorrect = checkKategoriAnswer(answer, question);
-            } else {
-                isCorrect = answer === question.correct_answer;
+            if (answer !== null && answer !== undefined) {
+                if (question.question_type === 'PGK MCMA') {
+                    const selectedAnswers = answer.split(',').sort();
+                    const correctAnswers = Array.isArray(question.correct_answers)
+                        ? question.correct_answers.sort()
+                        : (question.correct_answers || '').split(',').sort();
+                    isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
+                } else if (question.question_type === 'PGK Kategori') {
+                    isCorrect = checkKategoriAnswer(answer, question);
+                } else {
+                    isCorrect = answer === question.correct_answer;
+                }
             }
 
             if (isCorrect) totalCorrect++;
 
+            // ── Selalu dihitung, termasuk soal kosong, agar pembagi akurat ──
             const chapter = question.chapter;
             if (chapter) {
                 if (!chapterPerformance[chapter]) {
