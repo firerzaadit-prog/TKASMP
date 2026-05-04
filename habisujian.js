@@ -276,10 +276,14 @@ function displayExamResults(session) {
         correctAnswersElement.textContent = correctCount;
     }
 
-    // Render answer review if container exists
-    const reviewContainer = document.getElementById('answersReview');
+    // Render answer review menggunakan fungsi global dari HTML
+    const reviewContainer = document.getElementById('answerReview');
     if (reviewContainer && questions.length > 0) {
-        renderAnswerReview(reviewContainer);
+        if (typeof window.showAnswerReview === 'function') {
+            window.showAnswerReview(questions, answers);
+        } else {
+            console.warn('Fungsi window.showAnswerReview tidak ditemukan di HTML.');
+        }
     }
 
     // IRT Analysis (jika elemen tersedia)
@@ -292,49 +296,6 @@ function displayExamResults(session) {
     } catch (irtErr) {
         console.warn('IRT analysis skipped:', irtErr.message);
     }
-}
-
-// Render answer review
-function renderAnswerReview(container) {
-    const html = questions.map((question, index) => {
-        const userAnswer = answers[index];
-        let isCorrect = false;
-
-        if (question.question_type === 'PGK Kategori') {
-            isCorrect = checkKategoriHabisUjian(userAnswer, question);
-        } else if (question.question_type === 'PGK MCMA') {
-            const selectedAnswers = (userAnswer || '').split(',').sort();
-            const correctAnswers = Array.isArray(question.correct_answers)
-                ? question.correct_answers.sort()
-                : (question.correct_answers || '').split(',').sort();
-            isCorrect = JSON.stringify(selectedAnswers) === JSON.stringify(correctAnswers);
-        } else {
-            isCorrect = userAnswer === question.correct_answer;
-        }
-
-        const statusIcon = !userAnswer ? '⏭️' : isCorrect ? '✅' : '❌';
-        const statusClass = !userAnswer ? 'skipped' : isCorrect ? 'correct' : 'incorrect';
-
-        return `
-            <div class="answer-review-item ${statusClass}">
-                <div class="answer-number">${index + 1}</div>
-                <div class="answer-details">
-                    <div class="answer-status">${statusIcon}</div>
-                    <div class="answer-text">
-                        <span class="label">Jawaban Anda:</span>
-                        <span class="value">${userAnswer || '(tidak dijawab)'}</span>
-                    </div>
-                    ${!isCorrect && userAnswer ? `
-                    <div class="correct-answer">
-                        <span class="label">Jawaban Benar:</span>
-                        <span class="value">${question.correct_answer || (Array.isArray(question.correct_answers) ? question.correct_answers.join(', ') : '-')}</span>
-                    </div>` : ''}
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    container.innerHTML = html;
 }
 
 // Theta estimation (simplified EAP)
