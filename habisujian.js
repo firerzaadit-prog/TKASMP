@@ -286,6 +286,9 @@ function displayExamResults(session) {
         }
     }
 
+    // Render Peta Kompetensi
+    renderPetaKompetensi(questions, answers);
+
     // IRT Analysis (jika elemen tersedia)
     try {
         const itemParams = questions.map(q => getItemParameters(q));
@@ -462,6 +465,112 @@ function getAbilityDescription(theta) {
 function calculateStandardError(theta) {
     const averageInformation = 2.0;
     return 1 / Math.sqrt(averageInformation);
+}
+
+/**
+ * Render Peta Kompetensi per bab di halaman hasil ujian siswa.
+ * Menampilkan jumlah benar / salah / tidak dijawab per bab beserta progress bar.
+ */
+function renderPetaKompetensi(questions, answers) {
+    const section = document.getElementById('petaKompetensiSection');
+    const body    = document.getElementById('petaKompetensiBody');
+    if (!section || !body) return;
+    if (!questions || questions.length === 0) return;
+
+    // ── Kumpulkan data per bab ─────────────────────────────────────
+    const babMap = {};
+
+    questions.forEach((q, idx) => {
+        const bab = (q.bab || q.chapter || 'Lainnya').trim();
+        if (!babMap[bab]) {
+            babMap[bab] = { total: 0, benar: 0, salah: 0, kosong: 0 };
+        }
+
+        const answer = answers[idx];
+        babMap[bab].total++;
+
+        if (!answer || answer === null || answer === '') {
+            babMap[bab].kosong++;
+            return;
+        }
+
+        let isCorrect = false;
+        try {
+            if (q.question_type === 'PGK MCMA') {
+                const sel = (answer || '').split(',').sort();
+                const cor = Array.isArray(q.correct_answers)
+                    ? q.correct_answers.sort()
+                    : (q.correct_answers || '').split(',').sort();
+                isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
+            } else if (q.question_type === 'PGK Kategori') {
+                const sel = typeof answer === 'string' ? JSON.parse(answer) : answer;
+                const map = typeof q.category_mapping === 'string'
+                    ? JSON.parse(q.category_mapping) : q.category_mapping;
+                if (!map || !sel) { isCorrect = false; }
+                else {
+                    let ok = true;
+                    for (const [k, v] of Object.entries(sel)) {
+                        if (map[k] !== v) { ok = false; break; }
+                    }
+                    for (const [k, v] of Object.entries(map)) {
+                        if (v && sel[k] !== true) { ok = false; break; }
+                    }
+                    isCorrect = ok;
+                }
+            } else {
+                isCorrect = answer === q.correct_answer;
+            }
+        } catch(e) { isCorrect = false; }
+
+        if (isCorrect) babMap[bab].benar++;
+        else babMap[bab].salah++;
+    });
+
+    const babs = Object.keys(babMap).sort();
+    if (babs.length === 0) return;
+
+    // ── Render ─────────────────────────────────────────────────────
+    body.innerHTML = `
+        <div style="display:grid;gap:14px;">
+            ${babs.map(bab => {
+                const d = babMap[bab];
+                const pct = Math.round((d.benar / d.total) * 100);
+                const barColor = pct >= 70 ? '#059669' : pct >= 50 ? '#d97706' : '#dc2626';
+                const bgBar   = pct >= 70 ? '#d1fae5' : pct >= 50 ? '#fef3c7' : '#fee2e2';
+                const emoji   = pct >= 70 ? '✅' : pct >= 50 ? '⚠️' : '❌';
+                const label   = pct >= 70 ? 'Baik' : pct >= 50 ? 'Cukup' : 'Perlu Latihan';
+                const labelColor = pct >= 70 ? '#059669' : pct >= 50 ? '#d97706' : '#dc2626';
+
+                return `<div style="background:#fafafa;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="font-size:1.1rem;">${emoji}</span>
+                            <span style="font-weight:700;color:#1f2937;font-size:0.92rem;">${bab}</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <span style="color:#059669;font-size:0.8rem;font-weight:600;">✔ ${d.benar} Benar</span>
+                            <span style="color:#dc2626;font-size:0.8rem;font-weight:600;">✘ ${d.salah} Salah</span>
+                            ${d.kosong > 0 ? `<span style="color:#9ca3af;font-size:0.8rem;font-weight:600;">— ${d.kosong} Kosong</span>` : ''}
+                            <span style="background:${bgBar};color:${labelColor};padding:2px 10px;border-radius:20px;font-size:0.72rem;font-weight:700;">${label}</span>
+                        </div>
+                    </div>
+                    <div style="background:#e5e7eb;border-radius:999px;height:8px;overflow:hidden;">
+                        <div style="width:${pct}%;height:100%;background:${barColor};border-radius:999px;transition:width 0.6s ease;"></div>
+                    </div>
+                    <div style="text-align:right;font-size:0.72rem;color:#6b7280;margin-top:4px;">${pct}% benar dari ${d.total} soal</div>
+                </div>`;
+            }).join('')}
+        </div>
+
+        <!-- Legenda ringkas -->
+        <div style="margin-top:16px;padding:12px 16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;display:flex;gap:20px;flex-wrap:wrap;">
+            <span style="font-size:0.78rem;color:#166534;"><span style="color:#059669;font-weight:700;">✅ ≥70%</span> Baik — pertahankan!</span>
+            <span style="font-size:0.78rem;color:#92400e;"><span style="color:#d97706;font-weight:700;">⚠️ 50–69%</span> Cukup — perlu ulang materi</span>
+            <span style="font-size:0.78rem;color:#991b1b;"><span style="color:#dc2626;font-weight:700;">❌ &lt;50%</span> Perlu latihan intensif</span>
+        </div>
+    `;
+
+    section.style.display = 'block';
 }
 
 // Function to retake exam
