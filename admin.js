@@ -4466,7 +4466,7 @@ function renderStudentExamRows(exams) {
                 <td style="padding: 12px;">${waktu}</td>
                 <td style="padding: 12px;">
                     <div style="display:flex;gap:5px;align-items:center;">
-                        <button onclick="deleteOneExamSession('${examId}', '${studentName.replace(/'/g, &quot;&#39;&quot;)}')" class="mini-btn" style="background: #ef4444;" title="Hapus Sesi Ujian Ini">
+                        <button onclick="deleteOneExamSession('${examId}', '${studentName.replace(/'/g, "&#39;")}')" class="mini-btn" style="background: #ef4444;" title="Hapus Sesi Ujian Ini">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
