@@ -74,6 +74,16 @@ function initializeDOMElements() {
 // Assign question type to user (A, B, C, or D)
 async function assignQuestionType(userId) {
     try {
+        // ✅ PRIORITAS 1: Baca pilihan siswa dari localStorage (dikirim oleh preexam.js)
+        const storedVariant = localStorage.getItem('selectedQuestionVariant');
+        if (storedVariant && storedVariant.trim() !== '') {
+            assignedQuestionType = storedVariant.trim();
+            console.log('Question type from localStorage (student choice):', assignedQuestionType);
+            displayQuestionTypeInfo();
+            return;
+        }
+
+        // ✅ FALLBACK: Jika localStorage kosong, cek sesi in_progress di DB
         console.log('Checking assigned question type for user:', userId);
 
         const { data: existingSession, error: sessionError } = await supabase
@@ -131,6 +141,11 @@ function displayQuestionTypeInfo() {
 async function loadExamQuestions() {
     try {
         console.log('Loading exam questions for type:', assignedQuestionType);
+
+        // ✅ Bersihkan localStorage setelah varian berhasil dibaca & dipakai
+        // Dilakukan di sini (bukan di assignQuestionType) agar cleanup hanya
+        // terjadi setelah soal benar-benar mulai dimuat.
+        localStorage.removeItem('selectedQuestionVariant');
 
         // First try with question_type_variant filter
         let { data: questionsData, error } = await supabase

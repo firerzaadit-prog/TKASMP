@@ -7,6 +7,7 @@ const agreementCheckbox = document.getElementById('agreementCheckbox');
 const startExamBtn = document.getElementById('startExamBtn');
 const questionCountEl = document.getElementById('questionCount');
 const timeLimitEl = document.getElementById('timeLimit');
+const questionVariantSelect = document.getElementById('questionVariantSelect');
 
 // Initialize page
 document.addEventListener('DOMContentLoaded', async () => {
@@ -58,7 +59,17 @@ async function loadExamInfo() {
 
         if (questionsData && questionsData.length > 0) {
             // Count unique question type variants
-            const variants = [...new Set(questionsData.map(q => q.question_type_variant))];
+            const variants = [...new Set(questionsData.map(q => q.question_type_variant).filter(Boolean))].sort();
+            
+            // Populate variant select dropdown
+            // Clear existing options except placeholder
+            questionVariantSelect.innerHTML = '<option value="">-- Pilih Paket Soal --</option>';
+            variants.forEach(variant => {
+                const option = document.createElement('option');
+                option.value = variant;
+                option.textContent = `Paket ${variant}`;
+                questionVariantSelect.appendChild(option);
+            });
             
             // Calculate average questions per variant
             const questionsPerVariant = {};
@@ -104,20 +115,28 @@ async function loadExamInfo() {
     }
 }
 
+// Helper: cek apakah tombol mulai boleh aktif
+function updateStartBtnState() {
+    const isChecked = agreementCheckbox.checked;
+    const isVariantSelected = questionVariantSelect.value !== '';
+    startExamBtn.disabled = !(isChecked && isVariantSelected);
+
+    if (!startExamBtn.disabled) {
+        startExamBtn.style.animation = 'pulse 0.5s ease';
+    }
+}
+
 // Setup event listeners
 function setupEventListeners() {
     // Agreement checkbox
-    agreementCheckbox.addEventListener('change', () => {
-        startExamBtn.disabled = !agreementCheckbox.checked;
-        
-        if (agreementCheckbox.checked) {
-            startExamBtn.style.animation = 'pulse 0.5s ease';
-        }
-    });
+    agreementCheckbox.addEventListener('change', updateStartBtnState);
+
+    // Variant select
+    questionVariantSelect.addEventListener('change', updateStartBtnState);
 
     // Start exam button
     startExamBtn.addEventListener('click', () => {
-        if (agreementCheckbox.checked) {
+        if (!startExamBtn.disabled) {
             startExam();
         }
     });
@@ -125,10 +144,21 @@ function setupEventListeners() {
 
 // Start the exam
 function startExam() {
+    const selectedVariant = questionVariantSelect.value;
+
+    // Validasi akhir sebelum redirect
+    if (!selectedVariant) {
+        alert('Silakan pilih Paket Soal terlebih dahulu.');
+        questionVariantSelect.focus();
+        return;
+    }
+
     // Show confirmation
-    const confirmed = confirm('Apakah Anda yakin siap untuk memulai ujian?\n\nSetelah memulai, Anda tidak dapat kembali ke halaman ini.');
+    const confirmed = confirm(`Apakah Anda yakin siap untuk memulai ujian?\nPaket Soal yang dipilih: ${selectedVariant}\n\nSetelah memulai, Anda tidak dapat kembali ke halaman ini.`);
     
     if (confirmed) {
+        // Simpan pilihan varian ke localStorage agar dibaca ujian.js
+        localStorage.setItem('selectedQuestionVariant', selectedVariant);
         // Redirect to exam page
         window.location.href = 'ujian.html';
     }
