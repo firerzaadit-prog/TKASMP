@@ -911,6 +911,125 @@ async function deleteStudentExamData(userId, userName) {
 window.deleteStudentExamData = deleteStudentExamData;
 window.deleteStudentExamHistory = deleteStudentExamHistory;
 window.loadUsersData = loadUsersData; // INI YANG DITAMBAHKAN
+
+// ============================================================
+// PERBAIKAN BUG: Hapus SATU sesi ujian spesifik berdasarkan ID
+// Fungsi lama (deleteStudentExamData) menghapus semua sesi milik
+// satu user karena filter by user_id — fungsi baru ini filter by
+// session ID yang unik sehingga hanya 1 baris yang terhapus.
+// ============================================================
+async function deleteOneExamSession(sessionId, studentName) {
+    if (!sessionId) {
+        alert('Error: ID sesi ujian tidak ditemukan.');
+        return;
+    }
+
+    const confirmed = confirm(
+        'Apakah Anda yakin ingin menghapus data sesi ujian ini?\n\n' +
+        'Siswa: ' + studentName + '\n\n' +
+        '\u26a0\ufe0f Data yang dihapus tidak dapat dikembalikan!'
+    );
+    if (!confirmed) return;
+
+    try {
+        console.log('[deleteOneExamSession] Menghapus sesi ID:', sessionId);
+
+        // 1. Ambil user_id dari sesi ini (diperlukan untuk cek student_analytics)
+        const { data: sessionData, error: fetchSessionError } = await supabase
+            .from('exam_sessions')
+            .select('user_id')
+            .eq('id', sessionId)
+            .maybeSingle();
+
+        if (fetchSessionError) {
+            console.error('Gagal mengambil data sesi:', fetchSessionError);
+            alert('Gagal mengambil data sesi: ' + fetchSessionError.message);
+            return;
+        }
+
+        const userId = sessionData?.user_id;
+
+        // 2. Hapus exam_answers milik sesi ini saja
+        const { error: errorAnswers } = await supabase
+            .from('exam_answers')
+            .delete()
+            .eq('exam_session_id', sessionId); // hanya sesi ini
+
+        if (errorAnswers) {
+            console.log('exam_answers skip:', errorAnswers.message);
+        } else {
+            console.log('exam_answers sesi ini berhasil dihapus');
+        }
+
+        // 3. Hapus gemini_analyses milik sesi ini saja
+        try {
+            const { error: errorGemini } = await supabase
+                .from('gemini_analyses')
+                .delete()
+                .eq('answer_id', sessionId); // hanya sesi ini
+
+            if (errorGemini) {
+                console.log('gemini_analyses skip:', errorGemini.message);
+            } else {
+                console.log('gemini_analyses sesi ini berhasil dihapus');
+            }
+        } catch (e) {
+            console.log('Tabel gemini_analyses tidak ada, diabaikan.');
+        }
+
+        // 4. Hapus exam_session ini saja
+        const { error: errorSession } = await supabase
+            .from('exam_sessions')
+            .delete()
+            .eq('id', sessionId); // hanya 1 baris ini
+
+        if (errorSession) {
+            console.error('Gagal menghapus exam_session:', errorSession);
+            alert('Gagal menghapus sesi ujian: ' + errorSession.message);
+            return;
+        }
+        console.log('exam_session berhasil dihapus');
+
+        // 5. Hapus student_analytics hanya jika ini sesi terakhir milik user
+        if (userId) {
+            const { data: otherSessions, error: checkError } = await supabase
+                .from('exam_sessions')
+                .select('id')
+                .eq('user_id', userId)
+                .neq('id', sessionId);
+
+            if (!checkError && (!otherSessions || otherSessions.length === 0)) {
+                const { error: errorAnalytics } = await supabase
+                    .from('student_analytics')
+                    .delete()
+                    .eq('user_id', userId); // aman dihapus, tidak ada sesi lain
+
+                if (errorAnalytics) {
+                    console.log('student_analytics skip:', errorAnalytics.message);
+                } else {
+                    console.log('student_analytics dihapus (sesi terakhir user)');
+                }
+            } else {
+                console.log('User masih punya sesi lain, student_analytics dipertahankan');
+            }
+        }
+
+        alert('Berhasil! Data sesi ujian untuk "' + studentName + '" telah dihapus.');
+
+        // Refresh tabel
+        if (window.studentExamData) {
+            window.studentExamData = window.studentExamData.filter(e => e.id !== sessionId);
+            renderStudentExamRows(window.studentExamData);
+        }
+        if (typeof loadStudentExamTable === 'function') loadStudentExamTable();
+
+    } catch (error) {
+        console.error('[deleteOneExamSession] Error:', error);
+        alert('Terjadi kesalahan saat menghapus data: ' + error.message);
+    }
+}
+
+window.deleteOneExamSession = deleteOneExamSession;
 // Setup password toggle for admin login
 function setupPasswordToggle() {
     const toggleBtn = document.getElementById('toggleAdminPassword');
@@ -4347,7 +4466,7 @@ function renderStudentExamRows(exams) {
                 <td style="padding: 12px;">${waktu}</td>
                 <td style="padding: 12px;">
                     <div style="display:flex;gap:5px;align-items:center;">
-                        <button onclick="deleteStudentExamData('${userId}', '${studentName}')" class="mini-btn" style="background: #ef4444;" title="Hapus Data Ujian">
+                        <button onclick="deleteOneExamSession('${examId}', '${studentName.replace(/'/g, &quot;&#39;&quot;)}')" class="mini-btn" style="background: #ef4444;" title="Hapus Sesi Ujian Ini">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
