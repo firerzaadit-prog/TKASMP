@@ -5278,18 +5278,26 @@ async function showStudentDetail(userId, sessionId = null) {
 // Helper: build CSV row data lengkap sesuai format yang diminta
 // ============================================================
 // FUNGSI: Bangun Matriks Kognitif Mini untuk ditampilkan di sel tabel
+// Jika sessionId diberikan, hanya data sesi tersebut yang digunakan.
 // ============================================================
-async function buildCognitiveMatrixDataForStudent(userId) {
+async function buildCognitiveMatrixDataForStudent(userId, sessionId = null) {
     try {
-        const { data: sessions } = await supabase
-            .from('exam_sessions')
-            .select('id')
-            .eq('user_id', userId)
-            .eq('status', 'completed');
+        let sessionIds = [];
 
-        if (!sessions || sessions.length === 0) return null;
+        if (sessionId && sessionId !== '-') {
+            // Gunakan HANYA sesi ujian yang diminta (per baris)
+            sessionIds = [sessionId];
+        } else {
+            // Fallback: ambil semua sesi (digunakan jika siswa belum ujian)
+            const { data: sessions } = await supabase
+                .from('exam_sessions')
+                .select('id')
+                .eq('user_id', userId)
+                .eq('status', 'completed');
 
-        const sessionIds = sessions.map(s => s.id);
+            if (!sessions || sessions.length === 0) return null;
+            sessionIds = sessions.map(s => s.id);
+        }
 
         const { data: answerRows, error: ansErr } = await supabase
             .from('exam_answers')
@@ -5431,9 +5439,6 @@ async function buildStudentExportData(userId) {
     // Safety check: pastikan analytics.student ada
     const student = analytics?.student || {};
 
-    // Ambil data matriks kognitif untuk ditampilkan di kolom Peta Kompetensi
-    const kognitifMatrixData = await buildCognitiveMatrixDataForStudent(userId);
-
     // Peta Kompetensi per bab — teks untuk CSV export
     const petaKompetensi = (analytics.chapterPerformance || [])
         .map(c => `${c.chapter}: ${Math.round(c.accuracy||0)}%`)
@@ -5567,7 +5572,7 @@ async function buildStudentExportData(userId) {
             '-',                                     // 13: Kelemahan
             '-',                                     // 14: Rekomendasi
             '-',                                     // 15: Session ID
-            kognitifMatrixData                       // 16: Matrix object (untuk render di tabel)
+            null                                     // 16: Matrix object (belum ada sesi)
         ]);
     } else {
         for (const exam of exams) {
@@ -5588,6 +5593,9 @@ async function buildStudentExportData(userId) {
 
             // Ambil AI khusus untuk sesi ini
             const ai = await getAIPerSession(exam.sessionId);
+
+            // Ambil matriks kognitif KHUSUS untuk sesi ini (bukan gabungan semua sesi)
+            const kognitifMatrixData = await buildCognitiveMatrixDataForStudent(userId, exam.sessionId);
 
             rows.push([
                 student?.nama_lengkap || 'Tanpa Nama',                              // 0
