@@ -1,6 +1,5 @@
 // ai_viewer.js - Halaman mandiri untuk menampilkan Analisis AI
 // REFACTORED: Hanya membaca (SELECT) dari tabel gemini_analyses.
-// ENHANCED: Peta Kompetensi dengan Stacked Bar Chart per level kognitif
 // TIDAK memanggil Gemini API sama sekali.
 
 import { supabase } from './clientSupabase.js';
@@ -15,6 +14,7 @@ function setStatus(text, state = 'loading') {
         dot.className = 'status-dot';
         if (state === 'loading') dot.classList.add('loading');
         else if (state === 'error') dot.classList.add('error');
+        // 'done' → hijau default
     }
     if (statusText) statusText.textContent = text;
 }
@@ -35,10 +35,15 @@ function showError(title, message) {
     setStatus('Gagal memuat analisis', 'error');
 }
 
+/**
+ * Tampilkan pesan khusus ketika analisis belum tersedia di database.
+ * Berbeda dengan showError — ini bukan error teknis, hanya belum diproses.
+ */
 function showPendingMessage() {
     const loadingCard = document.getElementById('aiLoadingCard');
     if (loadingCard) loadingCard.style.display = 'none';
 
+    // Cek apakah ada elemen pending khusus, jika tidak pakai errCard
     const pendingCard = document.getElementById('aiPendingCard');
     if (pendingCard) {
         pendingCard.style.display = 'block';
@@ -46,6 +51,7 @@ function showPendingMessage() {
         return;
     }
 
+    // Fallback: gunakan errCard dengan pesan custom
     const errCard = document.getElementById('aiErrorCard');
     if (errCard) {
         errCard.style.display = 'block';
@@ -73,6 +79,7 @@ function showPendingMessage() {
         `;
     }
 
+    // Sembunyikan tombol retry jika ada
     const retryBtn = document.querySelector('#aiErrorCard button[onclick*="retry"]');
     if (retryBtn) retryBtn.style.display = 'none';
 
@@ -82,314 +89,6 @@ function showPendingMessage() {
 function setLoadingDetail(text) {
     const el = document.getElementById('loadingDetail');
     if (el) el.textContent = text;
-}
-
-// ────────────────────────────────────────────────
-// Helper: normalisasi nilai level kognitif
-// ────────────────────────────────────────────────
-function normalizeLevel(rawLevel) {
-    if (!rawLevel) return 'Tanpa Level';
-    const s = String(rawLevel).trim();
-    if (!s) return 'Tanpa Level';
-    if (/level\s*1|^1$|^l1$/i.test(s)) return 'Level 1';
-    if (/level\s*2|^2$|^l2$/i.test(s)) return 'Level 2';
-    if (/level\s*3|^3$|^l3$/i.test(s)) return 'Level 3';
-    const m = s.match(/^Level\s+(\d+)/i);
-    if (m) return 'Level ' + m[1];
-    return 'Tanpa Level';
-}
-
-// ────────────────────────────────────────────────
-// STACKED BAR CHART HELPER
-// ────────────────────────────────────────────────
-function renderStackedBar(benar, salah, kosong, total, compact = false) {
-    if (total === 0) return '';
-    const pBenar  = (benar  / total) * 100;
-    const pSalah  = (salah  / total) * 100;
-    const pKosong = (kosong / total) * 100;
-    const height  = compact ? '10px' : '14px';
-
-    const segments = [];
-    if (benar > 0)  segments.push(`<div title="${benar} Benar (${Math.round(pBenar)}%)"  style="width:${pBenar}%;height:${height};background:#10b981;transition:width 0.5s ease;"></div>`);
-    if (salah > 0)  segments.push(`<div title="${salah} Salah (${Math.round(pSalah)}%)"  style="width:${pSalah}%;height:${height};background:#ef4444;transition:width 0.5s ease;"></div>`);
-    if (kosong > 0) segments.push(`<div title="${kosong} Kosong (${Math.round(pKosong)}%)" style="width:${pKosong}%;height:${height};background:#d1d5db;transition:width 0.5s ease;"></div>`);
-
-    return `<div style="display:flex;background:#f3f4f6;border-radius:999px;overflow:hidden;gap:1px;">${segments.join('')}</div>`;
-}
-
-// ────────────────────────────────────────────────
-// Peta Kompetensi: ambil jawaban dari exam_answers
-// ────────────────────────────────────────────────
-async function fetchPetaKompetensi(sessionId) {
-    try {
-        const { data: answerRows, error } = await supabase
-            .from('exam_answers')
-            .select(`
-                is_correct, selected_answer, user_answer,
-                questions:question_id (bab, chapter, question_type, correct_answer, correct_answers, category_mapping, level, cognitive_level, nomor_soal, question_number)
-            `)
-            .eq('exam_session_id', sessionId)
-            .order('created_at', { ascending: true });
-
-        if (error) {
-            console.warn('[PetaKompetensi] DB error:', error);
-            return null;
-        }
-        if (!answerRows || answerRows.length === 0) {
-            console.warn('[PetaKompetensi] Tidak ada data untuk session:', sessionId);
-            return null;
-        }
-
-        const babMap = {};
-        answerRows.forEach((row, idx) => {
-            const q = row.questions;
-            if (!q) return;
-            const bab   = (q.bab || q.chapter || 'Lainnya').trim();
-            const level = normalizeLevel(q.level || q.cognitive_level);
-            const nomorSoal = q.nomor_soal || q.question_number || (idx + 1);
-
-            if (!babMap[bab]) babMap[bab] = { total: 0, benar: 0, salah: 0, kosong: 0, levels: {} };
-            if (!babMap[bab].levels[level]) babMap[bab].levels[level] = { benar: 0, salah: 0, kosong: 0, soal: [] };
-
-            const answer = row.selected_answer ?? row.user_answer ?? null;
-            babMap[bab].total++;
-
-            if (!answer || answer === '') {
-                babMap[bab].kosong++;
-                babMap[bab].levels[level].kosong++;
-                babMap[bab].levels[level].soal.push({ no: nomorSoal, status: 'kosong' });
-                return;
-            }
-
-            // Gunakan is_correct dari DB jika tersedia
-            let isCorrect = null;
-            if (row.is_correct === true) isCorrect = true;
-            else if (row.is_correct === false) isCorrect = false;
-            else {
-                try {
-                    if (q.question_type === 'PGK MCMA') {
-                        const sel = answer.split(',').sort();
-                        const cor = Array.isArray(q.correct_answers)
-                            ? q.correct_answers.sort()
-                            : (q.correct_answers || '').split(',').sort();
-                        isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
-                    } else if (q.question_type === 'PGK Kategori') {
-                        const sel = typeof answer === 'string' ? JSON.parse(answer) : answer;
-                        const map = typeof q.category_mapping === 'string' ? JSON.parse(q.category_mapping) : q.category_mapping;
-                        if (map && sel) {
-                            let ok = true;
-                            for (const [k, v] of Object.entries(sel)) { if (map[k] !== v) { ok = false; break; } }
-                            for (const [k, v] of Object.entries(map)) { if (v && sel[k] !== true) { ok = false; break; } }
-                            isCorrect = ok;
-                        } else { isCorrect = false; }
-                    } else {
-                        isCorrect = answer === q.correct_answer;
-                    }
-                } catch(e) { isCorrect = false; }
-            }
-
-            if (isCorrect) {
-                babMap[bab].benar++;
-                babMap[bab].levels[level].benar++;
-                babMap[bab].levels[level].soal.push({ no: nomorSoal, status: 'benar' });
-            } else {
-                babMap[bab].salah++;
-                babMap[bab].levels[level].salah++;
-                babMap[bab].levels[level].soal.push({ no: nomorSoal, status: 'salah' });
-            }
-        });
-
-        return Object.keys(babMap).length > 0 ? babMap : null;
-    } catch(e) {
-        console.warn('[PetaKompetensi] Error:', e);
-        return null;
-    }
-}
-
-// ────────────────────────────────────────────────
-// Render Peta Kompetensi — ENHANCED dengan stacked bar
-// ────────────────────────────────────────────────
-function renderPetaKompetensi(babMap) {
-    if (!babMap) return '';
-
-    const babs = Object.keys(babMap).sort();
-    if (babs.length === 0) return '';
-
-    // Helper: label sub-level
-    function lvSubLabel(lv) {
-        if (lv === 'Level 1') return 'Pengetahuan';
-        if (lv === 'Level 2') return 'Aplikasi';
-        if (lv === 'Level 3') return 'Penalaran';
-        return '';
-    }
-
-    // Helper: render pills nomor soal
-    function renderSoalPills(soalArr) {
-        return [...soalArr].sort((a, b) => Number(a.no) - Number(b.no)).map(s => {
-            if (s.status === 'benar') {
-                return `<span title="Soal No. ${s.no} — Benar" style="
-                    display:inline-flex;align-items:center;justify-content:center;
-                    min-width:28px;height:24px;padding:0 6px;
-                    background:#d1fae5;color:#065f46;
-                    border:1.5px solid #6ee7b7;border-radius:6px;
-                    font-size:0.72rem;font-weight:700;cursor:default;">${s.no}✓</span>`;
-            } else if (s.status === 'salah') {
-                return `<span title="Soal No. ${s.no} — Salah" style="
-                    display:inline-flex;align-items:center;justify-content:center;
-                    min-width:28px;height:24px;padding:0 6px;
-                    background:#fee2e2;color:#991b1b;
-                    border:1.5px solid #fca5a5;border-radius:6px;
-                    font-size:0.72rem;font-weight:700;cursor:default;">${s.no}✗</span>`;
-            } else {
-                return `<span title="Soal No. ${s.no} — Tidak Dijawab" style="
-                    display:inline-flex;align-items:center;justify-content:center;
-                    min-width:28px;height:24px;padding:0 6px;
-                    background:#f3f4f6;color:#9ca3af;
-                    border:1.5px solid #e5e7eb;border-radius:6px;
-                    font-size:0.72rem;font-weight:700;cursor:default;">${s.no}—</span>`;
-            }
-        }).join(' ');
-    }
-
-    const levelOrder = ['Level 1','Level 2','Level 3'];
-
-    const rows = babs.map(bab => {
-        const d = babMap[bab];
-        const pct = d.total > 0 ? Math.round((d.benar / d.total) * 100) : 0;
-        const bgLabel    = pct >= 70 ? '#d1fae5' : pct >= 50 ? '#fef3c7' : '#fee2e2';
-        const labelColor = pct >= 70 ? '#065f46' : pct >= 50 ? '#92400e' : '#991b1b';
-        const emoji      = pct >= 70 ? '✅' : pct >= 50 ? '⚠️' : '❌';
-        const label      = pct >= 70 ? 'Baik' : pct >= 50 ? 'Cukup' : 'Perlu Latihan';
-
-        // Urutkan level
-        const levels = Object.keys(d.levels).sort((a, b) => {
-            const ia = levelOrder.indexOf(a), ib = levelOrder.indexOf(b);
-            if (ia !== -1 && ib !== -1) return ia - ib;
-            if (ia !== -1) return -1; if (ib !== -1) return 1;
-            return a.localeCompare(b);
-        });
-
-        // Stacked bar utama
-        const mainStackedBar = renderStackedBar(d.benar, d.salah, d.kosong, d.total);
-
-        // Detail tiap level
-        const levelRows = levels.map(lv => {
-            const lvd    = d.levels[lv];
-            const lvBenar  = lvd.benar;
-            const lvSalah  = lvd.salah;
-            const lvKosong = lvd.kosong;
-            const lvTotal  = lvBenar + lvSalah + lvKosong;
-            const lvPct    = lvTotal > 0 ? Math.round((lvBenar / lvTotal) * 100) : 0;
-            const lvSub    = lvSubLabel(lv);
-
-            const lvBg = lvPct >= 70 ? '#d1fae5' : lvPct >= 50 ? '#fef3c7' : '#fee2e2';
-            const lvFg = lvPct >= 70 ? '#065f46' : lvPct >= 50 ? '#92400e' : '#991b1b';
-
-            const lvStackedBar = renderStackedBar(lvBenar, lvSalah, lvKosong, lvTotal, true);
-
-            return `
-            <div style="margin-top:10px;padding:12px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">
-                <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
-                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                        <span style="font-size:0.78rem;font-weight:700;color:#4f46e5;background:#ede9fe;padding:2px 9px;border-radius:20px;">
-                            ${lv}${lvSub ? ' · ' + lvSub : ''}
-                        </span>
-                        <span style="font-size:0.75rem;color:#059669;font-weight:600;">✔ ${lvBenar}</span>
-                        <span style="font-size:0.75rem;color:#dc2626;font-weight:600;">✘ ${lvSalah}</span>
-                        ${lvKosong > 0 ? `<span style="font-size:0.75rem;color:#9ca3af;font-weight:600;">— ${lvKosong}</span>` : ''}
-                    </div>
-                    <span style="font-size:0.72rem;font-weight:700;color:${lvFg};background:${lvBg};padding:2px 9px;border-radius:20px;">
-                        ${lvPct}%
-                    </span>
-                </div>
-
-                <!-- Stacked bar per level -->
-                <div style="margin-bottom:8px;">
-                    ${lvStackedBar}
-                    <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:#9ca3af;margin-top:3px;">
-                        <span style="color:#10b981;font-weight:600;">${lvBenar} benar</span>
-                        <span style="color:#6b7280;">${lvTotal} soal</span>
-                        <span style="color:#ef4444;font-weight:600;">${lvSalah} salah</span>
-                    </div>
-                </div>
-
-                <!-- Pills nomor soal -->
-                <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">
-                    ${renderSoalPills(lvd.soal)}
-                </div>
-            </div>`;
-        }).join('');
-
-        return `
-        <div style="background:#fafafa;border:1px solid #e5e7eb;border-radius:14px;padding:16px 18px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,0.04);">
-            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <span style="font-size:1.1rem;">${emoji}</span>
-                    <span style="font-weight:700;color:#1f2937;font-size:0.92rem;">${bab}</span>
-                </div>
-                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-                    <span style="color:#059669;font-size:0.8rem;font-weight:600;">✔ ${d.benar} Benar</span>
-                    <span style="color:#dc2626;font-size:0.8rem;font-weight:600;">✘ ${d.salah} Salah</span>
-                    ${(d.kosong || 0) > 0 ? `<span style="color:#9ca3af;font-size:0.8rem;font-weight:600;">— ${d.kosong} Kosong</span>` : ''}
-                    <span style="background:${bgLabel};color:${labelColor};padding:2px 10px;border-radius:20px;font-size:0.72rem;font-weight:700;">${label}</span>
-                </div>
-            </div>
-
-            <!-- Stacked bar utama -->
-            <div style="margin-bottom:4px;">
-                ${mainStackedBar}
-            </div>
-            <div style="display:flex;justify-content:space-between;font-size:0.72rem;color:#9ca3af;margin-bottom:2px;">
-                <span style="color:#10b981;font-weight:600;">${d.benar} benar</span>
-                <span style="color:#6b7280;">${pct}% dari ${d.total} soal</span>
-                <span style="color:#ef4444;font-weight:600;">${d.salah} salah</span>
-            </div>
-
-            <!-- Detail per level kognitif -->
-            ${levelRows}
-        </div>`;
-    }).join('');
-
-    return `
-    <div class="peta-kompetensi-card" style="background:#fff;border-radius:16px;padding:28px;box-shadow:0 4px 20px rgba(0,0,0,0.06);margin-bottom:24px;border-top:4px solid #7c3aed;">
-        <h4 style="font-size:1rem;font-weight:700;color:#374151;margin-bottom:6px;display:flex;align-items:center;gap:8px;">
-            <i class="fas fa-map" style="color:#7c3aed;"></i> Peta Kompetensi
-        </h4>
-        <p style="font-size:0.8rem;color:#9ca3af;margin-bottom:18px;">Performa per bab beserta detail level kognitif (stacked bar: <span style="color:#10b981;font-weight:600;">■ benar</span> · <span style="color:#ef4444;font-weight:600;">■ salah</span> · <span style="color:#9ca3af;font-weight:600;">■ kosong</span>)</p>
-        ${rows}
-        <!-- Legenda -->
-        <div style="padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;">
-            <div style="font-size:0.78rem;font-weight:700;color:#374151;margin-bottom:10px;">📊 Keterangan Stacked Bar & Nomor Soal:</div>
-            <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
-                <span style="display:inline-flex;align-items:center;gap:6px;font-size:0.77rem;color:#065f46;">
-                    <span style="display:inline-block;width:24px;height:12px;background:#10b981;border-radius:3px;"></span>Benar
-                </span>
-                <span style="display:inline-flex;align-items:center;gap:6px;font-size:0.77rem;color:#991b1b;">
-                    <span style="display:inline-block;width:24px;height:12px;background:#ef4444;border-radius:3px;"></span>Salah
-                </span>
-                <span style="display:inline-flex;align-items:center;gap:6px;font-size:0.77rem;color:#6b7280;">
-                    <span style="display:inline-block;width:24px;height:12px;background:#d1d5db;border-radius:3px;"></span>Tidak Dijawab
-                </span>
-            </div>
-            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding-top:10px;border-top:1px solid #e2e8f0;">
-                <span style="display:inline-flex;align-items:center;gap:5px;font-size:0.77rem;color:#065f46;">
-                    <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:22px;background:#d1fae5;color:#065f46;border:1.5px solid #6ee7b7;border-radius:6px;font-size:0.7rem;font-weight:700;">7✓</span> Benar
-                </span>
-                <span style="display:inline-flex;align-items:center;gap:5px;font-size:0.77rem;color:#991b1b;">
-                    <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:22px;background:#fee2e2;color:#991b1b;border:1.5px solid #fca5a5;border-radius:6px;font-size:0.7rem;font-weight:700;">3✗</span> Salah
-                </span>
-                <span style="display:inline-flex;align-items:center;gap:5px;font-size:0.77rem;color:#6b7280;">
-                    <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:22px;background:#f3f4f6;color:#9ca3af;border:1.5px solid #e5e7eb;border-radius:6px;font-size:0.7rem;font-weight:700;">5—</span> Tidak Dijawab
-                </span>
-                <span style="font-size:0.75rem;color:#6b7280;">| Angka = nomor soal</span>
-            </div>
-            <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb;">
-                <span style="font-size:0.77rem;color:#166534;"><span style="color:#059669;font-weight:700;">✅ ≥70%</span> Baik</span>
-                <span style="font-size:0.77rem;color:#92400e;"><span style="color:#d97706;font-weight:700;">⚠️ 50–69%</span> Cukup</span>
-                <span style="font-size:0.77rem;color:#991b1b;"><span style="color:#dc2626;font-weight:700;">❌ &lt;50%</span> Perlu Latihan</span>
-            </div>
-        </div>
-    </div>`;
 }
 
 // ────────────────────────────────────────────────
@@ -460,6 +159,7 @@ function renderGlobalAiAnalysis(data, analyticsData, babMap) {
         : null;
 
     container.innerHTML = `
+        <!-- Info waktu analisis -->
         ${analyzedAt ? `
         <div style="text-align:right;margin-bottom:8px;">
             <span style="font-size:0.78rem;color:#9ca3af;"><i class="fas fa-clock"></i> Dianalisis: ${analyzedAt}</span>
@@ -471,7 +171,7 @@ function renderGlobalAiAnalysis(data, analyticsData, babMap) {
             <p>${data.summary || 'Tidak ada ringkasan tersedia.'}</p>
         </div>
 
-        <!-- Peta Kompetensi (ENHANCED) -->
+        <!-- Peta Kompetensi -->
         ${renderPetaKompetensi(babMap)}
 
         <!-- Kekuatan & Kelemahan -->
@@ -517,12 +217,137 @@ function renderGlobalAiAnalysis(data, analyticsData, babMap) {
 
 // ────────────────────────────────────────────────
 // Helper: hitung matriks kognitif dari data jawaban
+// (digunakan jika data tersimpan masih perlu di-compute ulang)
 // ────────────────────────────────────────────────
 function buildCognitiveMatrix(analysisData) {
+    // Jika data sudah menyimpan levelKognitif, gunakan langsung
     if (analysisData.levelKognitif) {
         return { levelKognitif: analysisData.levelKognitif };
     }
     return null;
+}
+
+// ────────────────────────────────────────────────
+// Peta Kompetensi: ambil jawaban dari exam_answers
+// lalu hitung benar/salah/kosong per bab
+// ────────────────────────────────────────────────
+async function fetchPetaKompetensi(sessionId) {
+    try {
+        const { data: answerRows, error } = await supabase
+            .from('exam_answers')
+            .select(`
+                is_correct, selected_answer, user_answer,
+                questions:question_id (bab, chapter, question_type, correct_answer, correct_answers, category_mapping)
+            `)
+            .eq('exam_session_id', sessionId);
+
+        if (error || !answerRows || answerRows.length === 0) return null;
+
+        const babMap = {};
+        answerRows.forEach(row => {
+            const q = row.questions;
+            if (!q) return;
+            const bab = (q.bab || q.chapter || 'Lainnya').trim();
+            if (!babMap[bab]) babMap[bab] = { total: 0, benar: 0, salah: 0, kosong: 0 };
+
+            const answer = row.selected_answer ?? row.user_answer ?? null;
+            babMap[bab].total++;
+
+            if (!answer || answer === '') {
+                babMap[bab].kosong++;
+                return;
+            }
+
+            // Gunakan is_correct dari DB jika tersedia
+            if (row.is_correct === true) { babMap[bab].benar++; return; }
+            if (row.is_correct === false) { babMap[bab].salah++; return; }
+
+            // Fallback hitung manual
+            let isCorrect = false;
+            try {
+                if (q.question_type === 'PGK MCMA') {
+                    const sel = answer.split(',').sort();
+                    const cor = Array.isArray(q.correct_answers)
+                        ? q.correct_answers.sort()
+                        : (q.correct_answers || '').split(',').sort();
+                    isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
+                } else if (q.question_type === 'PGK Kategori') {
+                    const sel = typeof answer === 'string' ? JSON.parse(answer) : answer;
+                    const map = typeof q.category_mapping === 'string' ? JSON.parse(q.category_mapping) : q.category_mapping;
+                    if (map && sel) {
+                        let ok = true;
+                        for (const [k, v] of Object.entries(sel)) { if (map[k] !== v) { ok = false; break; } }
+                        for (const [k, v] of Object.entries(map)) { if (v && sel[k] !== true) { ok = false; break; } }
+                        isCorrect = ok;
+                    }
+                } else {
+                    isCorrect = answer === q.correct_answer;
+                }
+            } catch(e) { isCorrect = false; }
+
+            if (isCorrect) babMap[bab].benar++;
+            else babMap[bab].salah++;
+        });
+
+        return Object.keys(babMap).length > 0 ? babMap : null;
+    } catch(e) {
+        console.warn('[PetaKompetensi] Error:', e);
+        return null;
+    }
+}
+
+// ────────────────────────────────────────────────
+// Render Peta Kompetensi ke dalam container
+// ────────────────────────────────────────────────
+function renderPetaKompetensi(babMap) {
+    if (!babMap) return '';
+
+    const babs = Object.keys(babMap).sort();
+    if (babs.length === 0) return '';
+
+    const rows = babs.map(bab => {
+        const d = babMap[bab];
+        const pct = d.total > 0 ? Math.round((d.benar / d.total) * 100) : 0;
+        const barColor   = pct >= 70 ? '#059669' : pct >= 50 ? '#d97706' : '#dc2626';
+        const bgLabel    = pct >= 70 ? '#d1fae5' : pct >= 50 ? '#fef3c7' : '#fee2e2';
+        const labelColor = pct >= 70 ? '#065f46' : pct >= 50 ? '#92400e' : '#991b1b';
+        const emoji      = pct >= 70 ? '✅' : pct >= 50 ? '⚠️' : '❌';
+        const label      = pct >= 70 ? 'Baik' : pct >= 50 ? 'Cukup' : 'Perlu Latihan';
+
+        return `
+        <div style="background:#fafafa;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:1.1rem;">${emoji}</span>
+                    <span style="font-weight:700;color:#1f2937;font-size:0.92rem;">${bab}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                    <span style="color:#059669;font-size:0.8rem;font-weight:600;">✔ ${d.benar} Benar</span>
+                    <span style="color:#dc2626;font-size:0.8rem;font-weight:600;">✘ ${d.salah} Salah</span>
+                    ${d.kosong > 0 ? `<span style="color:#9ca3af;font-size:0.8rem;font-weight:600;">— ${d.kosong} Kosong</span>` : ''}
+                    <span style="background:${bgLabel};color:${labelColor};padding:2px 10px;border-radius:20px;font-size:0.72rem;font-weight:700;">${label}</span>
+                </div>
+            </div>
+            <div style="background:#e5e7eb;border-radius:999px;height:8px;overflow:hidden;">
+                <div style="width:${pct}%;height:100%;background:${barColor};border-radius:999px;"></div>
+            </div>
+            <div style="text-align:right;font-size:0.72rem;color:#6b7280;margin-top:4px;">${pct}% benar dari ${d.total} soal</div>
+        </div>`;
+    }).join('');
+
+    return `
+    <div class="peta-kompetensi-card" style="background:#fff;border-radius:16px;padding:28px;box-shadow:0 4px 20px rgba(0,0,0,0.06);margin-bottom:24px;border-top:4px solid #7c3aed;">
+        <h4 style="font-size:1rem;font-weight:700;color:#374151;margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+            <i class="fas fa-map" style="color:#7c3aed;"></i> Peta Kompetensi
+        </h4>
+        <p style="font-size:0.8rem;color:#9ca3af;margin-bottom:18px;">Performa per bab berdasarkan sesi ujian ini</p>
+        ${rows}
+        <div style="margin-top:4px;padding:12px 16px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;display:flex;gap:20px;flex-wrap:wrap;">
+            <span style="font-size:0.77rem;color:#166534;"><span style="color:#059669;font-weight:700;">✅ ≥70%</span> Baik</span>
+            <span style="font-size:0.77rem;color:#92400e;"><span style="color:#d97706;font-weight:700;">⚠️ 50–69%</span> Cukup</span>
+            <span style="font-size:0.77rem;color:#991b1b;"><span style="color:#dc2626;font-weight:700;">❌ &lt;50%</span> Perlu Latihan</span>
+        </div>
+    </div>`;
 }
 
 // ────────────────────────────────────────────────
@@ -533,6 +358,7 @@ async function loadAIAnalysisFromDB(sessionId) {
         setStatus('Mengambil data analisis dari database…', 'loading');
         setLoadingDetail('Menghubungkan ke database…');
 
+        // Query ke tabel gemini_analyses berdasarkan session ID
         const { data: analysisRecord, error } = await supabase
             .from('gemini_analyses')
             .select('analysis_data, updated_at')
@@ -548,6 +374,7 @@ async function loadAIAnalysisFromDB(sessionId) {
             return;
         }
 
+        // Jika data tidak ada → analisis belum diproses admin
         if (!analysisRecord || !analysisRecord.analysis_data) {
             console.log('[AI Viewer] Analisis belum tersedia untuk session:', sessionId);
             showPendingMessage();
@@ -558,17 +385,22 @@ async function loadAIAnalysisFromDB(sessionId) {
         console.log('[AI Viewer] Data analisis ditemukan:', analysisData);
 
         setLoadingDetail('Mengambil data peta kompetensi…');
+
+        // Ambil peta kompetensi dari exam_answers
         const babMap = await fetchPetaKompetensi(sessionId);
 
         setLoadingDetail('Merender hasil analisis…');
 
+        // Sembunyikan loading card
         const loadingCard = document.getElementById('aiLoadingCard');
         if (loadingCard) loadingCard.style.display = 'none';
 
+        // Tambahkan timestamp ke analysisData jika ada
         if (analysisRecord.updated_at && !analysisData.analyzed_at) {
             analysisData.analyzed_at = analysisRecord.updated_at;
         }
 
+        // Render ke UI (kirim babMap untuk peta kompetensi)
         const extraData = buildCognitiveMatrix(analysisData);
         renderGlobalAiAnalysis(analysisData, extraData, babMap);
 
@@ -579,7 +411,7 @@ async function loadAIAnalysisFromDB(sessionId) {
 }
 
 // ────────────────────────────────────────────────
-// Entry point
+// Entry point — jalankan saat DOM siap
 // ────────────────────────────────────────────────
 let _sessionId = null;
 let _userId = null;
@@ -589,11 +421,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     _sessionId = params.get('session');
     _userId = params.get('user');
 
+    // Update status bar
     const statusSession = document.getElementById('statusSession');
     if (statusSession) {
         statusSession.textContent = _sessionId ? _sessionId.slice(0, 12) + '…' : 'Tidak ada';
     }
 
+    // Update header subtitle
     const subtitle = document.getElementById('headerSubtitle');
     if (subtitle) {
         subtitle.textContent = _sessionId
@@ -601,6 +435,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             : 'Parameter tidak valid';
     }
 
+    // Validasi parameter
     if (!_sessionId || _sessionId === 'null' || _sessionId === 'undefined') {
         showError(
             'Parameter URL Tidak Valid',
@@ -609,13 +444,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
+    // REFACTORED: Hanya baca dari DB, tidak panggil Gemini API
     await loadAIAnalysisFromDB(_sessionId);
 });
 
+// Tombol kembali ke halaman utama (global)
 window.goToHomePage = function () {
     window.location.href = 'halamanpertama.html';
 };
 
+// Refresh: coba baca ulang dari DB (bukan retry API)
 window.retryAnalysis = async function () {
     const errCard = document.getElementById('aiErrorCard');
     if (errCard) {
