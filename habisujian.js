@@ -2,7 +2,6 @@
 // REFACTORED: AI analysis dipindah ke sisi admin (tidak lagi dipanggil di sini)
 import { supabase } from './clientSupabase.js';
 import { getCurrentUser } from './auth.js';
-import { getItemParameters } from './irt_analysis.js';
 
 // Global variables
 let examSessionId = null;
@@ -289,16 +288,6 @@ function displayExamResults(session) {
     // Render Peta Kompetensi
     renderPetaKompetensi(questions, answers);
 
-    // IRT Analysis (jika elemen tersedia)
-    try {
-        const itemParams = questions.map(q => getItemParameters(q));
-        if (itemParams && itemParams.length > 0) {
-            const theta = estimateTheta(answers, questions, itemParams);
-            displayIRTResults(theta);
-        }
-    } catch (irtErr) {
-        console.warn('IRT analysis skipped:', irtErr.message);
-    }
 }
 
 // Theta estimation (simplified EAP)
