@@ -94,7 +94,7 @@ function setLoadingDetail(text) {
 // ────────────────────────────────────────────────
 // Render hasil analisis AI ke DOM
 // ────────────────────────────────────────────────
-function renderGlobalAiAnalysis(data, analyticsData) {
+function renderGlobalAiAnalysis(data, analyticsData, babMap) {
     const container = document.getElementById('aiAnalysisContent');
     if (!container) return;
 
@@ -171,6 +171,9 @@ function renderGlobalAiAnalysis(data, analyticsData) {
             <p>${data.summary || 'Tidak ada ringkasan tersedia.'}</p>
         </div>
 
+        <!-- Peta Kompetensi -->
+        ${renderPetaKompetensi(babMap)}
+
         <!-- Kekuatan & Kelemahan -->
         <div class="ai-details-grid">
             <div class="detail-card strengths">
@@ -225,6 +228,129 @@ function buildCognitiveMatrix(analysisData) {
 }
 
 // ────────────────────────────────────────────────
+// Peta Kompetensi: ambil jawaban dari exam_answers
+// lalu hitung benar/salah/kosong per bab
+// ────────────────────────────────────────────────
+async function fetchPetaKompetensi(sessionId) {
+    try {
+        const { data: answerRows, error } = await supabase
+            .from('exam_answers')
+            .select(`
+                is_correct, selected_answer, user_answer,
+                questions:question_id (bab, chapter, question_type, correct_answer, correct_answers, category_mapping)
+            `)
+            .eq('exam_session_id', sessionId);
+
+        if (error || !answerRows || answerRows.length === 0) return null;
+
+        const babMap = {};
+        answerRows.forEach(row => {
+            const q = row.questions;
+            if (!q) return;
+            const bab = (q.bab || q.chapter || 'Lainnya').trim();
+            if (!babMap[bab]) babMap[bab] = { total: 0, benar: 0, salah: 0, kosong: 0 };
+
+            const answer = row.selected_answer ?? row.user_answer ?? null;
+            babMap[bab].total++;
+
+            if (!answer || answer === '') {
+                babMap[bab].kosong++;
+                return;
+            }
+
+            // Gunakan is_correct dari DB jika tersedia
+            if (row.is_correct === true) { babMap[bab].benar++; return; }
+            if (row.is_correct === false) { babMap[bab].salah++; return; }
+
+            // Fallback hitung manual
+            let isCorrect = false;
+            try {
+                if (q.question_type === 'PGK MCMA') {
+                    const sel = answer.split(',').sort();
+                    const cor = Array.isArray(q.correct_answers)
+                        ? q.correct_answers.sort()
+                        : (q.correct_answers || '').split(',').sort();
+                    isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
+                } else if (q.question_type === 'PGK Kategori') {
+                    const sel = typeof answer === 'string' ? JSON.parse(answer) : answer;
+                    const map = typeof q.category_mapping === 'string' ? JSON.parse(q.category_mapping) : q.category_mapping;
+                    if (map && sel) {
+                        let ok = true;
+                        for (const [k, v] of Object.entries(sel)) { if (map[k] !== v) { ok = false; break; } }
+                        for (const [k, v] of Object.entries(map)) { if (v && sel[k] !== true) { ok = false; break; } }
+                        isCorrect = ok;
+                    }
+                } else {
+                    isCorrect = answer === q.correct_answer;
+                }
+            } catch(e) { isCorrect = false; }
+
+            if (isCorrect) babMap[bab].benar++;
+            else babMap[bab].salah++;
+        });
+
+        return Object.keys(babMap).length > 0 ? babMap : null;
+    } catch(e) {
+        console.warn('[PetaKompetensi] Error:', e);
+        return null;
+    }
+}
+
+// ────────────────────────────────────────────────
+// Render Peta Kompetensi ke dalam container
+// ────────────────────────────────────────────────
+function renderPetaKompetensi(babMap) {
+    if (!babMap) return '';
+
+    const babs = Object.keys(babMap).sort();
+    if (babs.length === 0) return '';
+
+    const rows = babs.map(bab => {
+        const d = babMap[bab];
+        const pct = d.total > 0 ? Math.round((d.benar / d.total) * 100) : 0;
+        const barColor   = pct >= 70 ? '#059669' : pct >= 50 ? '#d97706' : '#dc2626';
+        const bgLabel    = pct >= 70 ? '#d1fae5' : pct >= 50 ? '#fef3c7' : '#fee2e2';
+        const labelColor = pct >= 70 ? '#065f46' : pct >= 50 ? '#92400e' : '#991b1b';
+        const emoji      = pct >= 70 ? '✅' : pct >= 50 ? '⚠️' : '❌';
+        const label      = pct >= 70 ? 'Baik' : pct >= 50 ? 'Cukup' : 'Perlu Latihan';
+
+        return `
+        <div style="background:#fafafa;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;margin-bottom:12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:1.1rem;">${emoji}</span>
+                    <span style="font-weight:700;color:#1f2937;font-size:0.92rem;">${bab}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                    <span style="color:#059669;font-size:0.8rem;font-weight:600;">✔ ${d.benar} Benar</span>
+                    <span style="color:#dc2626;font-size:0.8rem;font-weight:600;">✘ ${d.salah} Salah</span>
+                    ${d.kosong > 0 ? `<span style="color:#9ca3af;font-size:0.8rem;font-weight:600;">— ${d.kosong} Kosong</span>` : ''}
+                    <span style="background:${bgLabel};color:${labelColor};padding:2px 10px;border-radius:20px;font-size:0.72rem;font-weight:700;">${label}</span>
+                </div>
+            </div>
+            <div style="background:#e5e7eb;border-radius:999px;height:8px;overflow:hidden;">
+                <div style="width:${pct}%;height:100%;background:${barColor};border-radius:999px;"></div>
+            </div>
+            <div style="text-align:right;font-size:0.72rem;color:#6b7280;margin-top:4px;">${pct}% benar dari ${d.total} soal</div>
+        </div>`;
+    }).join('');
+
+    return `
+    <div class="peta-kompetensi-card" style="background:#fff;border-radius:16px;padding:28px;box-shadow:0 4px 20px rgba(0,0,0,0.06);margin-bottom:24px;border-top:4px solid #7c3aed;">
+        <h4 style="font-size:1rem;font-weight:700;color:#374151;margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+            <i class="fas fa-map" style="color:#7c3aed;"></i> Peta Kompetensi
+        </h4>
+        <p style="font-size:0.8rem;color:#9ca3af;margin-bottom:18px;">Performa per bab berdasarkan sesi ujian ini</p>
+        ${rows}
+        <div style="margin-top:4px;padding:12px 16px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;display:flex;gap:20px;flex-wrap:wrap;">
+            <span style="font-size:0.77rem;color:#166534;"><span style="color:#059669;font-weight:700;">✅ ≥70%</span> Baik</span>
+            <span style="font-size:0.77rem;color:#92400e;"><span style="color:#d97706;font-weight:700;">⚠️ 50–69%</span> Cukup</span>
+            <span style="font-size:0.77rem;color:#991b1b;"><span style="color:#dc2626;font-weight:700;">❌ &lt;50%</span> Perlu Latihan</span>
+        </div>
+    </div>`;
+}
+
+// ────────────────────────────────────────────────
 // Fungsi utama: HANYA baca dari database
 // ────────────────────────────────────────────────
 async function loadAIAnalysisFromDB(sessionId) {
@@ -258,6 +384,11 @@ async function loadAIAnalysisFromDB(sessionId) {
         const analysisData = analysisRecord.analysis_data;
         console.log('[AI Viewer] Data analisis ditemukan:', analysisData);
 
+        setLoadingDetail('Mengambil data peta kompetensi…');
+
+        // Ambil peta kompetensi dari exam_answers
+        const babMap = await fetchPetaKompetensi(sessionId);
+
         setLoadingDetail('Merender hasil analisis…');
 
         // Sembunyikan loading card
@@ -269,9 +400,9 @@ async function loadAIAnalysisFromDB(sessionId) {
             analysisData.analyzed_at = analysisRecord.updated_at;
         }
 
-        // Render ke UI
+        // Render ke UI (kirim babMap untuk peta kompetensi)
         const extraData = buildCognitiveMatrix(analysisData);
-        renderGlobalAiAnalysis(analysisData, extraData);
+        renderGlobalAiAnalysis(analysisData, extraData, babMap);
 
     } catch (err) {
         console.error('[AI Viewer] Error:', err);
