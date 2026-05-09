@@ -457,6 +457,23 @@ function calculateStandardError(theta) {
 }
 
 /**
+/**
+ * Normalisasi nilai level kognitif dari berbagai format DB ke "Level 1/2/3" atau "Tanpa Level".
+ * Contoh input: "Level 1 (Pengetahuan dan Pemahaman)", "level1", "L1", "1", dll.
+ */
+function normalizeLevel(rawLevel) {
+    if (!rawLevel) return 'Tanpa Level';
+    const s = String(rawLevel).trim();
+    if (!s) return 'Tanpa Level';
+    if (/level\s*1|^1$|^l1$/i.test(s)) return 'Level 1';
+    if (/level\s*2|^2$|^l2$/i.test(s)) return 'Level 2';
+    if (/level\s*3|^3$|^l3$/i.test(s)) return 'Level 3';
+    const m = s.match(/^Level\s+(\d+)/i);
+    if (m) return `Level ${m[1]}`;
+    return 'Tanpa Level';
+}
+
+/**
  * Render Peta Kompetensi per bab di halaman hasil ujian siswa.
  * Menampilkan jumlah benar/salah per bab, breakdown per level kognitif,
  * dan daftar nomor soal beserta status benar/salah pada tiap level.
@@ -472,7 +489,7 @@ function renderPetaKompetensi(questions, answers) {
 
     questions.forEach((q, idx) => {
         const bab   = (q.bab || q.chapter || 'Lainnya').trim();
-        const level = (q.level || q.cognitive_level || '').trim() || 'Tanpa Level';
+        const level = normalizeLevel(q.level || q.cognitive_level);
 
         if (!babMap[bab]) babMap[bab] = { total: 0, benar: 0, salah: 0, kosong: 0, levels: {} };
         if (!babMap[bab].levels[level]) babMap[bab].levels[level] = { soal: [] };

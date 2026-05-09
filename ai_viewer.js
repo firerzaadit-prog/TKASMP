@@ -228,6 +228,21 @@ function buildCognitiveMatrix(analysisData) {
 }
 
 // ────────────────────────────────────────────────
+// Helper: normalisasi nilai level kognitif
+// ────────────────────────────────────────────────
+function normalizeLevel(rawLevel) {
+    if (!rawLevel) return 'Tanpa Level';
+    const s = String(rawLevel).trim();
+    if (!s) return 'Tanpa Level';
+    if (/level\s*1|^1$|^l1$/i.test(s)) return 'Level 1';
+    if (/level\s*2|^2$|^l2$/i.test(s)) return 'Level 2';
+    if (/level\s*3|^3$|^l3$/i.test(s)) return 'Level 3';
+    const m = s.match(/^Level\s+(\d+)/i);
+    if (m) return 'Level ' + m[1];
+    return 'Tanpa Level';
+}
+
+// ────────────────────────────────────────────────
 // Peta Kompetensi: ambil jawaban dari exam_answers
 // lalu hitung benar/salah/kosong per bab
 // ────────────────────────────────────────────────
@@ -242,14 +257,21 @@ async function fetchPetaKompetensi(sessionId) {
             .eq('exam_session_id', sessionId)
             .order('created_at', { ascending: true });
 
-        if (error || !answerRows || answerRows.length === 0) return null;
+        if (error) {
+            console.warn('[PetaKompetensi] DB error:', error);
+            return null;
+        }
+        if (!answerRows || answerRows.length === 0) {
+            console.warn('[PetaKompetensi] Tidak ada data untuk session:', sessionId);
+            return null;
+        }
 
         const babMap = {};
         answerRows.forEach((row, idx) => {
             const q = row.questions;
             if (!q) return;
             const bab   = (q.bab || q.chapter || 'Lainnya').trim();
-            const level = (q.level || q.cognitive_level || '').trim() || 'Tanpa Level';
+            const level = normalizeLevel(q.level || q.cognitive_level);
             // Nomor soal: ambil dari field DB jika ada, fallback ke urutan
             const nomorSoal = q.nomor_soal || q.question_number || (idx + 1);
 
