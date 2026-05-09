@@ -458,7 +458,8 @@ function calculateStandardError(theta) {
 
 /**
  * Render Peta Kompetensi per bab di halaman hasil ujian siswa.
- * Menampilkan jumlah benar / salah / tidak dijawab per bab beserta progress bar.
+ * Menampilkan jumlah benar/salah per bab, breakdown per level kognitif,
+ * dan daftar nomor soal beserta status benar/salah pada tiap level.
  */
 function renderPetaKompetensi(questions, answers) {
     const section = document.getElementById('petaKompetensiSection');
@@ -466,20 +467,23 @@ function renderPetaKompetensi(questions, answers) {
     if (!section || !body) return;
     if (!questions || questions.length === 0) return;
 
-    // ── Kumpulkan data per bab ─────────────────────────────────────
+    // ── Kumpulkan data per bab & level ────────────────────────────
     const babMap = {};
 
     questions.forEach((q, idx) => {
-        const bab = (q.bab || q.chapter || 'Lainnya').trim();
-        if (!babMap[bab]) {
-            babMap[bab] = { total: 0, benar: 0, salah: 0, kosong: 0 };
-        }
+        const bab   = (q.bab || q.chapter || 'Lainnya').trim();
+        const level = (q.level || q.cognitive_level || '').trim() || 'Tanpa Level';
+
+        if (!babMap[bab]) babMap[bab] = { total: 0, benar: 0, salah: 0, kosong: 0, levels: {} };
+        if (!babMap[bab].levels[level]) babMap[bab].levels[level] = { soal: [] };
 
         const answer = answers[idx];
+        const nomorSoal = idx + 1; // nomor urut soal (1-based)
         babMap[bab].total++;
 
         if (!answer || answer === null || answer === '') {
             babMap[bab].kosong++;
+            babMap[bab].levels[level].soal.push({ no: nomorSoal, status: 'kosong' });
             return;
         }
 
@@ -511,51 +515,139 @@ function renderPetaKompetensi(questions, answers) {
             }
         } catch(e) { isCorrect = false; }
 
-        if (isCorrect) babMap[bab].benar++;
-        else babMap[bab].salah++;
+        if (isCorrect) { babMap[bab].benar++; babMap[bab].levels[level].soal.push({ no: nomorSoal, status: 'benar' }); }
+        else { babMap[bab].salah++; babMap[bab].levels[level].soal.push({ no: nomorSoal, status: 'salah' }); }
     });
 
     const babs = Object.keys(babMap).sort();
     if (babs.length === 0) return;
 
-    // ── Render ─────────────────────────────────────────────────────
+    // ── Helper render pills soal ───────────────────────────────────
+    function renderSoalPills(soalArr) {
+        return soalArr.map(s => {
+            if (s.status === 'benar') {
+                return `<span title="Soal No. ${s.no} — Benar" style="
+                    display:inline-flex;align-items:center;justify-content:center;
+                    min-width:28px;height:24px;padding:0 6px;
+                    background:#d1fae5;color:#065f46;
+                    border:1.5px solid #6ee7b7;border-radius:6px;
+                    font-size:0.72rem;font-weight:700;cursor:default;">
+                    ${s.no}✓</span>`;
+            } else if (s.status === 'salah') {
+                return `<span title="Soal No. ${s.no} — Salah" style="
+                    display:inline-flex;align-items:center;justify-content:center;
+                    min-width:28px;height:24px;padding:0 6px;
+                    background:#fee2e2;color:#991b1b;
+                    border:1.5px solid #fca5a5;border-radius:6px;
+                    font-size:0.72rem;font-weight:700;cursor:default;">
+                    ${s.no}✗</span>`;
+            } else {
+                return `<span title="Soal No. ${s.no} — Tidak Dijawab" style="
+                    display:inline-flex;align-items:center;justify-content:center;
+                    min-width:28px;height:24px;padding:0 6px;
+                    background:#f3f4f6;color:#9ca3af;
+                    border:1.5px solid #e5e7eb;border-radius:6px;
+                    font-size:0.72rem;font-weight:700;cursor:default;">
+                    ${s.no}—</span>`;
+            }
+        }).join(' ');
+    }
+
+    // ── Render tiap bab ───────────────────────────────────────────
     body.innerHTML = `
-        <div style="display:grid;gap:14px;">
+        <div style="display:grid;gap:16px;">
             ${babs.map(bab => {
                 const d = babMap[bab];
                 const pct = Math.round((d.benar / d.total) * 100);
-                const barColor = pct >= 70 ? '#059669' : pct >= 50 ? '#d97706' : '#dc2626';
-                const bgBar   = pct >= 70 ? '#d1fae5' : pct >= 50 ? '#fef3c7' : '#fee2e2';
-                const emoji   = pct >= 70 ? '✅' : pct >= 50 ? '⚠️' : '❌';
-                const label   = pct >= 70 ? 'Baik' : pct >= 50 ? 'Cukup' : 'Perlu Latihan';
+                const barColor   = pct >= 70 ? '#059669' : pct >= 50 ? '#d97706' : '#dc2626';
+                const bgBar      = pct >= 70 ? '#d1fae5' : pct >= 50 ? '#fef3c7' : '#fee2e2';
+                const emoji      = pct >= 70 ? '✅' : pct >= 50 ? '⚠️' : '❌';
+                const label      = pct >= 70 ? 'Baik' : pct >= 50 ? 'Cukup' : 'Perlu Latihan';
                 const labelColor = pct >= 70 ? '#059669' : pct >= 50 ? '#d97706' : '#dc2626';
 
-                return `<div style="background:#fafafa;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px;">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+                // Urutkan level: Level 1, Level 2, Level 3, lainnya
+                const levelOrder = ['Level 1','Level 2','Level 3'];
+                const levels = Object.keys(d.levels).sort((a, b) => {
+                    const ia = levelOrder.indexOf(a), ib = levelOrder.indexOf(b);
+                    if (ia !== -1 && ib !== -1) return ia - ib;
+                    if (ia !== -1) return -1;
+                    if (ib !== -1) return 1;
+                    return a.localeCompare(b);
+                });
+
+                const levelRows = levels.map(lv => {
+                    const soalArr = d.levels[lv].soal;
+                    const lvBenar = soalArr.filter(s => s.status === 'benar').length;
+                    const lvSalah = soalArr.filter(s => s.status === 'salah').length;
+                    const lvKosong = soalArr.filter(s => s.status === 'kosong').length;
+                    const lvLabel = lv === 'Level 1' ? 'Pengetahuan'
+                                  : lv === 'Level 2' ? 'Aplikasi'
+                                  : lv === 'Level 3' ? 'Penalaran' : '';
+                    return `
+                    <div style="margin-top:10px;padding:10px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+                            <span style="font-size:0.78rem;font-weight:700;color:#4f46e5;background:#ede9fe;padding:2px 8px;border-radius:20px;">
+                                ${lv}${lvLabel ? ' · ' + lvLabel : ''}
+                            </span>
+                            <span style="font-size:0.75rem;color:#059669;font-weight:600;">✔ ${lvBenar} benar</span>
+                            <span style="font-size:0.75rem;color:#dc2626;font-weight:600;">✘ ${lvSalah} salah</span>
+                            ${lvKosong > 0 ? `<span style="font-size:0.75rem;color:#9ca3af;font-weight:600;">— ${lvKosong} kosong</span>` : ''}
+                        </div>
+                        <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;">
+                            ${renderSoalPills(soalArr)}
+                        </div>
+                    </div>`;
+                }).join('');
+
+                return `
+                <div style="background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px 18px;box-shadow:0 1px 4px rgba(0,0,0,0.04);">
+                    <!-- Header bab -->
+                    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
                         <div style="display:flex;align-items:center;gap:8px;">
                             <span style="font-size:1.1rem;">${emoji}</span>
                             <span style="font-weight:700;color:#1f2937;font-size:0.92rem;">${bab}</span>
                         </div>
-                        <div style="display:flex;align-items:center;gap:10px;">
+                        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                             <span style="color:#059669;font-size:0.8rem;font-weight:600;">✔ ${d.benar} Benar</span>
                             <span style="color:#dc2626;font-size:0.8rem;font-weight:600;">✘ ${d.salah} Salah</span>
                             ${d.kosong > 0 ? `<span style="color:#9ca3af;font-size:0.8rem;font-weight:600;">— ${d.kosong} Kosong</span>` : ''}
                             <span style="background:${bgBar};color:${labelColor};padding:2px 10px;border-radius:20px;font-size:0.72rem;font-weight:700;">${label}</span>
                         </div>
                     </div>
+                    <!-- Progress bar -->
                     <div style="background:#e5e7eb;border-radius:999px;height:8px;overflow:hidden;">
                         <div style="width:${pct}%;height:100%;background:${barColor};border-radius:999px;transition:width 0.6s ease;"></div>
                     </div>
                     <div style="text-align:right;font-size:0.72rem;color:#6b7280;margin-top:4px;">${pct}% benar dari ${d.total} soal</div>
+                    <!-- Detail per level -->
+                    ${levelRows}
                 </div>`;
             }).join('')}
         </div>
 
-        <!-- Legenda ringkas -->
-        <div style="margin-top:16px;padding:12px 16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;display:flex;gap:20px;flex-wrap:wrap;">
-            <span style="font-size:0.78rem;color:#166534;"><span style="color:#059669;font-weight:700;">✅ ≥70%</span> Baik — pertahankan!</span>
-            <span style="font-size:0.78rem;color:#92400e;"><span style="color:#d97706;font-weight:700;">⚠️ 50–69%</span> Cukup — perlu ulang materi</span>
-            <span style="font-size:0.78rem;color:#991b1b;"><span style="color:#dc2626;font-weight:700;">❌ &lt;50%</span> Perlu latihan intensif</span>
+        <!-- Legenda -->
+        <div style="margin-top:16px;padding:12px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">
+            <div style="font-size:0.78rem;font-weight:700;color:#374151;margin-bottom:8px;">Keterangan Nomor Soal:</div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
+                <span style="display:inline-flex;align-items:center;gap:6px;font-size:0.77rem;color:#065f46;">
+                    <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:22px;background:#d1fae5;color:#065f46;border:1.5px solid #6ee7b7;border-radius:6px;font-size:0.7rem;font-weight:700;">7✓</span>
+                    Benar
+                </span>
+                <span style="display:inline-flex;align-items:center;gap:6px;font-size:0.77rem;color:#991b1b;">
+                    <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:22px;background:#fee2e2;color:#991b1b;border:1.5px solid #fca5a5;border-radius:6px;font-size:0.7rem;font-weight:700;">3✗</span>
+                    Salah
+                </span>
+                <span style="display:inline-flex;align-items:center;gap:6px;font-size:0.77rem;color:#6b7280;">
+                    <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:22px;background:#f3f4f6;color:#9ca3af;border:1.5px solid #e5e7eb;border-radius:6px;font-size:0.7rem;font-weight:700;">5—</span>
+                    Tidak Dijawab
+                </span>
+                <span style="font-size:0.75rem;color:#6b7280;">| Angka = nomor soal dalam ujian</span>
+            </div>
+            <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb;">
+                <span style="font-size:0.77rem;color:#166534;"><span style="color:#059669;font-weight:700;">✅ ≥70%</span> Baik — pertahankan!</span>
+                <span style="font-size:0.77rem;color:#92400e;"><span style="color:#d97706;font-weight:700;">⚠️ 50–69%</span> Cukup — perlu ulang materi</span>
+                <span style="font-size:0.77rem;color:#991b1b;"><span style="color:#dc2626;font-weight:700;">❌ &lt;50%</span> Perlu latihan intensif</span>
+            </div>
         </div>
     `;
 
