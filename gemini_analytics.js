@@ -46,7 +46,7 @@ class GeminiAnalytics {
      *   - prosesLabel   : Nama proses berpikir yang sudah dinormalisasi
      *   - deskripsi     : Deskripsi proses berpikir sesuai dokumen resmi Kemdikbudristek
      *   - implikasiSalah: Penjelasan spesifik tentang apa artinya siswa GAGAL pada proses ini,
-     *                     digunakan AI untuk menyusun weaknesses & learningRoadmap yang tajam
+     *                     digunakan AI untuk menyusun weaknesses & learningSuggestions yang tajam
      */
     getProsesBerpikirDescription(level, proses) {
         // --- Tabel pemetaan lengkap dari dokumen resmi Kemdikbudristek ---
@@ -344,20 +344,7 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
     }
 
     // ── BATCH ANALYSIS: 1 API call untuk 30 soal sekaligus ──────────────────
-    /**
-     * @param {Array}  answersPayload  - Array objek jawaban siswa (wajib)
-     * @param {Object|string|null} studentHistory
-     *   [CIRI 4] Data riwayat ujian sebelumnya untuk analisis longitudinal (opsional).
-     *   Boleh berupa objek terstruktur atau string ringkasan.
-     *   Contoh objek:
-     *   {
-     *     ujian_sebelumnya: [
-     *       { tanggal: "2025-03-10", skor: 65, kelemahan: ["Memodelkan", "Menganalisis"] },
-     *       { tanggal: "2025-04-15", skor: 70, kelemahan: ["Memodelkan"] }
-     *     ]
-     *   }
-     */
-    async analyzeBatchAnswers(answersPayload, studentHistory = null) {
+    async analyzeBatchAnswers(answersPayload) {
         const maxRetries = 3;
         let attempt = 0;
 
@@ -373,11 +360,7 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
                     },
                     body: JSON.stringify({
                         answers: answersPayload,
-                        sessionInfo: { timestamp: new Date().toISOString() },
-                        // ── [CIRI 4] Sertakan riwayat pelajar dalam payload jika ada ──
-                        ...(studentHistory !== null && studentHistory !== undefined
-                            ? { studentHistory }
-                            : {})
+                        sessionInfo: { timestamp: new Date().toISOString() }
                     })
                 });
 
@@ -424,8 +407,6 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
     }
 
     // Store batch result as a single session-level record
-    // [CIRI 2 & 3] Dikemas kini untuk menyokong struktur weaknesses (array of objects)
-    // dan learningRoadmap (object) yang baharu.
     async storeBatchResult(sessionId, batchResult) {
         try {
             if (!sessionId || !batchResult) {
@@ -438,16 +419,8 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
                 analysis_data: {
                     summary: batchResult.summary || '',
                     strengths: Array.isArray(batchResult.strengths) ? batchResult.strengths : [],
-                    // [CIRI 2] weaknesses kini array of objects — simpan terus tanpa transformasi
                     weaknesses: Array.isArray(batchResult.weaknesses) ? batchResult.weaknesses : [],
-                    // [CIRI 3] learningRoadmap menggantikan learningSuggestions
-                    learningRoadmap: (batchResult.learningRoadmap && typeof batchResult.learningRoadmap === 'object')
-                        ? batchResult.learningRoadmap
-                        : {
-                            langkah1_mendasar: '',
-                            langkah2_menengah: '',
-                            langkah3_penerapan: ''
-                          },
+                    learningSuggestions: Array.isArray(batchResult.learningSuggestions) ? batchResult.learningSuggestions : [],
                     is_batch: true,
                     analyzed_at: new Date().toISOString()
                 },
@@ -469,14 +442,7 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
     }
 
     getFallbackAnalysis() {
-        return {
-            score: 0,
-            correctness: "Error",
-            explanation: "Analisis AI gagal.",
-            strengths: [],
-            weaknesses: [],
-            learningSuggestions: []
-        };
+        return { score: 0, correctness: "Error", explanation: "Analisis AI gagal.", strengths: [], weaknesses: [], learningSuggestions: [] };
     }
 
     getFallbackCapabilityReport() {

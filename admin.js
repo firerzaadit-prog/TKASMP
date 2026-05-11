@@ -5122,67 +5122,9 @@ async function showStudentDetail(userId, sessionId = null) {
         // Ringkasan AI
         let aiSummary = '<p style="color:#6b7280;">Belum ada analisis AI untuk siswa ini.</p>';
         if (aiAnalyses.length > 0) {
-            const strengths  = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.strengths || []))];
-            // ── BARU: weaknesses sekarang Array of Objects ──
-            const weaknessesRaw = aiAnalyses.flatMap(a => a.analysis_data?.weaknesses || []);
-            // Dedup berdasarkan prosesBerpikir + deskripsi (untuk object) atau string langsung
-            const weaknesses = weaknessesRaw.filter((w, idx, arr) => {
-                if (typeof w === 'object' && w !== null) {
-                    return arr.findIndex(x => typeof x === 'object' && x?.prosesBerpikir === w?.prosesBerpikir && x?.deskripsi === w?.deskripsi) === idx;
-                }
-                return arr.indexOf(w) === idx;
-            });
-
-            // ── BARU: learningRoadmap menggantikan learningSuggestions ──
-            const roadmaps = aiAnalyses.map(a => a.analysis_data?.learningRoadmap).filter(Boolean);
-            const roadmap  = roadmaps[0] || null; // ambil roadmap pertama yang valid
-
-            // Helper: badge tipeKesalahan (Admin — gaya profesional)
-            function renderTipeKesalahanBadge(tipe) {
-                if (!tipe) return '';
-                const t = tipe.toLowerCase();
-                if (t.includes('miskonsepsi') || t.includes('fundamental')) {
-                    return `<span class="ai-error-badge ai-error-badge--miskonsepsi">${tipe}</span>`;
-                } else if (t.includes('prosedural')) {
-                    return `<span class="ai-error-badge ai-error-badge--prosedural">${tipe}</span>`;
-                } else {
-                    return `<span class="ai-error-badge ai-error-badge--careless">${tipe}</span>`;
-                }
-            }
-
-            // Helper: render satu item weakness (object atau string lama)
-            function renderWeaknessItem(w) {
-                if (typeof w === 'object' && w !== null) {
-                    return `<li class="ai-weakness-item">
-                        <div class="ai-weakness-header">
-                            <span class="ai-weakness-proses">${w.prosesBerpikir || '-'}</span>
-                            ${renderTipeKesalahanBadge(w.tipeKesalahan)}
-                        </div>
-                        ${w.deskripsi ? `<p class="ai-weakness-desc">${w.deskripsi}</p>` : ''}
-                    </li>`;
-                }
-                // Fallback: string lama
-                return `<li class="ai-weakness-item"><p class="ai-weakness-desc">${w}</p></li>`;
-            }
-
-            // Helper: render learningRoadmap
-            function renderRoadmap(rm) {
-                if (!rm) return '<p style="color:#9ca3af;font-size:0.85rem;">Roadmap belum tersedia.</p>';
-                const steps = [
-                    { key: 'langkah1_mendasar',  label: 'Langkah 1 — Fondasi',      icon: 'fa-seedling',   color: '#065f46', bg: '#d1fae5', border: '#6ee7b7' },
-                    { key: 'langkah2_menengah',  label: 'Langkah 2 — Pendalaman',   icon: 'fa-layer-group', color: '#1e40af', bg: '#dbeafe', border: '#93c5fd' },
-                    { key: 'langkah3_penerapan', label: 'Langkah 3 — Penerapan',    icon: 'fa-rocket',     color: '#6d28d9', bg: '#ede9fe', border: '#c4b5fd' },
-                ];
-                return `<div class="ai-roadmap-admin">` +
-                    steps.map(s => rm[s.key] ? `
-                        <div class="ai-roadmap-step" style="background:${s.bg};border-left:4px solid ${s.border};">
-                            <div class="ai-roadmap-step-label" style="color:${s.color};">
-                                <i class="fas ${s.icon}"></i> ${s.label}
-                            </div>
-                            <p class="ai-roadmap-step-text">${rm[s.key]}</p>
-                        </div>` : '').join('') +
-                `</div>`;
-            }
+            const strengths   = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.strengths || []))];
+            const weaknesses  = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.weaknesses || []))];
+            const suggestions = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.learningSuggestions || []))];
 
             aiSummary = `
                 <div style="margin-bottom:1rem;">
@@ -5193,15 +5135,15 @@ async function showStudentDetail(userId, sessionId = null) {
                 </div>
                 <div style="margin-bottom:1rem;">
                     <strong style="color:#ef4444;">⚠️ Area Perbaikan:</strong>
-                    <ul class="ai-weakness-list" style="margin:0.5rem 0 0 0;padding:0;list-style:none;">
-                        ${weaknesses.length > 0 ? weaknesses.map(w => renderWeaknessItem(w)).join('') : '<li style="color:#9ca3af;font-size:0.85rem;padding:0.25rem 0;">Data belum tersedia</li>'}
+                    <ul style="margin:0.5rem 0 0 1rem;color:#374151;">
+                        ${weaknesses.length > 0 ? weaknesses.map(w => `<li>${w}</li>`).join('') : '<li>Data belum tersedia</li>'}
                     </ul>
                 </div>
                 <div>
-                    <strong style="color:#3b82f6;">🗺️ Roadmap Belajar:</strong>
-                    <div style="margin-top:0.5rem;">
-                        ${renderRoadmap(roadmap)}
-                    </div>
+                    <strong style="color:#3b82f6;">📚 Rekomendasi Belajar:</strong>
+                    <ul style="margin:0.5rem 0 0 1rem;color:#374151;">
+                        ${suggestions.length > 0 ? suggestions.map(s => `<li>${s}</li>`).join('') : '<li>Data belum tersedia</li>'}
+                    </ul>
                 </div>
             `;
         }
@@ -5516,38 +5458,16 @@ async function buildStudentExportData(userId) {
             if (batchRecord?.analysis_data?.is_batch) {
                 const bd = batchRecord.analysis_data;
                 const strengths = (bd.strengths || []).filter(s => s && s.length > 3);
-
-                // ── BARU: weaknesses = Array of Objects ──
-                const weaknessesRaw = (bd.weaknesses || []);
-                const kelemahanText = weaknessesRaw.length > 0
-                    ? weaknessesRaw.map(w => {
-                        if (typeof w === 'object' && w !== null) {
-                            return `[${w.prosesBerpikir || ''}] ${w.deskripsi || ''} (${w.tipeKesalahan || ''})`;
-                        }
-                        return String(w);
-                      }).filter(s => s.length > 3).join('\n• ')
-                    : '-';
-
-                // ── BARU: learningRoadmap menggantikan learningSuggestions ──
-                const roadmap = bd.learningRoadmap || null;
-                const rekomendasiText = roadmap
-                    ? [
-                        roadmap.langkah1_mendasar  ? `1. ${roadmap.langkah1_mendasar}`  : '',
-                        roadmap.langkah2_menengah  ? `2. ${roadmap.langkah2_menengah}`  : '',
-                        roadmap.langkah3_penerapan ? `3. ${roadmap.langkah3_penerapan}` : '',
-                      ].filter(Boolean).join('\n')
-                    : '-';
-
+                const weaknesses = (bd.weaknesses || []).filter(w => w && w.length > 3);
+                const suggestions = (bd.learningSuggestions || []).filter(s => s && s.length > 3);
                 const summary = bd.summary || '';
                 
-                if (strengths.length > 0 || weaknessesRaw.length > 0 || summary) {
+                if (strengths.length > 0 || weaknesses.length > 0 || summary) {
                     return {
-                        ringkasan: summary || (weaknessesRaw.length > 0
-                            ? (typeof weaknessesRaw[0] === 'object' ? weaknessesRaw[0]?.deskripsi : weaknessesRaw[0])
-                            : strengths[0] || '-'),
+                        ringkasan: summary || (weaknesses.length > 0 ? weaknesses[0] : strengths[0] || '-'),
                         kekuatan: strengths.length > 0 ? '• ' + strengths.join('\n• ') : '-',
-                        kelemahan: kelemahanText !== '-' ? '• ' + kelemahanText : '-',
-                        rekomendasi: rekomendasiText
+                        kelemahan: weaknesses.length > 0 ? '• ' + weaknesses.join('\n• ') : '-',
+                        rekomendasi: suggestions.length > 0 ? '• ' + suggestions.join('\n• ') : '-'
                     };
                 }
             }
@@ -5582,63 +5502,29 @@ async function buildStudentExportData(userId) {
             if (parsedData.length === 0) return null;
 
             const strengths = [...new Set(parsedData.flatMap(g => g?.strengths || []))].filter(s => s && s.length > 3 && !s.includes('{') && !s.includes('json'));
-
-            // ── BARU: weaknesses = Array of Objects (atau string lama sebagai fallback) ──
-            const weaknessesRaw = [...parsedData.flatMap(g => g?.weaknesses || [])].filter(w => {
-                if (typeof w === 'object' && w !== null) return w.deskripsi || w.prosesBerpikir;
-                return w && String(w).length > 3 && !String(w).includes('{') && !String(w).includes('json');
-            });
-            // Dedup
-            const weaknessesSeen = new Set();
-            const weaknesses = weaknessesRaw.filter(w => {
-                const key = typeof w === 'object' ? JSON.stringify(w) : w;
-                if (weaknessesSeen.has(key)) return false;
-                weaknessesSeen.add(key);
-                return true;
-            });
-
-            // ── BARU: learningRoadmap (ambil dari analisis pertama yang punya) ──
-            const roadmap = parsedData.find(g => g?.learningRoadmap)?.learningRoadmap || null;
-            const rekomendasiText = roadmap
-                ? [
-                    roadmap.langkah1_mendasar  ? `1. ${roadmap.langkah1_mendasar}`  : '',
-                    roadmap.langkah2_menengah  ? `2. ${roadmap.langkah2_menengah}`  : '',
-                    roadmap.langkah3_penerapan ? `3. ${roadmap.langkah3_penerapan}` : '',
-                  ].filter(Boolean).join('\n')
-                : '-';
-
-            const kelemahanText = weaknesses.length > 0
-                ? weaknesses.map(w => {
-                    if (typeof w === 'object' && w !== null) {
-                        return `[${w.prosesBerpikir || ''}] ${w.deskripsi || ''} (${w.tipeKesalahan || ''})`;
-                    }
-                    return String(w);
-                  }).join('\n• ')
-                : '';
+            const weaknesses = [...new Set(parsedData.flatMap(g => g?.weaknesses || []))].filter(w => w && w.length > 3 && !w.includes('{') && !w.includes('json'));
+            const suggestions = [...new Set(parsedData.flatMap(g => g?.learningSuggestions || []))].filter(s => s && s.length > 3 && !s.includes('{') && !s.includes('json'));
 
             let ringkasan = '';
-            const firstWeaknessText = weaknesses.length > 0
-                ? (typeof weaknesses[0] === 'object' ? (weaknesses[0]?.deskripsi || weaknesses[0]?.prosesBerpikir || '') : String(weaknesses[0]))
-                : '';
             if (strengths.length > 0 && weaknesses.length > 0) {
-                ringkasan = `Siswa memiliki kekuatan dalam ${strengths[0].toLowerCase()}. Perlu perhatian pada ${firstWeaknessText.toLowerCase()}.`;
+                ringkasan = `Siswa memiliki kekuatan dalam ${strengths[0].toLowerCase()}. Perlu perhatian pada ${weaknesses[0].toLowerCase()}.`;
             } else if (strengths.length > 0) {
                 ringkasan = `Siswa menunjukkan pemahaman yang baik dalam ${strengths[0].toLowerCase()}.`;
             } else if (weaknesses.length > 0) {
-                ringkasan = `Siswa perlu meningkatkan pemahaman pada ${firstWeaknessText.toLowerCase()}.`;
+                ringkasan = `Siswa perlu meningkatkan pemahaman pada ${weaknesses[0].toLowerCase()}.`;
             } else {
                 const rawExp = parsedData.find(g => g?.explanation?.length > 10)?.explanation || '';
                 ringkasan = rawExp.replace(/```json[\s\S]*?```/g,'').replace(/\{[\s\S]*?\}/g,'').trim();
                 if (!ringkasan || ringkasan.length < 5) ringkasan = 'Analisis tersedia. Lihat kekuatan dan kelemahan.';
             }
 
-            if (strengths.length === 0 && weaknesses.length === 0 && !roadmap) return null;
+            if (strengths.length === 0 && weaknesses.length === 0 && suggestions.length === 0) return null;
 
             return {
                 ringkasan: ringkasan,
                 kekuatan: strengths.length > 0 ? '• ' + strengths.join('\n• ') : '-',
-                kelemahan: kelemahanText ? '• ' + kelemahanText : '-',
-                rekomendasi: rekomendasiText
+                kelemahan: weaknesses.length > 0 ? '• ' + weaknesses.join('\n• ') : '-',
+                rekomendasi: suggestions.length > 0 ? '• ' + suggestions.join('\n• ') : '-'
             };
         } catch(e) {
             console.warn('getAIPerSession error:', e);
@@ -9580,12 +9466,8 @@ async function aiRunAnalysisForSession(sessionId) {
         analysis_data: {
             summary: analysisResult.summary || '',
             strengths: Array.isArray(analysisResult.strengths) ? analysisResult.strengths : [],
-            // ── BARU: weaknesses = Array of Objects ──
             weaknesses: Array.isArray(analysisResult.weaknesses) ? analysisResult.weaknesses : [],
-            // ── BARU: learningRoadmap menggantikan learningSuggestions ──
-            learningRoadmap: (analysisResult.learningRoadmap && typeof analysisResult.learningRoadmap === 'object')
-                ? analysisResult.learningRoadmap
-                : null,
+            learningSuggestions: Array.isArray(analysisResult.learningSuggestions) ? analysisResult.learningSuggestions : [],
             is_batch: true,
             analyzed_at: new Date().toISOString()
         },
