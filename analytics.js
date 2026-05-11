@@ -483,7 +483,7 @@ async function loadGeminiAnalysis(answers) {
                             score: 0,
                             correctness: "Error - Rate Limited",
                             explanation: "Analisis gagal karena batas rate limit API.",
-                            strengths: [], weaknesses: [], learningSuggestions: []
+                            strengths: [], weaknesses: [], learningRoadmap: null
                         })));
                     }
                 } else {
@@ -492,7 +492,7 @@ async function loadGeminiAnalysis(answers) {
                         score: 0,
                         correctness: "Error",
                         explanation: "Analisis gagal: " + error.message,
-                        strengths: [], weaknesses: [], learningSuggestions: []
+                        strengths: [], weaknesses: [], learningRoadmap: null
                     })));
                 }
             }
@@ -904,10 +904,17 @@ async function generateGeminiInsights() {
             });
         }
 
-        // Insight: Common weaknesses identified by Gemini
-        const allWeaknesses = analyticsData.geminiAnalyses
-            .flatMap(a => a.analysis.weaknesses || [])
-            .filter(w => w && w !== 'Perlu analisis lebih lanjut');
+        // Insight: Common weaknesses identified by AI (format baru: Array of Objects)
+        const allWeaknessesRaw = analyticsData.geminiAnalyses
+            .flatMap(a => a.analysis?.weaknesses || []);
+
+        // Normalisasi: object → string deskripsi; string langsung dipakai
+        const allWeaknesses = allWeaknessesRaw.map(w => {
+            if (typeof w === 'object' && w !== null) {
+                return [w.prosesBerpikir, w.deskripsi].filter(Boolean).join(' — ');
+            }
+            return String(w || '');
+        }).filter(w => w && w !== 'Perlu analisis lebih lanjut');
 
         const weaknessCounts = {};
         allWeaknesses.forEach(weakness => {
@@ -927,10 +934,17 @@ async function generateGeminiInsights() {
             });
         }
 
-        // Insight: Learning suggestions from Gemini
-        const allSuggestions = analyticsData.geminiAnalyses
-            .flatMap(a => a.analysis.learningSuggestions || [])
-            .filter(s => s && s !== 'Lanjutkan pembelajaran');
+        // Insight: Learning roadmap dari AI (format baru: Object langkah1/2/3)
+        const allRoadmaps = analyticsData.geminiAnalyses
+            .map(a => a.analysis?.learningRoadmap)
+            .filter(Boolean);
+
+        // Kumpulkan semua saran dari semua langkah roadmap sebagai teks flat
+        const allSuggestions = allRoadmaps.flatMap(rm => [
+            rm.langkah1_mendasar  || '',
+            rm.langkah2_menengah  || '',
+            rm.langkah3_penerapan || '',
+        ]).filter(s => s && s !== 'Lanjutkan pembelajaran');
 
         const suggestionCounts = {};
         allSuggestions.forEach(suggestion => {
@@ -1680,22 +1694,49 @@ function updateGrokDisplays() {
                           <div class="analysis-section">
                               <strong>Status Jawaban:</strong> ${analysis.analysis.correctness || 'Unknown'}
                           </div>
-                          ${analysis.analysis.strengths && analysis.analysis.strengths.length > 0 ? `
+                          ${(analysis.analysis?.strengths?.length > 0) ? `
                               <div class="analysis-section">
                                   <strong>Kelebihan:</strong>
                                   <ul>${analysis.analysis.strengths.map(s => `<li>${s}</li>`).join('')}</ul>
                               </div>
                           ` : ''}
-                          ${analysis.analysis.weaknesses && analysis.analysis.weaknesses.length > 0 ? `
+                          ${(analysis.analysis?.weaknesses?.length > 0) ? `
                               <div class="analysis-section">
-                                  <strong>Kekurangan:</strong>
-                                  <ul>${analysis.analysis.weaknesses.map(w => `<li>${w}</li>`).join('')}</ul>
+                                  <strong>Area Perbaikan:</strong>
+                                  <ul class="student-weakness-list">${(analysis.analysis.weaknesses).map(w => {
+                                      if (typeof w === 'object' && w !== null) {
+                                          // ── Format Baru: Object ──
+                                          const tipe = w.tipeKesalahan || '';
+                                          let badgeClass = 'student-error-badge--careless';
+                                          if (tipe.toLowerCase().includes('miskonsepsi') || tipe.toLowerCase().includes('fundamental')) badgeClass = 'student-error-badge--miskonsepsi';
+                                          else if (tipe.toLowerCase().includes('prosedural')) badgeClass = 'student-error-badge--prosedural';
+                                          return `<li class="student-weakness-item">
+                                              <span class="student-weakness-proses">${w.prosesBerpikir || ''}</span>
+                                              ${tipe ? `<span class="student-error-badge ${badgeClass}">${tipe}</span>` : ''}
+                                              ${w.deskripsi ? `<p class="student-weakness-desc">${w.deskripsi}</p>` : ''}
+                                          </li>`;
+                                      }
+                                      // Fallback: string lama
+                                      return `<li class="student-weakness-item"><p class="student-weakness-desc">${w}</p></li>`;
+                                  }).join('')}</ul>
                               </div>
                           ` : ''}
-                          ${analysis.analysis.learningSuggestions && analysis.analysis.learningSuggestions.length > 0 ? `
+                          ${(analysis.analysis?.learningRoadmap) ? `
                               <div class="analysis-section">
-                                  <strong>Saran Pembelajaran:</strong>
-                                  <ul>${analysis.analysis.learningSuggestions.map(s => `<li>${s}</li>`).join('')}</ul>
+                                  <strong>🗺️ Peta Belajarmu:</strong>
+                                  <div class="student-roadmap">${(() => {
+                                      const rm = analysis.analysis.learningRoadmap;
+                                      const steps = [
+                                          { key: 'langkah1_mendasar',  num: '1', label: 'Mulai dari Dasar',     icon: '🌱' },
+                                          { key: 'langkah2_menengah',  num: '2', label: 'Tingkatkan Kemampuan', icon: '📚' },
+                                          { key: 'langkah3_penerapan', num: '3', label: 'Tantang Dirimu!',      icon: '🚀' },
+                                      ];
+                                      return steps.map(s => rm[s.key] ? `
+                                          <div class="student-roadmap-step">
+                                              <span class="student-roadmap-num">${s.icon} ${s.label}</span>
+                                              <p class="student-roadmap-text">${rm[s.key]}</p>
+                                          </div>` : '').join('');
+                                  })()}</div>
                               </div>
                           ` : ''}
                           <div class="analysis-explanation">
@@ -2196,16 +2237,16 @@ function downloadGrokAnalyses() {
         analyses: analyticsData.geminiAnalyses.map(analysis => ({
             studentName: analysis.studentName,
             studentClass: analysis.studentClass,
-            score: analysis.analysis.score,
-            correctness: analysis.analysis.correctness,
-            strengths: analysis.analysis.strengths,
-            weaknesses: analysis.analysis.weaknesses,
-            learningSuggestions: analysis.analysis.learningSuggestions,
-            explanation: analysis.analysis.explanation,
-            concepts: analysis.analysis.concepts,
-            practiceExamples: analysis.analysis.practiceExamples,
-            difficulty: analysis.analysis.difficulty,
-            timeSpent: analysis.analysis.timeSpent,
+            score: analysis.analysis?.score,
+            correctness: analysis.analysis?.correctness,
+            strengths: analysis.analysis?.strengths,
+            weaknesses: analysis.analysis?.weaknesses,           // Array of Objects (format baru)
+            learningRoadmap: analysis.analysis?.learningRoadmap, // Object (format baru)
+            explanation: analysis.analysis?.explanation,
+            concepts: analysis.analysis?.concepts,
+            practiceExamples: analysis.analysis?.practiceExamples,
+            difficulty: analysis.analysis?.difficulty,
+            timeSpent: analysis.analysis?.timeSpent,
             analyzedAt: analysis.createdAt
         }))
     };
