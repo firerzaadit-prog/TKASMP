@@ -93,6 +93,27 @@
         </div>
     </div>
 
+    <!-- ===== PAUSE OVERLAY — Layar penutup saat ujian dijeda oleh admin ===== -->
+    <div id="pauseOverlay" class="pause-overlay" style="display:none;" aria-modal="true" role="alertdialog">
+        <div class="pause-overlay__card">
+            <div class="pause-overlay__icon-wrap">
+                <div class="pause-overlay__icon-pulse"></div>
+                <i class="fas fa-pause-circle pause-overlay__icon"></i>
+            </div>
+            <h2 class="pause-overlay__title">Ujian Dijeda</h2>
+            <p class="pause-overlay__subtitle">
+                Pengawas telah menjeda sesi ujian Anda.<br>
+                Harap tunggu — ujian akan dilanjutkan kembali<br>
+                oleh pengawas.
+            </p>
+            <div class="pause-overlay__badge">
+                <span class="pause-overlay__dot"></span>
+                Menunggu konfirmasi pengawas...
+            </div>
+        </div>
+    </div>
+    <!-- ===== END PAUSE OVERLAY ===== -->
+
     <script type="module" src="ujian.js"></script>
 
     <script>

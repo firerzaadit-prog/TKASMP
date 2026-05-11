@@ -6881,7 +6881,7 @@ async function refreshMonitoringData() {
         // 1. Ambil sesi aktif - query sederhana tanpa join
         const { data: activeSessions, error: sessionsError } = await supabase
             .from('exam_sessions')
-            .select('id, user_id, started_at, status, question_type_variant, total_time_seconds')
+            .select('id, user_id, started_at, status, question_type_variant, total_time_seconds, is_paused')
             .eq('status', 'in_progress')
             .order('started_at', { ascending: false });
 
@@ -6974,13 +6974,46 @@ async function refreshMonitoringData() {
                     </div>`;
             } else {
                 container.innerHTML = sessions.map(session => {
-                    const name = session.profiles?.nama_lengkap || 'Siswa';
-                    const email = session.profiles?.email || '-';
-                    const kelas = session.profiles?.class_name || '-';
+                    const name      = session.profiles?.nama_lengkap || 'Siswa';
+                    const email     = session.profiles?.email        || '-';
+                    const kelas     = session.profiles?.class_name   || '-';
                     const startTime = new Date(session.started_at).toLocaleTimeString('id-ID');
-                    const elapsed = Math.floor((Date.now() - new Date(session.started_at)) / 60000);
+                    const elapsed   = Math.floor((Date.now() - new Date(session.started_at)) / 60000);
+                    const isPaused  = session.is_paused === true;
+
+                    const statusBadge = isPaused
+                        ? `<span style="margin-left:auto;background:#fef3c7;color:#d97706;padding:0.25rem 0.6rem;border-radius:20px;font-size:0.75rem;font-weight:600;">
+                               <i class="fas fa-pause-circle" style="margin-right:3px;"></i>PAUSED
+                           </span>`
+                        : `<span style="margin-left:auto;background:#dcfce7;color:#16a34a;padding:0.25rem 0.6rem;border-radius:20px;font-size:0.75rem;font-weight:600;">
+                               <span style="display:inline-block;width:6px;height:6px;background:#16a34a;border-radius:50%;margin-right:4px;animation:pulse 1s infinite;"></span>
+                               LIVE
+                           </span>`;
+
+                    const pauseBtn = isPaused
+                        ? `<button
+                               onclick="resumeExamSession('${session.id}', this)"
+                               style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;
+                                      padding:6px 14px;border-radius:8px;cursor:pointer;font-size:0.78rem;
+                                      font-weight:600;display:inline-flex;align-items:center;gap:5px;
+                                      margin-top:0.75rem;width:100%;justify-content:center;"
+                               onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                               <i class="fas fa-play-circle"></i> Resume Ujian
+                           </button>`
+                        : `<button
+                               onclick="pauseExamSession('${session.id}', this)"
+                               style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;
+                                      padding:6px 14px;border-radius:8px;cursor:pointer;font-size:0.78rem;
+                                      font-weight:600;display:inline-flex;align-items:center;gap:5px;
+                                      margin-top:0.75rem;width:100%;justify-content:center;"
+                               onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                               <i class="fas fa-pause-circle"></i> Pause Ujian
+                           </button>`;
+
+                    const cardBorder = isPaused ? 'border:2px solid #f59e0b;' : 'border:1px solid #e5e7eb;';
+
                     return `
-                        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:1rem;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+                        <div style="background:#fff;${cardBorder}border-radius:12px;padding:1rem;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
                             <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;">
                                 <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:1rem;">
                                     ${name.charAt(0).toUpperCase()}
@@ -6989,10 +7022,7 @@ async function refreshMonitoringData() {
                                     <div style="font-weight:600;color:#1f2937;font-size:0.95rem;">${name}</div>
                                     <div style="font-size:0.8rem;color:#6b7280;">${email}</div>
                                 </div>
-                                <span style="margin-left:auto;background:#dcfce7;color:#16a34a;padding:0.25rem 0.6rem;border-radius:20px;font-size:0.75rem;font-weight:600;">
-                                    <span style="display:inline-block;width:6px;height:6px;background:#16a34a;border-radius:50%;margin-right:4px;animation:pulse 1s infinite;"></span>
-                                    LIVE
-                                </span>
+                                ${statusBadge}
                             </div>
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.82rem;color:#374151;">
                                 <div><i class="fas fa-graduation-cap" style="color:#667eea;margin-right:4px;"></i>Tipe: <strong>${session.question_type_variant || '-'}</strong></div>
@@ -7000,6 +7030,7 @@ async function refreshMonitoringData() {
                                 <div><i class="fas fa-clock" style="color:#f59e0b;margin-right:4px;"></i>Mulai: ${startTime}</div>
                                 <div><i class="fas fa-hourglass-half" style="color:#8b5cf6;margin-right:4px;"></i>Durasi: ${elapsed} menit</div>
                             </div>
+                            ${pauseBtn}
                         </div>`;
                 }).join('');
             }
@@ -7054,6 +7085,100 @@ document.addEventListener('DOMContentLoaded', () => {
     if (stopBtn) stopBtn.addEventListener('click', stopMonitoring);
     if (refreshBtn) refreshBtn.addEventListener('click', refreshMonitoringData);
 });
+
+// ============================================================
+// PAUSE / RESUME UJIAN — Fungsi Admin
+// ============================================================
+
+/**
+ * Pause ujian: set is_paused = true pada tabel exam_sessions.
+ * Supabase Realtime di sisi siswa akan otomatis menerima perubahan ini.
+ */
+async function pauseExamSession(sessionId, btn) {
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
+    try {
+        const { error } = await supabase
+            .from('exam_sessions')
+            .update({
+                is_paused: true,
+                pause_started_at: new Date().toISOString()
+            })
+            .eq('id', sessionId);
+
+        if (error) {
+            console.error('[pauseExamSession] Error:', error);
+            alert('Gagal mem-pause ujian: ' + error.message);
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+            return;
+        }
+
+        await addActivity(
+            'fa-pause-circle',
+            'Ujian Di-pause',
+            `Sesi ${sessionId.substring(0,8)}... telah di-pause oleh admin.`,
+            'exam_control', 'pause', 'exam_session', sessionId
+        );
+
+        // Refresh kartu agar tombol berubah ke "Resume"
+        await refreshMonitoringData();
+
+    } catch (err) {
+        console.error('[pauseExamSession] Exception:', err);
+        alert('Terjadi kesalahan: ' + err.message);
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+    }
+}
+
+/**
+ * Resume ujian: set is_paused = false pada tabel exam_sessions.
+ * Supabase Realtime di sisi siswa akan otomatis menerima perubahan ini.
+ */
+async function resumeExamSession(sessionId, btn) {
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memproses...';
+    try {
+        const { error } = await supabase
+            .from('exam_sessions')
+            .update({
+                is_paused: false,
+                pause_started_at: null
+            })
+            .eq('id', sessionId);
+
+        if (error) {
+            console.error('[resumeExamSession] Error:', error);
+            alert('Gagal me-resume ujian: ' + error.message);
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+            return;
+        }
+
+        await addActivity(
+            'fa-play-circle',
+            'Ujian Dilanjutkan',
+            `Sesi ${sessionId.substring(0,8)}... telah dilanjutkan oleh admin.`,
+            'exam_control', 'resume', 'exam_session', sessionId
+        );
+
+        await refreshMonitoringData();
+
+    } catch (err) {
+        console.error('[resumeExamSession] Exception:', err);
+        alert('Terjadi kesalahan: ' + err.message);
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+    }
+}
+
+window.pauseExamSession  = pauseExamSession;
+window.resumeExamSession = resumeExamSession;
+
+// ============================================================
 
 window.startMonitoring = startMonitoring;
 window.stopMonitoring = stopMonitoring;

@@ -17,6 +17,8 @@ let timeRemaining = 0;
 let timerInterval = null;
 let examStartTime = null;
 let assignedQuestionType = null; 
+let isPaused = false;               // State pause ujian
+let pauseChannel = null;            // Supabase Realtime channel
 
 // DOM Elements
 let timerDisplay, progressFill, questionNav, questionCard, questionCounter;
@@ -265,6 +267,9 @@ async function startExamSession() {
         renderQuestionNav();
         setupNavigationListeners();
         await showQuestion(0);
+
+        // Mulai mendengarkan pause/resume dari admin secara realtime
+        initPauseListener();
 
         console.log('Exam session started successfully (Security features disabled)');
 
@@ -1206,6 +1211,132 @@ async function toggleDoubt() {
     renderQuestionNav(); 
 }
 
+// ============================================================
+// PAUSE / RESUME UJIAN — Realtime via Supabase Channel
+// ============================================================
+
+/**
+ * Tampilkan overlay pause + hentikan timer + blokir interaksi.
+ */
+function showPauseOverlay() {
+    const overlay = document.getElementById('pauseOverlay');
+    if (!overlay) return;
+    overlay.classList.remove('pause-overlay--hiding');
+    overlay.style.display = 'flex';
+    pauseTimer();
+    blockExamInteraction(true);
+    console.log('[PauseOverlay] Ditampilkan. Timer dihentikan.');
+}
+
+/**
+ * Sembunyikan overlay pause + lanjutkan timer + buka interaksi.
+ */
+function hidePauseOverlay() {
+    const overlay = document.getElementById('pauseOverlay');
+    if (!overlay) return;
+    overlay.classList.add('pause-overlay--hiding');
+    overlay.addEventListener('animationend', () => {
+        overlay.style.display = 'none';
+        overlay.classList.remove('pause-overlay--hiding');
+    }, { once: true });
+    resumeTimer();
+    blockExamInteraction(false);
+    console.log('[PauseOverlay] Disembunyikan. Timer dilanjutkan.');
+}
+
+/**
+ * Hentikan countdown tanpa mengubah nilai timeRemaining.
+ */
+function pauseTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+}
+
+/**
+ * Lanjutkan countdown dari sisa timeRemaining yang tersimpan.
+ * Logika identik dengan startTimer() tapi tidak mereset timeRemaining.
+ */
+function resumeTimer() {
+    if (timerInterval) return; // jangan double-start
+    timerInterval = setInterval(() => {
+        timeRemaining--;
+        if (timeRemaining <= 0) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+            handleTimeUp();
+            return;
+        }
+        updateTimerDisplay();
+        if (timeRemaining <= 300) {
+            timerDisplay.classList.add('timer-warning');
+        }
+    }, 1000);
+}
+
+/**
+ * Blokir / buka kembali semua interaksi siswa saat pause.
+ * @param {boolean} block - true = blokir, false = buka
+ */
+function blockExamInteraction(block) {
+    const pBtn = document.getElementById('prevBtn');
+    const nBtn = document.getElementById('nextBtn');
+    if (pBtn) pBtn.disabled = block;
+    if (nBtn) nBtn.disabled = block;
+
+    document.querySelectorAll('.question-nav-btn').forEach(btn => {
+        btn.style.pointerEvents = block ? 'none' : 'auto';
+        btn.style.opacity       = block ? '0.5'  : '';
+    });
+    document.querySelectorAll('.option, .mcma-option, .category-option').forEach(el => {
+        el.style.pointerEvents = block ? 'none' : 'auto';
+    });
+}
+
+/**
+ * Inisialisasi Supabase Realtime listener untuk mendeteksi
+ * perubahan is_paused pada baris exam_sessions milik sesi ini.
+ * Harus dipanggil SETELAH examSessionId sudah tersedia.
+ */
+function initPauseListener() {
+    if (!examSessionId) {
+        console.warn('[PauseListener] examSessionId belum ada, listener tidak dibuat.');
+        return;
+    }
+    if (pauseChannel) {
+        supabase.removeChannel(pauseChannel);
+        pauseChannel = null;
+    }
+    pauseChannel = supabase
+        .channel(`exam-pause-${examSessionId}`)
+        .on(
+            'postgres_changes',
+            {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'exam_sessions',
+                filter: `id=eq.${examSessionId}`
+            },
+            (payload) => {
+                console.log('[PauseListener] Perubahan diterima:', payload);
+                const newIsPaused = payload.new?.is_paused;
+                if (newIsPaused === isPaused) return; // tidak ada perubahan, abaikan
+                isPaused = newIsPaused;
+                if (isPaused) {
+                    showPauseOverlay();
+                } else {
+                    hidePauseOverlay();
+                }
+            }
+        )
+        .subscribe((status) => {
+            console.log('[PauseListener] Channel status:', status);
+        });
+    console.log('[PauseListener] Realtime listener aktif untuk sesi:', examSessionId);
+}
+
+// ============================================================
 // Fisher-Yates Shuffle Algorithm
 function shuffleArray(array) {
     for (let i = array.length - 1; i > 0; i--) {
