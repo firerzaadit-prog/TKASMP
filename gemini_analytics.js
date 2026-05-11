@@ -32,6 +32,134 @@ class GeminiAnalytics {
         }
     }
 
+    /**
+     * Memetakan Level Kognitif dan Proses Berpikir ke deskripsi lengkap
+     * berdasarkan Matriks Kompetensi Kemdikbudristek untuk TKA SMP Matematika.
+     *
+     * @param {string} level   - Nilai level kognitif, misal: "Level 1", "Level 2", "Level 3",
+     *                           atau nomor saja: "1", "2", "3"
+     * @param {string} proses  - Nama proses berpikir, misal: "Menghitung", "Memodelkan",
+     *                           "Menganalisis", dst.
+     * @returns {{ levelLabel: string, prosesLabel: string, deskripsi: string,
+     *             implikasiSalah: string }}
+     *   - levelLabel    : Label level kognitif yang sudah dinormalisasi
+     *   - prosesLabel   : Nama proses berpikir yang sudah dinormalisasi
+     *   - deskripsi     : Deskripsi proses berpikir sesuai dokumen resmi Kemdikbudristek
+     *   - implikasiSalah: Penjelasan spesifik tentang apa artinya siswa GAGAL pada proses ini,
+     *                     digunakan AI untuk menyusun weaknesses & learningSuggestions yang tajam
+     */
+    getProsesBerpikirDescription(level, proses) {
+        // --- Tabel pemetaan lengkap dari dokumen resmi Kemdikbudristek ---
+        // Kunci: nama proses berpikir (lowercase, tanpa spasi ekstra)
+        const prosesMap = {
+            // ── Level 1: Pengetahuan & Pemahaman (Knowing and Understanding) ──
+            'menghitung': {
+                levelLabel: 'Level 1 – Pengetahuan & Pemahaman',
+                prosesLabel: 'Menghitung',
+                deskripsi: 'Melakukan perhitungan berdasarkan prosedur yang mencakup operasi hitung aritmatika (+, -, ×, ÷, atau kombinasinya), operasi aljabar, atau operasi matematika lainnya.',
+                implikasiSalah: 'Siswa gagal menjalankan prosedur perhitungan dasar. Kelemahan ada pada penguasaan algoritma atau operasi hitung, bukan pada pemahaman konsep tinggi. Latihan yang dibutuhkan: drill prosedur perhitungan bertahap pada topik terkait.'
+            },
+            'memahami informasi': {
+                levelLabel: 'Level 1 – Pengetahuan & Pemahaman',
+                prosesLabel: 'Memahami Informasi',
+                deskripsi: 'Memahami informasi dari grafik fungsi, tabel, diagram, infografis, atau bentuk visual lainnya.',
+                implikasiSalah: 'Siswa tidak mampu membaca atau mengekstrak informasi yang tersaji secara visual (grafik, tabel, diagram). Kelemahan ada pada literasi representasi matematis. Latihan yang dibutuhkan: membaca dan menginterpretasi berbagai bentuk penyajian data secara sistematis.'
+            },
+            'mengelompokkan': {
+                levelLabel: 'Level 1 – Pengetahuan & Pemahaman',
+                prosesLabel: 'Mengelompokkan',
+                deskripsi: 'Mengelompokkan objek berdasarkan fakta, konsep, dan prinsip matematika dalam cakupan sub-elemen.',
+                implikasiSalah: 'Siswa tidak dapat mengidentifikasi sifat atau atribut pembeda antar objek matematika. Kelemahan ada pada pemahaman definisi dan konsep dasar. Latihan yang dibutuhkan: identifikasi ciri dan klasifikasi objek matematika pada sub-materi terkait.'
+            },
+            'mengidentifikasi': {
+                levelLabel: 'Level 1 – Pengetahuan & Pemahaman',
+                prosesLabel: 'Mengidentifikasi',
+                deskripsi: 'Melakukan identifikasi terhadap objek menggunakan konsep, fakta, dan prinsip matematika dalam cakupan sub-elemen.',
+                implikasiSalah: 'Siswa tidak mampu mengenali atau mencocokkan objek/situasi dengan konsep matematika yang relevan. Kelemahan ada pada penguasaan fakta dan definisi dasar. Latihan yang dibutuhkan: menghafal dan memahami definisi, fakta, serta contoh-contoh pada sub-materi terkait.'
+            },
+
+            // ── Level 2: Aplikasi (Applying) ──
+            'memodelkan': {
+                levelLabel: 'Level 2 – Aplikasi',
+                prosesLabel: 'Memodelkan',
+                deskripsi: 'Memodelkan permasalahan kontekstual terkait cakupan sub-elemen ke dalam kalimat matematika.',
+                implikasiSalah: 'Siswa gagal menerjemahkan situasi nyata/kontekstual ke dalam bentuk ekspresi atau persamaan matematika. Kelemahan ada pada jembatan antara konteks dunia nyata dan representasi formal matematis. Latihan yang dibutuhkan: latihan soal cerita bertahap—mulai dari mengidentifikasi variabel, lalu menyusun kalimat matematika secara eksplisit.'
+            },
+            'mengaplikasikan': {
+                levelLabel: 'Level 2 – Aplikasi',
+                prosesLabel: 'Mengaplikasikan',
+                deskripsi: 'Mengaplikasikan strategi dan operasi matematika (berupa operasi hitung, operasi aljabar, atau bentuk operasi lainnya) untuk menyelesaikan permasalahan yang melibatkan konsep dan prosedur matematis yang familiar dan rutin.',
+                implikasiSalah: 'Siswa tidak dapat menggunakan prosedur atau strategi yang sudah dipelajari pada situasi yang familiar. Kelemahan ada pada transfer pengetahuan ke soal rutin. Latihan yang dibutuhkan: mengerjakan variasi soal standar dengan prosedur yang sama secara berulang hingga otomatis.'
+            },
+            'menginterpretasikan': {
+                levelLabel: 'Level 2 – Aplikasi',
+                prosesLabel: 'Menginterpretasikan',
+                deskripsi: 'Memahami dan menjelaskan makna dari berbagai situasi, kejadian, pernyataan, representasi, atau masalah matematika.',
+                implikasiSalah: 'Siswa tidak mampu memaknai hasil perhitungan atau representasi matematis dalam konteks aslinya. Kelemahan ada pada kemampuan menafsirkan jawaban matematis kembali ke situasi nyata. Latihan yang dibutuhkan: latihan menjelaskan arti jawaban secara lisan/tulisan, bukan sekadar menghitung angka akhir.'
+            },
+
+            // ── Level 3: Penalaran (Reasoning) ──
+            'menganalisis': {
+                levelLabel: 'Level 3 – Penalaran',
+                prosesLabel: 'Menganalisis',
+                deskripsi: 'Menentukan, menjelaskan, dan menggunakan hubungan beberapa konsep, fakta, prinsip, atau prosedur matematika dalam cakupan sub-elemen.',
+                implikasiSalah: 'Siswa tidak mampu menghubungkan dua atau lebih konsep matematika secara bersamaan untuk menyelesaikan masalah. Kelemahan ada pada penalaran relasional antar konsep. Latihan yang dibutuhkan: soal yang menuntut penggunaan lebih dari satu konsep sekaligus, dengan panduan membuat peta konsep antar topik.'
+            },
+            'memecahkan masalah': {
+                levelLabel: 'Level 3 – Penalaran',
+                prosesLabel: 'Memecahkan Masalah',
+                deskripsi: 'Mengaitkan beberapa konsep, fakta, prinsip, prosedur, dan representasi matematika dalam cakupan sub-elemen, untuk menyelesaikan permasalahan dalam situasi baru atau konteks yang tidak rutin.',
+                implikasiSalah: 'Siswa tidak dapat menyelesaikan masalah dalam situasi baru yang belum pernah dijumpai sebelumnya. Kelemahan ada pada fleksibilitas penalaran dan kemampuan beradaptasi dengan konteks non-rutin. Latihan yang dibutuhkan: soal open-ended dan soal tidak rutin dengan variasi konteks yang beragam, dibahas dengan pendekatan heuristik (misal: memahami soal → merencanakan → menjalankan → merefleksi).'
+            },
+            'mengevaluasi': {
+                levelLabel: 'Level 3 – Penalaran',
+                prosesLabel: 'Mengevaluasi',
+                deskripsi: 'Mengevaluasi alternatif strategi dan solusi dari suatu pemecahan masalah.',
+                implikasiSalah: 'Siswa tidak mampu menilai kebenaran, efisiensi, atau ketepatan suatu solusi atau strategi matematika. Kelemahan ada pada kemampuan berpikir kritis terhadap proses penyelesaian masalah. Latihan yang dibutuhkan: latihan memeriksa jawaban sendiri, membandingkan dua strategi berbeda, dan menentukan strategi mana yang lebih efisien beserta alasannya.'
+            },
+            'menyimpulkan': {
+                levelLabel: 'Level 3 – Penalaran',
+                prosesLabel: 'Menyimpulkan',
+                deskripsi: 'Menarik kesimpulan yang valid dari informasi, data, atau bukti yang diberikan menggunakan konsep, fakta, prinsip, dan prosedur matematika dalam cakupan sub-elemen.',
+                implikasiSalah: 'Siswa tidak mampu menarik kesimpulan yang logis dan valid berdasarkan data atau informasi yang tersedia. Kelemahan ada pada penalaran deduktif. Latihan yang dibutuhkan: latihan membaca informasi matematis lalu merumuskan kesimpulan secara eksplisit, disertai diskusi tentang apa yang boleh dan tidak boleh disimpulkan dari suatu data.'
+            },
+            'melakukan generalisasi': {
+                levelLabel: 'Level 3 – Penalaran',
+                prosesLabel: 'Melakukan Generalisasi',
+                deskripsi: 'Menyusun pernyataan matematis yang menggambarkan hubungan yang lebih umum terkait konsep, fakta, prinsip, dan prosedur dalam cakupan sub-elemen.',
+                implikasiSalah: 'Siswa tidak mampu mengabstraksikan pola atau aturan umum dari beberapa contoh spesifik. Kelemahan ada pada kemampuan berpikir abstrak dan membentuk generalisasi matematis. Latihan yang dibutuhkan: eksplorasi pola pada beberapa kasus konkret, kemudian dibimbing untuk merumuskan aturan umum dalam bentuk pernyataan matematis.'
+            }
+        };
+
+        // Normalisasi input: lowercase dan trim
+        const prosesKey = (proses || '').trim().toLowerCase();
+        const levelStr  = (level  || '').trim().toLowerCase();
+
+        // Cari entri yang cocok
+        const entry = prosesMap[prosesKey];
+
+        if (entry) {
+            return entry;
+        }
+
+        // Fallback: tidak ditemukan di peta, kembalikan info generik berdasarkan level
+        let levelLabel = 'Level Kognitif Tidak Diketahui';
+        if (levelStr.includes('1') || levelStr.includes('pengetahuan')) {
+            levelLabel = 'Level 1 – Pengetahuan & Pemahaman';
+        } else if (levelStr.includes('2') || levelStr.includes('aplikasi')) {
+            levelLabel = 'Level 2 – Aplikasi';
+        } else if (levelStr.includes('3') || levelStr.includes('penalaran')) {
+            levelLabel = 'Level 3 – Penalaran';
+        }
+
+        return {
+            levelLabel,
+            prosesLabel: proses || 'Tidak Diketahui',
+            deskripsi: `Proses berpikir "${proses}" tidak ditemukan dalam peta kompetensi. Gunakan konteks soal untuk menentukan kelemahan dan saran belajar.`,
+            implikasiSalah: `Analisis kelemahan dan saran belajar berdasarkan konteks materi soal secara umum.`
+        };
+    }
+
     buildAnalysisPrompt(answerData, questionData) {
         const bab = questionData.bab || questionData.chapter || '';
         const subBab = questionData.sub_bab || questionData.sub_chapter || '';
@@ -46,6 +174,9 @@ class GeminiAnalytics {
         const levelKognitif = questionData.level_kognitif || '';
         const prosesBerpikir = questionData.proses_berpikir || '';
 
+        // Ambil deskripsi lengkap proses berpikir dari Kemdikbudristek
+        const prosesInfo = this.getProsesBerpikirDescription(levelKognitif, prosesBerpikir);
+
         // DETEKSI APAKAH JAWABAN KOSONG
         const tidakDijawab = (!jawabanSiswa || jawabanSiswa.trim() === '' || jawabanSiswa === '-');
 
@@ -55,23 +186,32 @@ class GeminiAnalytics {
 
         if (isCorrect) {
             statusJawaban = 'BENAR';
-            instruksiTugas = `Jawaban siswa BENAR. Identifikasi kompetensi spesifik yang dikuasai siswa dari soal ini.`;
+            instruksiTugas = `Jawaban siswa BENAR. Identifikasi kompetensi proses berpikir spesifik yang berhasil dikuasai siswa, yaitu kemampuan "${prosesInfo.prosesLabel}" pada ${prosesInfo.levelLabel}.`;
         } else if (tidakDijawab) {
             statusJawaban = 'TIDAK DIJAWAB (KOSONG)';
-            instruksiTugas = `Siswa TIDAK MENJAWAB soal ini (dibiarkan kosong, seharusnya: ${kunciJawaban}). Ini mengindikasikan siswa mungkin sama sekali belum memahami konsepnya, bingung cara memulai, atau kehabisan waktu. Identifikasi kelemahan mendasar ini dan berikan saran agar siswa berani mencoba atau menguasai dasar materinya.`;
+            instruksiTugas = `Siswa TIDAK MENJAWAB soal ini (jawaban kosong, seharusnya: ${kunciJawaban}).
+Soal ini menguji proses berpikir "${prosesInfo.prosesLabel}" (${prosesInfo.levelLabel}).
+Deskripsi proses berpikir ini: ${prosesInfo.deskripsi}
+Implikasi kegagalan pada proses ini: ${prosesInfo.implikasiSalah}
+Identifikasi kelemahan spesifik pada proses berpikir tersebut dan berikan saran belajar yang LANGSUNG mengatasi kegagalan proses berpikir "${prosesInfo.prosesLabel}", bukan sekadar menyuruh belajar materi secara umum.`;
         } else {
             statusJawaban = 'SALAH';
-            instruksiTugas = `Jawaban siswa SALAH (jawaban: ${jawabanSiswa}, seharusnya: ${kunciJawaban}). Identifikasi kesalahan konsep atau pemahaman spesifik yang menyebabkan siswa menjawab salah.`;
+            instruksiTugas = `Jawaban siswa SALAH (jawaban: ${jawabanSiswa}, seharusnya: ${kunciJawaban}).
+Soal ini menguji proses berpikir "${prosesInfo.prosesLabel}" (${prosesInfo.levelLabel}).
+Deskripsi proses berpikir ini: ${prosesInfo.deskripsi}
+Implikasi kegagalan pada proses ini: ${prosesInfo.implikasiSalah}
+Identifikasi KEGAGALAN PROSES BERPIKIR "${prosesInfo.prosesLabel}" yang menyebabkan siswa menjawab salah, dan berikan saran belajar yang SPESIFIK mengatasi kegagalan proses tersebut.`;
         }
 
-        return `Kamu adalah guru matematika SMP yang menganalisis jawaban siswa pada soal TKA (Tes Kemampuan Akademik).
+        return `Kamu adalah guru matematika SMP ahli yang menganalisis jawaban siswa pada soal TKA (Tes Kemampuan Akademik) berdasarkan Matriks Kompetensi resmi Kemdikbudristek.
 
 INFORMASI SOAL:
 - Elemen: ${bab}
 - Sub-elemen: ${subBab}
-- Level Kognitif: ${levelKognitif}
-- Proses Berpikir: ${prosesBerpikir}
-- Kompetensi: ${competenceText}
+- Level Kognitif: ${prosesInfo.levelLabel}
+- Proses Berpikir: ${prosesInfo.prosesLabel}
+- Deskripsi Proses Berpikir (Kemdikbudristek): ${prosesInfo.deskripsi}
+- Kompetensi Sub-elemen: ${competenceText}
 - Soal: ${questionData.question_text || ''}
 - Kunci Jawaban: ${kunciJawaban}
 - Pembahasan: ${penjelasan}
@@ -82,18 +222,20 @@ STATUS: ${statusJawaban}
 TUGAS:
 ${instruksiTugas}
 
-Aturan WAJIB:
-- Jika jawaban BENAR: strengths berisi kompetensi yang dikuasai, weaknesses HARUS array kosong []
-- Jika jawaban SALAH / TIDAK DIJAWAB: weaknesses berisi letak kelemahan konsep, strengths boleh kosong []
-- Jangan tulis "Tidak ada kelemahan" di weaknesses jika jawaban benar - tulis [] saja
-- Semua item dalam bahasa Indonesia, spesifik pada materi soal ini
-- learningSuggestions harus relevan dengan materi soal ini dan sangat membantu bagi siswa yang salah/tidak bisa menjawab.
+ATURAN WAJIB UNTUK OUTPUT:
+- Jika jawaban BENAR: strengths berisi nama proses berpikir yang dikuasai + kompetensi spesifik; weaknesses HARUS array kosong []
+- Jika jawaban SALAH / TIDAK DIJAWAB:
+  * weaknesses HARUS menyebut NAMA PROSES BERPIKIR yang gagal (misal: "Kegagalan proses Memodelkan: siswa belum mampu..."), bukan sekadar "kurang paham materi"
+  * learningSuggestions HARUS berisi latihan yang SPESIFIK untuk melatih proses berpikir "${prosesInfo.prosesLabel}", bukan saran belajar generik
+  * strengths boleh kosong []
+- Semua item dalam bahasa Indonesia
+- learningSuggestions minimal 2 saran konkret yang dapat langsung ditindaklanjuti siswa
 
 Output HANYA JSON valid tanpa markdown, tanpa teks lain:
-{"score":0-100,"correctness":"Benar/Salah/Tidak Dijawab","strengths":[],"weaknesses":[],"explanation":"ringkasan singkat 1 kalimat","learningSuggestions":[]}`;
+{"score":0-100,"correctness":"Benar/Salah/Tidak Dijawab","strengths":[],"weaknesses":[],"explanation":"ringkasan singkat 1 kalimat yang menyebut proses berpikir","learningSuggestions":[]}`;
     }
 
- getCompetencyDescription(bab, subBab) {
+    getCompetencyDescription(bab, subBab) {
         // Fallback mapping if database doesn't have it
         const competencies = {
             // 1. BILANGAN
@@ -201,9 +343,7 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
         } catch (e) { console.warn("Gagal simpan ke DB", e); }
     }
 
-
     // ── BATCH ANALYSIS: 1 API call untuk 30 soal sekaligus ──────────────────
- // ── BATCH ANALYSIS: 1 API call untuk 30 soal sekaligus ──────────────────
     async analyzeBatchAnswers(answersPayload) {
         const maxRetries = 3;
         let attempt = 0;
@@ -218,12 +358,12 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
                         'apikey': SUPABASE_ANON_KEY,
                         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
                     },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         answers: answersPayload,
                         sessionInfo: { timestamp: new Date().toISOString() }
                     })
                 });
-                
+
                 if (!response.ok) {
                     const errText = await response.text();
                     // Exponential backoff untuk error 429 / 5xx
@@ -239,7 +379,7 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
                 }
 
                 const data = await response.json();
-                
+
                 // Menyesuaikan pembacaan data dengan output dari index.ts
                 const textResult = data.choices?.[0]?.message?.content;
                 if (!textResult) {
