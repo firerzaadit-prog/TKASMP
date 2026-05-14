@@ -5910,8 +5910,32 @@ async function pushDataToGoogleSheet() {
         ).join('\n');
 
 
-        // Copy ke clipboard
-        await navigator.clipboard.writeText(tsvContent);
+        // Copy ke clipboard — dengan fallback execCommand untuk mengatasi
+        // NotAllowedError saat document kehilangan fokus setelah proses async
+        const copyToClipboard = async (text) => {
+            // Coba Clipboard API modern terlebih dahulu
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    return true;
+                } catch (clipErr) {
+                    console.warn('Clipboard API gagal, mencoba fallback execCommand:', clipErr);
+                }
+            }
+            // Fallback: hidden textarea + execCommand('copy')
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            const success = document.execCommand('copy');
+            document.body.removeChild(textarea);
+            if (!success) throw new Error('execCommand copy juga gagal. Coba klik tombol ini langsung (tanpa ada dialog/popup terbuka).');
+            return true;
+        };
+
+        await copyToClipboard(tsvContent);
 
         // Buka Google Sheet
         window.open('https://docs.google.com/spreadsheets/d/1qaIXRXjDHj_rDARWT7zWYwX6rLuG6zEd1CXEGIhBjAY/edit', '_blank');
