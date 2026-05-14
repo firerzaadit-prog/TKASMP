@@ -5877,7 +5877,7 @@ async function pushDataToGoogleSheet() {
     const btn = event?.target || document.querySelector('[onclick*="pushDataToGoogleSheet"]');
     const originalText = btn?.innerHTML || '';
     if (btn) {
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Mengirim...';
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memuat data...';
         btn.disabled = true;
     }
 
@@ -5909,38 +5909,13 @@ async function pushDataToGoogleSheet() {
              .join('\t')
         ).join('\n');
 
-
-        // Copy ke clipboard — dengan fallback execCommand untuk mengatasi
-        // NotAllowedError saat document kehilangan fokus setelah proses async
-        const copyToClipboard = async (text) => {
-            // Coba Clipboard API modern terlebih dahulu
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                try {
-                    await navigator.clipboard.writeText(text);
-                    return true;
-                } catch (clipErr) {
-                    console.warn('Clipboard API gagal, mencoba fallback execCommand:', clipErr);
-                }
-            }
-            // Fallback: hidden textarea + execCommand('copy')
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            textarea.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;';
-            document.body.appendChild(textarea);
-            textarea.focus();
-            textarea.select();
-            const success = document.execCommand('copy');
-            document.body.removeChild(textarea);
-            if (!success) throw new Error('execCommand copy juga gagal. Coba klik tombol ini langsung (tanpa ada dialog/popup terbuka).');
-            return true;
-        };
-
-        await copyToClipboard(tsvContent);
-
-        // Buka Google Sheet
-        window.open('https://docs.google.com/spreadsheets/d/1qaIXRXjDHj_rDARWT7zWYwX6rLuG6zEd1CXEGIhBjAY/edit', '_blank');
-
-        alert(`✅ Data ${allRows.length} ujian berhasil disalin!\n\nLangkah selanjutnya:\n1. Google Sheet sudah terbuka di tab baru\n2. Klik sel A1\n3. Tekan Ctrl+V untuk paste data\n4. Data akan otomatis mengisi semua kolom`);
+        // ─────────────────────────────────────────────────────────────────────
+        // SOLUSI CLIPBOARD: Clipboard API & execCommand keduanya gagal setelah
+        // proses async panjang karena browser mencabut "user gesture" & fokus.
+        // Solusi: tampilkan modal dengan textarea berisi TSV — user klik tombol
+        // "Salin" di dalam modal (user gesture baru, dokumen pasti fokus).
+        // ─────────────────────────────────────────────────────────────────────
+        _showGoogleSheetCopyModal(tsvContent, allRows.length);
 
     } catch (error) {
         console.error('Error pushing to Google Sheet:', error);
@@ -5951,6 +5926,111 @@ async function pushDataToGoogleSheet() {
             btn.innerHTML = originalText;
         }
     }
+}
+
+// Modal helper untuk copy TSV ke clipboard dengan user gesture yang fresh
+function _showGoogleSheetCopyModal(tsvContent, rowCount) {
+    // Hapus modal lama jika ada
+    const existing = document.getElementById('_gsheetCopyModal');
+    if (existing) existing.remove();
+
+    const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1qaIXRXjDHj_rDARWT7zWYwX6rLuG6zEd1CXEGIhBjAY/edit';
+
+    const modal = document.createElement('div');
+    modal.id = '_gsheetCopyModal';
+    modal.style.cssText = `
+        position:fixed;inset:0;z-index:99999;
+        background:rgba(0,0,0,0.55);
+        display:flex;align-items:center;justify-content:center;
+        font-family:sans-serif;
+    `;
+
+    modal.innerHTML = `
+        <div style="background:#fff;border-radius:14px;padding:28px 32px;max-width:540px;width:90%;
+                    box-shadow:0 8px 40px rgba(0,0,0,0.25);position:relative;">
+            <h3 style="margin:0 0 6px;color:#1a1a2e;font-size:1.1rem;">
+                ✅ Data Siap — ${rowCount} baris ujian
+            </h3>
+            <p style="margin:0 0 14px;color:#555;font-size:0.88rem;line-height:1.5;">
+                Klik <strong>Salin Data</strong> di bawah, lalu buka Google Sheet dan tekan
+                <kbd style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;
+                            padding:1px 6px;font-size:0.82rem;">Ctrl+V</kbd> di sel <strong>A1</strong>.
+            </p>
+
+            <textarea id="_gsheetTsvArea" readonly
+                style="width:100%;height:90px;resize:none;border:1px solid #d1d5db;
+                       border-radius:8px;padding:8px;font-size:0.75rem;color:#374151;
+                       box-sizing:border-box;background:#f9fafb;font-family:monospace;"
+            ></textarea>
+
+            <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;">
+                <button id="_btnCopyTsv"
+                    style="flex:1;min-width:140px;padding:10px 16px;background:#4f46e5;color:#fff;
+                           border:none;border-radius:8px;cursor:pointer;font-size:0.9rem;font-weight:600;">
+                    📋 Salin Data
+                </button>
+                <button id="_btnOpenSheet"
+                    style="flex:1;min-width:140px;padding:10px 16px;background:#059669;color:#fff;
+                           border:none;border-radius:8px;cursor:pointer;font-size:0.9rem;font-weight:600;">
+                    📄 Buka Google Sheet
+                </button>
+                <button id="_btnCloseModal"
+                    style="padding:10px 16px;background:#f3f4f6;color:#374151;
+                           border:none;border-radius:8px;cursor:pointer;font-size:0.9rem;">
+                    Tutup
+                </button>
+            </div>
+            <p id="_copyStatus" style="margin:10px 0 0;font-size:0.82rem;color:#059669;min-height:18px;"></p>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Isi textarea setelah elemen ada di DOM
+    const area = document.getElementById('_gsheetTsvArea');
+    area.value = tsvContent;
+
+    // Tombol Salin — ini adalah user gesture baru, dokumen sudah fokus
+    document.getElementById('_btnCopyTsv').addEventListener('click', async () => {
+        const statusEl = document.getElementById('_copyStatus');
+        area.select();
+        area.setSelectionRange(0, area.value.length);
+
+        let copied = false;
+
+        // Coba Clipboard API modern dulu (bisa berhasil karena user gesture fresh)
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            try {
+                await navigator.clipboard.writeText(tsvContent);
+                copied = true;
+            } catch (_) { /* lanjut ke fallback */ }
+        }
+
+        // Fallback execCommand
+        if (!copied) {
+            copied = document.execCommand('copy');
+        }
+
+        if (copied) {
+            statusEl.style.color = '#059669';
+            statusEl.textContent = '✅ Data berhasil disalin! Sekarang buka Google Sheet dan tekan Ctrl+V di sel A1.';
+            document.getElementById('_btnCopyTsv').textContent = '✅ Tersalin!';
+        } else {
+            statusEl.style.color = '#dc2626';
+            statusEl.textContent = '⚠️ Gagal otomatis. Klik area teks di atas → Ctrl+A → Ctrl+C secara manual.';
+        }
+    });
+
+    // Tombol buka sheet
+    document.getElementById('_btnOpenSheet').addEventListener('click', () => {
+        window.open(SHEET_URL, '_blank');
+    });
+
+    // Tombol tutup
+    document.getElementById('_btnCloseModal').addEventListener('click', () => modal.remove());
+
+    // Klik backdrop tutup modal
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
 }
 
 // Event listeners for new features
