@@ -129,6 +129,24 @@
                                 <div class="stat-label">Jawaban Benar</div>
                             </div>
                         </div>
+                        <div class="stat-item">
+                            <div class="stat-icon stat-icon-wrong">
+                                <i class="fas fa-times-circle"></i>
+                            </div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="wrongAnswers">0</div>
+                                <div class="stat-label">Jawaban Salah</div>
+                            </div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-icon stat-icon-unanswered">
+                                <i class="fas fa-minus-circle"></i>
+                            </div>
+                            <div class="stat-info">
+                                <div class="stat-value" id="unansweredQuestions">0</div>
+                                <div class="stat-label">Tidak Dijawab</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <!-- Peta Kompetensi Section -->
@@ -142,6 +160,21 @@
                             </div>
                         </div>
                         <div id="petaKompetensiBody" style="padding:20px 24px;">
+                            <!-- akan diisi JS -->
+                        </div>
+                    </div>
+                </div>
+                <!-- Level Kognitif Section -->
+                <div id="levelKognitifSection" style="display:none; margin: 24px 0;">
+                    <div style="background:#fff; border-radius:16px; box-shadow:0 2px 16px rgba(79,70,229,0.10); overflow:hidden;">
+                        <div style="background:linear-gradient(135deg,#0891b2,#0e7490); padding:18px 24px; display:flex; align-items:center; gap:12px;">
+                            <div style="width:40px;height:40px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.2rem;">🎯</div>
+                            <div>
+                                <h3 style="margin:0;color:#fff;font-size:1.05rem;font-weight:700;">Performa per Level Kognitif</h3>
+                                <p style="margin:0;color:rgba(255,255,255,0.8);font-size:0.8rem;">Jumlah jawaban benar &amp; salah pada tiap level berpikir</p>
+                            </div>
+                        </div>
+                        <div id="levelKognitifBody" style="padding:20px 24px;">
                             <!-- akan diisi JS -->
                         </div>
                     </div>

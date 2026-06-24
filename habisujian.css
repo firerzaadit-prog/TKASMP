@@ -195,6 +195,14 @@ body {
     color: white;
 }
 
+.stat-icon.stat-icon-wrong {
+    background: linear-gradient(135deg, #f87171, #dc2626);
+}
+
+.stat-icon.stat-icon-unanswered {
+    background: linear-gradient(135deg, #9ca3af, #6b7280);
+}
+
 .stat-info {
     text-align: left;
 }

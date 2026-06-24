@@ -246,14 +246,22 @@ function displayExamResults(session) {
         totalQuestionsElement.textContent = questions.length;
     }
 
-    // Calculate and display correct answers
-    const correctAnswersElement = document.getElementById('correctAnswers');
-    if (correctAnswersElement) {
+    // Calculate and display correct / wrong / unanswered answers
+    const correctAnswersElement   = document.getElementById('correctAnswers');
+    const wrongAnswersElement     = document.getElementById('wrongAnswers');
+    const unansweredElement       = document.getElementById('unansweredQuestions');
+    {
         let correctCount = 0;
+        let wrongCount = 0;
+        let unansweredCount = 0;
 
         questions.forEach((question, index) => {
             const userAnswer = answers[index];
-            if (!userAnswer) return;
+
+            if (userAnswer === null || userAnswer === undefined || userAnswer === '') {
+                unansweredCount++;
+                return;
+            }
 
             let isCorrect = false;
 
@@ -270,9 +278,12 @@ function displayExamResults(session) {
             }
 
             if (isCorrect) correctCount++;
+            else wrongCount++;
         });
 
-        correctAnswersElement.textContent = correctCount;
+        if (correctAnswersElement) correctAnswersElement.textContent = correctCount;
+        if (wrongAnswersElement) wrongAnswersElement.textContent = wrongCount;
+        if (unansweredElement) unansweredElement.textContent = unansweredCount;
     }
 
     // Render answer review menggunakan fungsi global dari HTML
@@ -287,6 +298,9 @@ function displayExamResults(session) {
 
     // Render Peta Kompetensi
     renderPetaKompetensi(questions, answers);
+
+    // Render Performa per Level Kognitif (L1/L2/L3)
+    renderLevelKognitif(questions, answers);
 
 }
 
@@ -539,7 +553,7 @@ function renderPetaKompetensi(questions, answers) {
                         <div style="display:flex;align-items:center;gap:10px;">
                             <span style="color:#059669;font-size:0.8rem;font-weight:600;">✔ ${d.benar} Benar</span>
                             <span style="color:#dc2626;font-size:0.8rem;font-weight:600;">✘ ${d.salah} Salah</span>
-                            ${d.kosong > 0 ? `<span style="color:#9ca3af;font-size:0.8rem;font-weight:600;">— ${d.kosong} Kosong</span>` : ''}
+                            <span style="color:#6b7280;font-size:0.8rem;font-weight:600;">— ${d.kosong} Tidak Dijawab</span>
                             <span style="background:${bgBar};color:${labelColor};padding:2px 10px;border-radius:20px;font-size:0.72rem;font-weight:700;">${label}</span>
                         </div>
                     </div>
@@ -556,6 +570,115 @@ function renderPetaKompetensi(questions, answers) {
             <span style="font-size:0.78rem;color:#166534;"><span style="color:#059669;font-weight:700;">✅ ≥70%</span> Baik — pertahankan!</span>
             <span style="font-size:0.78rem;color:#92400e;"><span style="color:#d97706;font-weight:700;">⚠️ 50–69%</span> Cukup — perlu ulang materi</span>
             <span style="font-size:0.78rem;color:#991b1b;"><span style="color:#dc2626;font-weight:700;">❌ &lt;50%</span> Perlu latihan intensif</span>
+        </div>
+    `;
+
+    section.style.display = 'block';
+}
+
+// ── Normalisasi level kognitif soal → L1 / L2 / L3 ────────────────────
+// Mapping ini disamakan dengan logika di sisi admin (admin.js) agar
+// klasifikasi level antara halaman siswa dan halaman admin konsisten.
+const LEVEL_KOGNITIF_MAP = {
+    'mudah': 'L1', 'easy': 'L1', '1': 'L1', 'l1': 'L1',
+    'pengetahuan': 'L1', 'knowledge': 'L1', 'level 1': 'L1', 'level1': 'L1',
+    'ingatan': 'L1', 'hafalan': 'L1', 'c1': 'L1', 'low': 'L1',
+
+    'sedang': 'L2', 'medium': 'L2', '2': 'L2', 'l2': 'L2',
+    'aplikasi': 'L2', 'application': 'L2', 'level 2': 'L2', 'level2': 'L2',
+    'pemahaman': 'L2', 'comprehension': 'L2', 'c2': 'L2', 'c3': 'L2', 'middle': 'L2',
+
+    'sulit': 'L3', 'hard': 'L3', '3': 'L3', 'l3': 'L3',
+    'penalaran': 'L3', 'reasoning': 'L3', 'level 3': 'L3', 'level3': 'L3',
+    'analisis': 'L3', 'analysis': 'L3', 'evaluasi': 'L3', 'evaluation': 'L3',
+    'c4': 'L3', 'c5': 'L3', 'c6': 'L3', 'high': 'L3', 'hots': 'L3'
+};
+
+const LEVEL_KOGNITIF_LABELS = {
+    L1: { title: 'Level 1', subtitle: 'Pengetahuan', emoji: '🟢' },
+    L2: { title: 'Level 2', subtitle: 'Aplikasi',     emoji: '🟡' },
+    L3: { title: 'Level 3', subtitle: 'Penalaran',    emoji: '🔴' }
+};
+
+/**
+ * Render performa per level kognitif (L1/L2/L3) di halaman hasil ujian siswa.
+ * Menampilkan jumlah benar / salah / tidak dijawab pada tiap level berpikir,
+ * setara dengan "Matriks Performa: Materi × Level Kognitif" pada halaman admin,
+ * namun diringkas per-level (tanpa dipecah per bab) agar mudah dibaca siswa.
+ */
+function renderLevelKognitif(questions, answers) {
+    const section = document.getElementById('levelKognitifSection');
+    const body    = document.getElementById('levelKognitifBody');
+    if (!section || !body) return;
+    if (!questions || questions.length === 0) return;
+
+    const levelMap = {
+        L1: { total: 0, benar: 0, salah: 0, kosong: 0 },
+        L2: { total: 0, benar: 0, salah: 0, kosong: 0 },
+        L3: { total: 0, benar: 0, salah: 0, kosong: 0 }
+    };
+
+    questions.forEach((q, idx) => {
+        const rawLevel = (q.level_kognitif || q.difficulty || '').toLowerCase().trim();
+        const level = LEVEL_KOGNITIF_MAP[rawLevel] || 'L2'; // default ke L2 jika tidak diketahui
+
+        const answer = answers[idx];
+        levelMap[level].total++;
+
+        if (answer === null || answer === undefined || answer === '') {
+            levelMap[level].kosong++;
+            return;
+        }
+
+        let isCorrect = false;
+        try {
+            if (q.question_type === 'PGK MCMA') {
+                const sel = (answer || '').split(',').sort();
+                const cor = Array.isArray(q.correct_answers)
+                    ? q.correct_answers.sort()
+                    : (q.correct_answers || '').split(',').sort();
+                isCorrect = JSON.stringify(sel) === JSON.stringify(cor);
+            } else if (q.question_type === 'PGK Kategori') {
+                isCorrect = checkKategoriHabisUjian(answer, q);
+            } else {
+                isCorrect = answer === q.correct_answer;
+            }
+        } catch (e) { isCorrect = false; }
+
+        if (isCorrect) levelMap[level].benar++;
+        else levelMap[level].salah++;
+    });
+
+    const activeLevels = ['L1', 'L2', 'L3'].filter(lv => levelMap[lv].total > 0);
+    if (activeLevels.length === 0) return;
+
+    body.innerHTML = `
+        <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
+            ${activeLevels.map(lv => {
+                const d = levelMap[lv];
+                const label = LEVEL_KOGNITIF_LABELS[lv];
+                const pct = d.total > 0 ? Math.round((d.benar / d.total) * 100) : 0;
+                const barColor = pct >= 70 ? '#059669' : pct >= 50 ? '#d97706' : '#dc2626';
+
+                return `<div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:12px;padding:16px;">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                        <span style="font-size:1.1rem;">${label.emoji}</span>
+                        <div>
+                            <div style="font-weight:700;color:#0e7490;font-size:0.92rem;">${label.title}</div>
+                            <div style="font-size:0.74rem;color:#0891b2;">${label.subtitle} &middot; ${d.total} soal</div>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px;">
+                        <span style="color:#059669;font-size:0.82rem;font-weight:700;">✔ ${d.benar} Benar</span>
+                        <span style="color:#dc2626;font-size:0.82rem;font-weight:700;">✘ ${d.salah} Salah</span>
+                        <span style="color:#6b7280;font-size:0.82rem;font-weight:700;">— ${d.kosong} Tidak Dijawab</span>
+                    </div>
+                    <div style="background:#e5e7eb;border-radius:999px;height:8px;overflow:hidden;">
+                        <div style="width:${pct}%;height:100%;background:${barColor};border-radius:999px;transition:width 0.6s ease;"></div>
+                    </div>
+                    <div style="text-align:right;font-size:0.7rem;color:#6b7280;margin-top:4px;">${pct}% benar</div>
+                </div>`;
+            }).join('')}
         </div>
     `;
 
