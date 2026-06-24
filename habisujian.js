@@ -618,9 +618,27 @@ function renderLevelKognitif(questions, answers) {
         L3: { total: 0, benar: 0, salah: 0, kosong: 0 }
     };
 
+    // Debug: log nilai level_kognitif/difficulty mentah dari soal-soal sesi ini
+    // (cek di Console browser kalau hasil per-level masih terasa tidak sesuai)
+    const uniqueRawLevels = [...new Set(questions.map(q => (q.level_kognitif || q.difficulty || 'KOSONG').toLowerCase().trim()))];
+    console.log('[LevelKognitif] Nilai level mentah ditemukan:', uniqueRawLevels);
+
     questions.forEach((q, idx) => {
         const rawLevel = (q.level_kognitif || q.difficulty || '').toLowerCase().trim();
-        const level = LEVEL_KOGNITIF_MAP[rawLevel] || 'L2'; // default ke L2 jika tidak diketahui
+
+        // Coba exact match dulu di kamus
+        let level = LEVEL_KOGNITIF_MAP[rawLevel];
+
+        // Jika tidak exact match, coba cocokkan kata kunci (samakan dengan logika admin.js)
+        if (!level) {
+            if (rawLevel.includes('mudah') || rawLevel.includes('easy') || rawLevel.includes('1') || rawLevel.includes('penge')) {
+                level = 'L1';
+            } else if (rawLevel.includes('sulit') || rawLevel.includes('hard') || rawLevel.includes('3') || rawLevel.includes('nalas') || rawLevel.includes('hots')) {
+                level = 'L3';
+            } else {
+                level = 'L2'; // fallback terakhir
+            }
+        }
 
         const answer = answers[idx];
         levelMap[level].total++;
