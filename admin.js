@@ -7,6 +7,110 @@ import {
     getAllExamSessionsDetailed
 } from './exam_analytics_system.js';
 
+// ============================================================
+// PAGINATION UTILITY (generik, dipakai di semua tabel/list admin panel)
+// Dipakai untuk: Soal, User, Analytics (3 tabel), Aktivitas,
+// Live Monitor (sesi aktif + feed jawaban), AI Management.
+// ============================================================
+const paginationState = {
+    questions:        { page: 1, pageSize: 20 },
+    users:            { page: 1, pageSize: 20 },
+    studentExam:      { page: 1, pageSize: 20 },
+    fullSummary:      { page: 1, pageSize: 20 },
+    allExamSessions:  { page: 1, pageSize: 20 },
+    activities:       { page: 1, pageSize: 20 },
+    activeSessions:   { page: 1, pageSize: 20 },
+    liveAnswerFeed:   { page: 1, pageSize: 20 },
+    aiSessions:       { page: 1, pageSize: 20 }
+};
+
+const PAGINATION_SIZE_OPTIONS = [10, 20, 50, 100];
+
+// Potong array sesuai halaman & ukuran halaman saat ini untuk `key`.
+// Otomatis "clamp" nomor halaman jika data berkurang (mis. setelah filter/hapus).
+function paginateArray(array, key) {
+    const list = Array.isArray(array) ? array : [];
+    const state = paginationState[key];
+    const totalItems = list.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / state.pageSize));
+
+    if (state.page > totalPages) state.page = totalPages;
+    if (state.page < 1) state.page = 1;
+
+    const start = (state.page - 1) * state.pageSize;
+    const end = start + state.pageSize;
+
+    return {
+        pageItems: list.slice(start, end),
+        totalItems,
+        totalPages,
+        currentPage: state.page,
+        pageSize: state.pageSize
+    };
+}
+
+// Render kontrol paging (info + pilihan baris/halaman + tombol navigasi)
+// ke dalam elemen dengan id `containerId`. `renderCallback` dipanggil ulang
+// setiap kali halaman/ukuran halaman berubah supaya list-nya di-render ulang.
+function renderPaginationControls(containerId, key, totalItems, renderCallback) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const state = paginationState[key];
+    const totalPages = Math.max(1, Math.ceil(totalItems / state.pageSize));
+
+    if (totalItems === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const startItem = (state.page - 1) * state.pageSize + 1;
+    const endItem = Math.min(state.page * state.pageSize, totalItems);
+
+    container.innerHTML = `
+        <div class="pagination-info">Menampilkan ${startItem}-${endItem} dari ${totalItems} data</div>
+        <div class="pagination-controls">
+            <label class="pagination-size-label">
+                Baris per halaman:
+                <select class="pagination-size-select">
+                    ${PAGINATION_SIZE_OPTIONS.map(size =>
+                        `<option value="${size}" ${size === state.pageSize ? 'selected' : ''}>${size}</option>`
+                    ).join('')}
+                </select>
+            </label>
+            <div class="pagination-nav">
+                <button type="button" class="pagination-btn" data-action="first" ${state.page <= 1 ? 'disabled' : ''} title="Halaman Pertama"><i class="fas fa-angle-double-left"></i></button>
+                <button type="button" class="pagination-btn" data-action="prev" ${state.page <= 1 ? 'disabled' : ''} title="Sebelumnya"><i class="fas fa-angle-left"></i></button>
+                <span class="pagination-page-indicator">Hal ${state.page} / ${totalPages}</span>
+                <button type="button" class="pagination-btn" data-action="next" ${state.page >= totalPages ? 'disabled' : ''} title="Berikutnya"><i class="fas fa-angle-right"></i></button>
+                <button type="button" class="pagination-btn" data-action="last" ${state.page >= totalPages ? 'disabled' : ''} title="Halaman Terakhir"><i class="fas fa-angle-double-right"></i></button>
+            </div>
+        </div>
+    `;
+
+    const sizeSelect = container.querySelector('.pagination-size-select');
+    if (sizeSelect) {
+        sizeSelect.addEventListener('change', (e) => {
+            paginationState[key].pageSize = parseInt(e.target.value, 10) || 20;
+            paginationState[key].page = 1;
+            renderCallback();
+        });
+    }
+
+    container.querySelectorAll('.pagination-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const action = btn.getAttribute('data-action');
+            const st = paginationState[key];
+            const tp = Math.max(1, Math.ceil(totalItems / st.pageSize));
+            if (action === 'first') st.page = 1;
+            else if (action === 'prev') st.page = Math.max(1, st.page - 1);
+            else if (action === 'next') st.page = Math.min(tp, st.page + 1);
+            else if (action === 'last') st.page = tp;
+            renderCallback();
+        });
+    });
+}
+
 // KEAMANAN: Admin authentication sekarang menggunakan Supabase Auth
 // Tidak lagi menggunakan hardcoded credentials
 
@@ -603,21 +707,36 @@ async function loadUsersFromProfiles() {
                     </tr>
                 `;
             }
+            window.allUsersData = [];
+            const usersPaginationEl = document.getElementById('usersPagination');
+            if (usersPaginationEl) usersPaginationEl.innerHTML = '';
             return;
         }
 
-        // Clear existing table rows
-        if (usersTableBody) usersTableBody.innerHTML = '';
-
-        // Populate table with user data
-        profiles.forEach(profile => {
-            const row = createUserTableRowFromProfiles(profile);
-            if (usersTableBody) usersTableBody.appendChild(row);
-        });
+        // Simpan data lengkap & render halaman pertama
+        window.allUsersData = profiles;
+        paginationState.users.page = 1;
+        renderUsersPage();
 
     } catch (error) {
         console.error('Error in loadUsersFromProfiles:', error);
     }
+}
+
+// Render satu halaman user (dipanggil ulang setiap ganti halaman/ukuran halaman)
+function renderUsersPage() {
+    const allUsers = window.allUsersData || [];
+    const { pageItems, totalItems } = paginateArray(allUsers, 'users');
+
+    if (usersTableBody) {
+        usersTableBody.innerHTML = '';
+        pageItems.forEach(profile => {
+            const row = createUserTableRowFromProfiles(profile);
+            usersTableBody.appendChild(row);
+        });
+    }
+
+    renderPaginationControls('usersPagination', 'users', totalItems, renderUsersPage);
 }
 
 // Create table row for user from profiles table
@@ -1063,17 +1182,30 @@ async function loadQuestions() {
             return;
         }
 
-        const questionsTableBody = document.getElementById('questionsTableBody');
-        if (questionsTableBody) questionsTableBody.innerHTML = '';
-
-        questions.forEach(question => {
-            const row = createQuestionTableRow(question);
-            if (questionsTableBody) questionsTableBody.appendChild(row);
-        });
+        window.allQuestionsData = questions || [];
+        paginationState.questions.page = 1;
+        renderQuestionsPage();
 
     } catch (error) {
         console.error('Error in loadQuestions:', error);
     }
+}
+
+// Render satu halaman soal (dipanggil ulang setiap ganti halaman/ukuran halaman)
+function renderQuestionsPage() {
+    const questionsTableBody = document.getElementById('questionsTableBody');
+    const allQuestions = window.allQuestionsData || [];
+    const { pageItems, totalItems } = paginateArray(allQuestions, 'questions');
+
+    if (questionsTableBody) {
+        questionsTableBody.innerHTML = '';
+        pageItems.forEach(question => {
+            const row = createQuestionTableRow(question);
+            questionsTableBody.appendChild(row);
+        });
+    }
+
+    renderPaginationControls('questionsPagination', 'questions', totalItems, renderQuestionsPage);
 }
 
 function createQuestionTableRow(question) {
@@ -4442,8 +4574,33 @@ async function loadStudentExamTable() {
     }
 }
 
-// Render student exam rows
+// Render student exam rows (entry point: terima data terbaru/terfilter, reset ke halaman 1)
 function renderStudentExamRows(exams) {
+    window.studentExamFilteredData = exams || [];
+    paginationState.studentExam.page = 1;
+    renderStudentExamCurrentPage();
+}
+
+// Render halaman saat ini dari data yang sudah difilter (dipanggil ulang saat ganti halaman)
+function renderStudentExamCurrentPage() {
+    const tableBody = document.getElementById('studentExamTable');
+    if (!tableBody) return;
+
+    const filtered = window.studentExamFilteredData || [];
+    const { pageItems, totalItems } = paginateArray(filtered, 'studentExam');
+
+    if (totalItems === 0) {
+        tableBody.innerHTML = `<tr><td colspan="6" style="padding: 2rem; text-align: center; color: #6b7280;">Tidak ada data yang cocok.</td></tr>`;
+        renderPaginationControls('studentExamPagination', 'studentExam', 0, renderStudentExamCurrentPage);
+        return;
+    }
+
+    renderStudentExamRowsHtml(pageItems);
+    renderPaginationControls('studentExamPagination', 'studentExam', totalItems, renderStudentExamCurrentPage);
+}
+
+// Bangun HTML baris tabel untuk kumpulan data (satu halaman) yang diberikan
+function renderStudentExamRowsHtml(exams) {
     const tableBody = document.getElementById('studentExamTable');
     if (!tableBody) return;
 
@@ -7012,13 +7169,14 @@ async function refreshMonitoringData() {
         if (activeStudentsEl) activeStudentsEl.textContent = sessions.length;
 
         // 3. Ambil jawaban terbaru - query sederhana tanpa nested join
+        // NOTE: limit dinaikkan ke 300 supaya paging (10/20/50/100 per halaman) punya cukup data
         const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
         const { data: recentAnswers, error: answersError } = await supabase
             .from('exam_answers')
             .select('id, selected_answer, is_correct, created_at, time_taken_seconds, question_id, exam_session_id')
             .gte('created_at', thirtyMinAgo)
             .order('created_at', { ascending: false })
-            .limit(50);
+            .limit(300);
 
         let answers = recentAnswers || [];
 
@@ -7067,116 +7225,145 @@ async function refreshMonitoringData() {
             avgTimeEl.textContent = Math.round(avgTime) + 's';
         }
 
-        // 5. Render active sessions cards
-        const container = document.getElementById('activeSessionsContainer');
-        if (container) {
-            if (sessions.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state" style="text-align:center;padding:2rem;color:#6b7280;grid-column:1/-1;">
-                        <i class="fas fa-hourglass-start" style="font-size:2rem;margin-bottom:0.5rem;"></i>
-                        <p>Belum ada sesi ujian aktif saat ini</p>
-                    </div>`;
-            } else {
-                container.innerHTML = sessions.map(session => {
-                    const name      = session.profiles?.nama_lengkap || 'Siswa';
-                    const email     = session.profiles?.email        || '-';
-                    const kelas     = session.profiles?.class_name   || '-';
-                    const startTime = new Date(session.started_at).toLocaleTimeString('id-ID');
-                    const elapsed   = Math.floor((Date.now() - new Date(session.started_at)) / 60000);
-                    const isPaused  = session.is_paused === true;
+        // 5. Render active sessions cards (dengan paging)
+        window.allActiveSessionsData = sessions;
+        renderActiveSessionsPage();
 
-                    const statusBadge = isPaused
-                        ? `<span style="margin-left:auto;background:#fef3c7;color:#d97706;padding:0.25rem 0.6rem;border-radius:20px;font-size:0.75rem;font-weight:600;">
-                               <i class="fas fa-pause-circle" style="margin-right:3px;"></i>PAUSED
-                           </span>`
-                        : `<span style="margin-left:auto;background:#dcfce7;color:#16a34a;padding:0.25rem 0.6rem;border-radius:20px;font-size:0.75rem;font-weight:600;">
-                               <span style="display:inline-block;width:6px;height:6px;background:#16a34a;border-radius:50%;margin-right:4px;animation:pulse 1s infinite;"></span>
-                               LIVE
-                           </span>`;
-
-                    const pauseBtn = isPaused
-                        ? `<button
-                               onclick="resumeExamSession('${session.id}', this)"
-                               style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;
-                                      padding:6px 14px;border-radius:8px;cursor:pointer;font-size:0.78rem;
-                                      font-weight:600;display:inline-flex;align-items:center;gap:5px;
-                                      margin-top:0.75rem;width:100%;justify-content:center;"
-                               onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-                               <i class="fas fa-play-circle"></i> Resume Ujian
-                           </button>`
-                        : `<button
-                               onclick="pauseExamSession('${session.id}', this)"
-                               style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;
-                                      padding:6px 14px;border-radius:8px;cursor:pointer;font-size:0.78rem;
-                                      font-weight:600;display:inline-flex;align-items:center;gap:5px;
-                                      margin-top:0.75rem;width:100%;justify-content:center;"
-                               onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-                               <i class="fas fa-pause-circle"></i> Pause Ujian
-                           </button>`;
-
-                    const cardBorder = isPaused ? 'border:2px solid #f59e0b;' : 'border:1px solid #e5e7eb;';
-
-                    return `
-                        <div style="background:#fff;${cardBorder}border-radius:12px;padding:1rem;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-                            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;">
-                                <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:1rem;">
-                                    ${name.charAt(0).toUpperCase()}
-                                </div>
-                                <div>
-                                    <div style="font-weight:600;color:#1f2937;font-size:0.95rem;">${name}</div>
-                                    <div style="font-size:0.8rem;color:#6b7280;">${email}</div>
-                                </div>
-                                ${statusBadge}
-                            </div>
-                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.82rem;color:#374151;">
-                                <div><i class="fas fa-graduation-cap" style="color:#667eea;margin-right:4px;"></i>Tipe: <strong>${session.question_type_variant || '-'}</strong></div>
-                                <div><i class="fas fa-school" style="color:#10b981;margin-right:4px;"></i>Kelas: <strong>${kelas}</strong></div>
-                                <div><i class="fas fa-clock" style="color:#f59e0b;margin-right:4px;"></i>Mulai: ${startTime}</div>
-                                <div><i class="fas fa-hourglass-half" style="color:#8b5cf6;margin-right:4px;"></i>Durasi: ${elapsed} menit</div>
-                            </div>
-                            ${pauseBtn}
-                        </div>`;
-                }).join('');
-            }
-        }
-
-        // 6. Render live answer feed
-        const feedEl = document.getElementById('liveAnswerFeed');
-        if (feedEl) {
-            if (answers.length === 0) {
-                feedEl.innerHTML = `
-                    <div class="empty-state" style="text-align:center;padding:2rem;color:#6b7280;">
-                        <i class="fas fa-inbox" style="font-size:2rem;margin-bottom:0.5rem;"></i>
-                        <p>Belum ada jawaban masuk dalam 30 menit terakhir</p>
-                    </div>`;
-            } else {
-                feedEl.innerHTML = answers.map(a => {
-                    const studentName = a.exam_sessions?.profiles?.nama_lengkap || 'Siswa';
-                    const chapter = a.questions?.bab || '-';
-                    const questionSnippet = (a.questions?.question_text || '').substring(0, 60) + '...';
-                    const time = new Date(a.created_at).toLocaleTimeString('id-ID');
-                    const isCorrect = a.is_correct;
-                    return `
-                        <div style="display:flex;align-items:center;gap:1rem;padding:0.75rem 1rem;border-bottom:1px solid #f3f4f6;">
-                            <div style="width:32px;height:32px;border-radius:50%;background:${isCorrect ? '#dcfce7' : '#fee2e2'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-                                <i class="fas fa-${isCorrect ? 'check' : 'times'}" style="color:${isCorrect ? '#16a34a' : '#dc2626'};font-size:0.9rem;"></i>
-                            </div>
-                            <div style="flex:1;min-width:0;">
-                                <div style="font-size:0.85rem;font-weight:600;color:#374151;">${studentName}</div>
-                                <div style="font-size:0.8rem;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${chapter} — ${questionSnippet}</div>
-                            </div>
-                            <div style="text-align:right;flex-shrink:0;">
-                                <div style="font-size:0.75rem;color:#9ca3af;">${time}</div>
-                                <div style="font-size:0.75rem;color:${isCorrect ? '#16a34a' : '#dc2626'};font-weight:600;">${isCorrect ? 'Benar' : 'Salah'}</div>
-                            </div>
-                        </div>`;
-                }).join('');
-            }
-        }
+        // 6. Render live answer feed (dengan paging)
+        window.allLiveAnswersData = answers;
+        renderLiveAnswerFeedPage();
 
     } catch (error) {
         console.error('Error refreshing monitoring data:', error);
     }
+}
+
+// Render satu halaman kartu "Sesi Ujian Aktif" (dipanggil ulang saat ganti halaman/ukuran halaman).
+// Nomor halaman TIDAK direset otomatis saat auto-refresh, supaya admin tidak "terlempar"
+// balik ke halaman 1 tiap 5 detik saat sedang memantau halaman lain.
+function renderActiveSessionsPage() {
+    const container = document.getElementById('activeSessionsContainer');
+    if (!container) return;
+
+    const allSessions = window.allActiveSessionsData || [];
+    const { pageItems, totalItems } = paginateArray(allSessions, 'activeSessions');
+
+    if (totalItems === 0) {
+        container.innerHTML = `
+            <div class="empty-state" style="text-align:center;padding:2rem;color:#6b7280;grid-column:1/-1;">
+                <i class="fas fa-hourglass-start" style="font-size:2rem;margin-bottom:0.5rem;"></i>
+                <p>Belum ada sesi ujian aktif saat ini</p>
+            </div>`;
+        renderPaginationControls('activeSessionsPagination', 'activeSessions', 0, renderActiveSessionsPage);
+        return;
+    }
+
+    container.innerHTML = pageItems.map(session => {
+        const name      = session.profiles?.nama_lengkap || 'Siswa';
+        const email     = session.profiles?.email        || '-';
+        const kelas     = session.profiles?.class_name   || '-';
+        const startTime = new Date(session.started_at).toLocaleTimeString('id-ID');
+        const elapsed   = Math.floor((Date.now() - new Date(session.started_at)) / 60000);
+        const isPaused  = session.is_paused === true;
+
+        const statusBadge = isPaused
+            ? `<span style="margin-left:auto;background:#fef3c7;color:#d97706;padding:0.25rem 0.6rem;border-radius:20px;font-size:0.75rem;font-weight:600;">
+                   <i class="fas fa-pause-circle" style="margin-right:3px;"></i>PAUSED
+               </span>`
+            : `<span style="margin-left:auto;background:#dcfce7;color:#16a34a;padding:0.25rem 0.6rem;border-radius:20px;font-size:0.75rem;font-weight:600;">
+                   <span style="display:inline-block;width:6px;height:6px;background:#16a34a;border-radius:50%;margin-right:4px;animation:pulse 1s infinite;"></span>
+                   LIVE
+               </span>`;
+
+        const pauseBtn = isPaused
+            ? `<button
+                   onclick="resumeExamSession('${session.id}', this)"
+                   style="background:linear-gradient(135deg,#10b981,#059669);color:#fff;border:none;
+                          padding:6px 14px;border-radius:8px;cursor:pointer;font-size:0.78rem;
+                          font-weight:600;display:inline-flex;align-items:center;gap:5px;
+                          margin-top:0.75rem;width:100%;justify-content:center;"
+                   onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                   <i class="fas fa-play-circle"></i> Resume Ujian
+               </button>`
+            : `<button
+                   onclick="pauseExamSession('${session.id}', this)"
+                   style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;
+                          padding:6px 14px;border-radius:8px;cursor:pointer;font-size:0.78rem;
+                          font-weight:600;display:inline-flex;align-items:center;gap:5px;
+                          margin-top:0.75rem;width:100%;justify-content:center;"
+                   onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                   <i class="fas fa-pause-circle"></i> Pause Ujian
+               </button>`;
+
+        const cardBorder = isPaused ? 'border:2px solid #f59e0b;' : 'border:1px solid #e5e7eb;';
+
+        return `
+            <div style="background:#fff;${cardBorder}border-radius:12px;padding:1rem;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+                <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;">
+                    <div style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:1rem;">
+                        ${name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                        <div style="font-weight:600;color:#1f2937;font-size:0.95rem;">${name}</div>
+                        <div style="font-size:0.8rem;color:#6b7280;">${email}</div>
+                    </div>
+                    ${statusBadge}
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;font-size:0.82rem;color:#374151;">
+                    <div><i class="fas fa-graduation-cap" style="color:#667eea;margin-right:4px;"></i>Tipe: <strong>${session.question_type_variant || '-'}</strong></div>
+                    <div><i class="fas fa-school" style="color:#10b981;margin-right:4px;"></i>Kelas: <strong>${kelas}</strong></div>
+                    <div><i class="fas fa-clock" style="color:#f59e0b;margin-right:4px;"></i>Mulai: ${startTime}</div>
+                    <div><i class="fas fa-hourglass-half" style="color:#8b5cf6;margin-right:4px;"></i>Durasi: ${elapsed} menit</div>
+                </div>
+                ${pauseBtn}
+            </div>`;
+    }).join('');
+
+    renderPaginationControls('activeSessionsPagination', 'activeSessions', totalItems, renderActiveSessionsPage);
+}
+
+// Render satu halaman "Feed Jawaban Real-time" (dipanggil ulang saat ganti halaman/ukuran halaman).
+// Nomor halaman TIDAK direset otomatis saat auto-refresh (lihat catatan di renderActiveSessionsPage).
+function renderLiveAnswerFeedPage() {
+    const feedEl = document.getElementById('liveAnswerFeed');
+    if (!feedEl) return;
+
+    const allAnswers = window.allLiveAnswersData || [];
+    const { pageItems, totalItems } = paginateArray(allAnswers, 'liveAnswerFeed');
+
+    if (totalItems === 0) {
+        feedEl.innerHTML = `
+            <div class="empty-state" style="text-align:center;padding:2rem;color:#6b7280;">
+                <i class="fas fa-inbox" style="font-size:2rem;margin-bottom:0.5rem;"></i>
+                <p>Belum ada jawaban masuk dalam 30 menit terakhir</p>
+            </div>`;
+        renderPaginationControls('liveAnswerFeedPagination', 'liveAnswerFeed', 0, renderLiveAnswerFeedPage);
+        return;
+    }
+
+    feedEl.innerHTML = pageItems.map(a => {
+        const studentName = a.exam_sessions?.profiles?.nama_lengkap || 'Siswa';
+        const chapter = a.questions?.bab || '-';
+        const questionSnippet = (a.questions?.question_text || '').substring(0, 60) + '...';
+        const time = new Date(a.created_at).toLocaleTimeString('id-ID');
+        const isCorrect = a.is_correct;
+        return `
+            <div style="display:flex;align-items:center;gap:1rem;padding:0.75rem 1rem;border-bottom:1px solid #f3f4f6;">
+                <div style="width:32px;height:32px;border-radius:50%;background:${isCorrect ? '#dcfce7' : '#fee2e2'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <i class="fas fa-${isCorrect ? 'check' : 'times'}" style="color:${isCorrect ? '#16a34a' : '#dc2626'};font-size:0.9rem;"></i>
+                </div>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:0.85rem;font-weight:600;color:#374151;">${studentName}</div>
+                    <div style="font-size:0.8rem;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${chapter} — ${questionSnippet}</div>
+                </div>
+                <div style="text-align:right;flex-shrink:0;">
+                    <div style="font-size:0.75rem;color:#9ca3af;">${time}</div>
+                    <div style="font-size:0.75rem;color:${isCorrect ? '#16a34a' : '#dc2626'};font-weight:600;">${isCorrect ? 'Benar' : 'Salah'}</div>
+                </div>
+            </div>`;
+    }).join('');
+
+    renderPaginationControls('liveAnswerFeedPagination', 'liveAnswerFeed', totalItems, renderLiveAnswerFeedPage);
 }
 
 // Setup monitoring button event listeners
@@ -7344,100 +7531,15 @@ async function loadFullSummaryTable() {
 
         if (allRows.length === 0) {
             tbody.innerHTML = `<tr><td colspan="${COL}" style="padding:2rem;text-align:center;color:#6b7280;">Belum ada data ujian.</td></tr>`;
+            const pagEl = document.getElementById('fullSummaryPagination');
+            if (pagEl) pagEl.innerHTML = '';
             return;
         }
 
-        // Helper: potong teks panjang dengan tooltip
-        const trim = (text, max = 60) => {
-            const str = String(text || '-');
-            return str.length > max
-                ? `<span title="${str.replace(/"/g, '&quot;')}">${str.substring(0, max)}…</span>`
-                : str;
-        };
-
-        // Helper: format kolom AI (newline → bullet list)
-        const fmtAI = (text, color = '#374151') => {
-            const str = String(text || '-').trim();
-            if (!str || str === '-') return '<span style="color:#9ca3af;font-style:italic;">-</span>';
-            const lines = str.split('\n').map(l => l.trim()).filter(Boolean);
-            if (lines.length <= 1) return `<span style="color:${color};font-size:0.78rem;">${str}</span>`;
-            return `<ul style="margin:0;padding-left:14px;color:${color};font-size:0.78rem;">
-                ${lines.map(l => `<li style="margin-bottom:2px;">${l.replace(/^•\s*/, '')}</li>`).join('')}
-            </ul>`;
-        };
-
-        tbody.innerHTML = allRows.map(({ row, userId }, idx) => {
-            // Safety check: pastikan row adalah array yang valid
-            if (!Array.isArray(row)) return '';
-
-            const bgColor     = idx % 2 === 0 ? '#ffffff' : '#f9fafb';
-
-            // ── Ambil nilai dari indeks yang sudah benar ──────────────────
-            const nama        = row[0]  || 'Tanpa Nama';
-            // row[1]=email, row[2]=kelas — tidak ditampilkan di tabel ini
-            const paket       = row[3]  || '-';
-            const tanggal     = row[4]  || '-';
-            const durasi      = row[5]  || '-';
-            const skor        = Number(row[6])  || 0;
-            // row[7] = peta kompetensi teks (untuk CSV), tidak dipakai di sini
-            const matrixData  = row[16] || null; // object matrix kognitif
-            const benar       = Number(row[8])  || 0;
-            const salah       = Number(row[9])  || 0;
-            const tdkDijawab  = row[10] !== undefined && row[10] !== null ? Number(row[10]) : '-';
-            const ringkasan   = row[11] || '-';
-            const kekuatan    = row[12] || '-';
-            const kelemahan   = row[13] || '-';
-            const rekomendasi = row[14] || '-';
-            const sessionId   = row[15] || '';
-
-            const skorColor   = skor >= 70 ? '#059669' : skor >= 50 ? '#d97706' : '#dc2626';
-
-            // Kolom Peta Kompetensi: render matriks mini
-            const petaKompetensiCell = renderMiniCognitiveMatrix(matrixData);
-
-            // Tombol Aksi — hanya Lihat Jawaban
-            const namaSafe = String(nama).replace(/'/g, "\\'");
-
-            const btnLihatJawaban = (sessionId && sessionId !== '-')
-                ? `<button
-                        onclick="showExamAnswerDetail('${sessionId}', '${namaSafe}')"
-                        style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;
-                               padding:5px 10px;border-radius:7px;cursor:pointer;font-size:0.75rem;
-                               display:inline-flex;align-items:center;gap:4px;white-space:nowrap;
-                               box-shadow:0 2px 5px rgba(102,126,234,0.35);"
-                        onmouseover="this.style.transform='translateY(-1px)'"
-                        onmouseout="this.style.transform=''">
-                        <i class="fas fa-eye"></i> Lihat Jawaban
-                   </button>`
-                : `<span style="color:#9ca3af;font-size:0.75rem;">Belum ujian</span>`;
-
-            return `<tr style="background:${bgColor};border-bottom:3px solid #c4b5fd;">
-                <td style="padding:8px 12px;font-weight:600;color:#1f2937;white-space:nowrap;vertical-align:top;">${trim(nama)}</td>
-                <td style="padding:8px 12px;vertical-align:top;">
-                    <span style="background:#eef2ff;color:#4f46e5;padding:2px 8px;border-radius:12px;font-size:0.78rem;font-weight:600;white-space:nowrap;">
-                        ${paket}
-                    </span>
-                </td>
-                <td style="padding:8px 12px;white-space:nowrap;color:#6b7280;font-size:0.82rem;vertical-align:top;">${tanggal}</td>
-                <td style="padding:8px 12px;white-space:nowrap;font-size:0.82rem;vertical-align:top;">${durasi}</td>
-                <td style="padding:8px 12px;text-align:center;vertical-align:top;">
-                    <span style="background:${skorColor};color:white;padding:3px 10px;border-radius:12px;font-weight:700;font-size:0.88rem;">
-                        ${skor}
-                    </span>
-                </td>
-                <td style="padding:6px 10px;vertical-align:top;min-width:240px;">${petaKompetensiCell}</td>
-                <td style="padding:8px 12px;text-align:center;color:#059669;font-weight:700;font-size:0.95rem;vertical-align:top;">${benar}</td>
-                <td style="padding:8px 12px;text-align:center;color:#dc2626;font-weight:700;font-size:0.95rem;vertical-align:top;">${salah}</td>
-                <td style="padding:8px 12px;text-align:center;color:#d97706;font-weight:700;font-size:0.95rem;vertical-align:top;">${tdkDijawab}</td>
-                <td style="padding:8px 12px;font-size:0.78rem;min-width:180px;vertical-align:top;">${fmtAI(ringkasan)}</td>
-                <td style="padding:8px 12px;font-size:0.78rem;min-width:200px;vertical-align:top;">${fmtAI(kekuatan, '#059669')}</td>
-                <td style="padding:8px 12px;font-size:0.78rem;min-width:200px;vertical-align:top;">${fmtAI(kelemahan, '#dc2626')}</td>
-                <td style="padding:8px 12px;font-size:0.78rem;min-width:200px;vertical-align:top;">${fmtAI(rekomendasi, '#3b82f6')}</td>
-                <td style="padding:8px 12px;text-align:center;white-space:nowrap;vertical-align:top;">
-                    ${btnLihatJawaban}
-                </td>
-            </tr>`;
-        }).filter(Boolean).join('');
+        // Simpan seluruh data & render halaman pertama
+        window.allFullSummaryRows = allRows;
+        paginationState.fullSummary.page = 1;
+        renderFullSummaryPage();
 
     } catch (error) {
         console.error('Error loading full summary table:', error);
@@ -7445,6 +7547,110 @@ async function loadFullSummaryTable() {
             <i class="fas fa-exclamation-triangle"></i> Error: ${error.message}
         </td></tr>`;
     }
+}
+
+// Render satu halaman "Data Lengkap Hasil Ujian" (dipanggil ulang saat ganti halaman/ukuran halaman)
+function renderFullSummaryPage() {
+    const tbody = document.getElementById('fullSummaryTableBody');
+    if (!tbody) return;
+
+    const COL = 14;
+    const allRows = window.allFullSummaryRows || [];
+    const { pageItems, totalItems } = paginateArray(allRows, 'fullSummary');
+
+    // Helper: potong teks panjang dengan tooltip
+    const trim = (text, max = 60) => {
+        const str = String(text || '-');
+        return str.length > max
+            ? `<span title="${str.replace(/"/g, '&quot;')}">${str.substring(0, max)}…</span>`
+            : str;
+    };
+
+    // Helper: format kolom AI (newline → bullet list)
+    const fmtAI = (text, color = '#374151') => {
+        const str = String(text || '-').trim();
+        if (!str || str === '-') return '<span style="color:#9ca3af;font-style:italic;">-</span>';
+        const lines = str.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length <= 1) return `<span style="color:${color};font-size:0.78rem;">${str}</span>`;
+        return `<ul style="margin:0;padding-left:14px;color:${color};font-size:0.78rem;">
+            ${lines.map(l => `<li style="margin-bottom:2px;">${l.replace(/^•\s*/, '')}</li>`).join('')}
+        </ul>`;
+    };
+
+    tbody.innerHTML = pageItems.map(({ row, userId }, idx) => {
+        // Safety check: pastikan row adalah array yang valid
+        if (!Array.isArray(row)) return '';
+
+        const bgColor     = idx % 2 === 0 ? '#ffffff' : '#f9fafb';
+
+        // ── Ambil nilai dari indeks yang sudah benar ──────────────────
+        const nama        = row[0]  || 'Tanpa Nama';
+        // row[1]=email, row[2]=kelas — tidak ditampilkan di tabel ini
+        const paket       = row[3]  || '-';
+        const tanggal     = row[4]  || '-';
+        const durasi      = row[5]  || '-';
+        const skor        = Number(row[6])  || 0;
+        // row[7] = peta kompetensi teks (untuk CSV), tidak dipakai di sini
+        const matrixData  = row[16] || null; // object matrix kognitif
+        const benar       = Number(row[8])  || 0;
+        const salah       = Number(row[9])  || 0;
+        const tdkDijawab  = row[10] !== undefined && row[10] !== null ? Number(row[10]) : '-';
+        const ringkasan   = row[11] || '-';
+        const kekuatan    = row[12] || '-';
+        const kelemahan   = row[13] || '-';
+        const rekomendasi = row[14] || '-';
+        const sessionId   = row[15] || '';
+
+        const skorColor   = skor >= 70 ? '#059669' : skor >= 50 ? '#d97706' : '#dc2626';
+
+        // Kolom Peta Kompetensi: render matriks mini
+        const petaKompetensiCell = renderMiniCognitiveMatrix(matrixData);
+
+        // Tombol Aksi — hanya Lihat Jawaban
+        const namaSafe = String(nama).replace(/'/g, "\\'");
+
+        const btnLihatJawaban = (sessionId && sessionId !== '-')
+            ? `<button
+                    onclick="showExamAnswerDetail('${sessionId}', '${namaSafe}')"
+                    style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;
+                           padding:5px 10px;border-radius:7px;cursor:pointer;font-size:0.75rem;
+                           display:inline-flex;align-items:center;gap:4px;white-space:nowrap;
+                           box-shadow:0 2px 5px rgba(102,126,234,0.35);"
+                    onmouseover="this.style.transform='translateY(-1px)'"
+                    onmouseout="this.style.transform=''">
+                    <i class="fas fa-eye"></i> Lihat Jawaban
+               </button>`
+            : `<span style="color:#9ca3af;font-size:0.75rem;">Belum ujian</span>`;
+
+        return `<tr style="background:${bgColor};border-bottom:3px solid #c4b5fd;">
+            <td style="padding:8px 12px;font-weight:600;color:#1f2937;white-space:nowrap;vertical-align:top;">${trim(nama)}</td>
+            <td style="padding:8px 12px;vertical-align:top;">
+                <span style="background:#eef2ff;color:#4f46e5;padding:2px 8px;border-radius:12px;font-size:0.78rem;font-weight:600;white-space:nowrap;">
+                    ${paket}
+                </span>
+            </td>
+            <td style="padding:8px 12px;white-space:nowrap;color:#6b7280;font-size:0.82rem;vertical-align:top;">${tanggal}</td>
+            <td style="padding:8px 12px;white-space:nowrap;font-size:0.82rem;vertical-align:top;">${durasi}</td>
+            <td style="padding:8px 12px;text-align:center;vertical-align:top;">
+                <span style="background:${skorColor};color:white;padding:3px 10px;border-radius:12px;font-weight:700;font-size:0.88rem;">
+                    ${skor}
+                </span>
+            </td>
+            <td style="padding:6px 10px;vertical-align:top;min-width:240px;">${petaKompetensiCell}</td>
+            <td style="padding:8px 12px;text-align:center;color:#059669;font-weight:700;font-size:0.95rem;vertical-align:top;">${benar}</td>
+            <td style="padding:8px 12px;text-align:center;color:#dc2626;font-weight:700;font-size:0.95rem;vertical-align:top;">${salah}</td>
+            <td style="padding:8px 12px;text-align:center;color:#d97706;font-weight:700;font-size:0.95rem;vertical-align:top;">${tdkDijawab}</td>
+            <td style="padding:8px 12px;font-size:0.78rem;min-width:180px;vertical-align:top;">${fmtAI(ringkasan)}</td>
+            <td style="padding:8px 12px;font-size:0.78rem;min-width:200px;vertical-align:top;">${fmtAI(kekuatan, '#059669')}</td>
+            <td style="padding:8px 12px;font-size:0.78rem;min-width:200px;vertical-align:top;">${fmtAI(kelemahan, '#dc2626')}</td>
+            <td style="padding:8px 12px;font-size:0.78rem;min-width:200px;vertical-align:top;">${fmtAI(rekomendasi, '#3b82f6')}</td>
+            <td style="padding:8px 12px;text-align:center;white-space:nowrap;vertical-align:top;">
+                ${btnLihatJawaban}
+            </td>
+        </tr>`;
+    }).filter(Boolean).join('');
+
+    renderPaginationControls('fullSummaryPagination', 'fullSummary', totalItems, renderFullSummaryPage);
 }
 
 // ============================================================
@@ -9003,11 +9209,12 @@ async function loadAllActivities() {
         const dateFilter = document.getElementById('activityDateFilter')?.value || '';
 
         // Build query
+        // NOTE: limit dinaikkan ke 500 supaya paging (10/20/50/100 per halaman) punya cukup data
         let query = supabase
             .from('admin_activities')
             .select('*')
             .order('created_at', { ascending: false })
-            .limit(100);
+            .limit(500);
 
         if (typeFilter) {
             query = query.eq('activity_type', typeFilter);
@@ -9040,28 +9247,16 @@ async function loadAllActivities() {
         if (!activities || activities.length === 0) {
             if (emptyState) emptyState.style.display = 'block';
             if (activitiesTableBody) activitiesTableBody.innerHTML = '';
+            window.allActivitiesData = [];
+            const activitiesPagEl = document.getElementById('activitiesPagination');
+            if (activitiesPagEl) activitiesPagEl.innerHTML = '';
             return;
         }
 
-        // Populate table
-        const activitiesHtml = activities.map(activity => {
-            const formattedTime = formatActivityTime(activity.created_at);
-            const activityTypeLabel = getActivityTypeLabel(activity.activity_type);
-            const actionLabel = getActionLabel(activity.action);
-            const icon = getActivityIcon(activity.activity_type, activity.action);
-
-            return `
-                <tr>
-                    <td>${new Date(activity.created_at).toLocaleString('id-ID')}</td>
-                    <td><span class="activity-type-badge ${activity.activity_type}">${activityTypeLabel}</span></td>
-                    <td><span class="activity-action-badge ${activity.action}"><i class="${icon}"></i> ${actionLabel}</span></td>
-                    <td>${activity.title}</td>
-                    <td>${activity.description || '-'}</td>
-                </tr>
-            `;
-        }).join('');
-
-        if (activitiesTableBody) activitiesTableBody.innerHTML = activitiesHtml;
+        // Simpan seluruh data hasil query & render halaman pertama
+        window.allActivitiesData = activities;
+        paginationState.activities.page = 1;
+        renderActivitiesPage();
 
     } catch (error) {
         console.error('Error in loadAllActivities:', error);
@@ -9071,6 +9266,34 @@ async function loadAllActivities() {
         if (loadingIndicator) loadingIndicator.style.display = 'none';
         if (activitiesTableBody) activitiesTableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #dc2626;">Error loading activities</td></tr>';
     }
+}
+
+// Render satu halaman aktivitas (dipanggil ulang saat ganti halaman/ukuran halaman)
+function renderActivitiesPage() {
+    const activitiesTableBody = document.getElementById('activitiesTableBody');
+    const activities = window.allActivitiesData || [];
+    const { pageItems, totalItems } = paginateArray(activities, 'activities');
+
+    const activitiesHtml = pageItems.map(activity => {
+        const formattedTime = formatActivityTime(activity.created_at);
+        const activityTypeLabel = getActivityTypeLabel(activity.activity_type);
+        const actionLabel = getActionLabel(activity.action);
+        const icon = getActivityIcon(activity.activity_type, activity.action);
+
+        return `
+            <tr>
+                <td>${new Date(activity.created_at).toLocaleString('id-ID')}</td>
+                <td><span class="activity-type-badge ${activity.activity_type}">${activityTypeLabel}</span></td>
+                <td><span class="activity-action-badge ${activity.action}"><i class="${icon}"></i> ${actionLabel}</span></td>
+                <td>${activity.title}</td>
+                <td>${activity.description || '-'}</td>
+            </tr>
+        `;
+    }).join('');
+
+    if (activitiesTableBody) activitiesTableBody.innerHTML = activitiesHtml;
+
+    renderPaginationControls('activitiesPagination', 'activities', totalItems, renderActivitiesPage);
 }
 
 // Helper function to get activity type label
@@ -9267,6 +9490,8 @@ async function loadAIManagementData() {
                     <i class="fas fa-inbox" style="font-size:2rem;display:block;margin-bottom:8px;"></i>
                     Belum ada sesi ujian yang selesai.
                 </td></tr>`;
+            const aiPagEl = document.getElementById('aiSessionsPagination');
+            if (aiPagEl) aiPagEl.innerHTML = '';
             aiSetLog('Tidak ada sesi ujian selesai ditemukan.', 'warn');
             return;
         }
@@ -9331,19 +9556,31 @@ async function loadAIManagementData() {
 }
 
 // ── Render tabel sesi ──────────────────────────────────────────────────
+// ── Render tabel sesi (entry point: reset ke halaman 1 & simpan data terfilter) ──
 function aiRenderSessionsTable(sessions) {
+    window.aiFilteredSessions = sessions || [];
+    paginationState.aiSessions.page = 1;
+    aiRenderSessionsCurrentPage();
+}
+
+// Render halaman saat ini dari data terfilter (dipanggil ulang saat ganti halaman/ukuran halaman)
+function aiRenderSessionsCurrentPage() {
     const tableBody = document.getElementById('aiSessionsTableBody');
     if (!tableBody) return;
 
-    if (sessions.length === 0) {
+    const filtered = window.aiFilteredSessions || [];
+    const { pageItems, totalItems } = paginateArray(filtered, 'aiSessions');
+
+    if (totalItems === 0) {
         tableBody.innerHTML = `
             <tr><td colspan="5" style="text-align:center;padding:32px;color:#9ca3af;">
                 Tidak ada sesi yang cocok dengan filter.
             </td></tr>`;
+        renderPaginationControls('aiSessionsPagination', 'aiSessions', 0, aiRenderSessionsCurrentPage);
         return;
     }
 
-    tableBody.innerHTML = sessions.map(session => {
+    tableBody.innerHTML = pageItems.map(session => {
         const namaSiswa = session.profiles?.nama_lengkap || session.profiles?.email || (session.user_id ? session.user_id.slice(0, 8) + '...' : '-');
         const tanggal = new Date(session.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
         const waktu  = new Date(session.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
@@ -9391,6 +9628,8 @@ function aiRenderSessionsTable(sessions) {
                 </td>
             </tr>`;
     }).join('');
+
+    renderPaginationControls('aiSessionsPagination', 'aiSessions', totalItems, aiRenderSessionsCurrentPage);
 }
 
 // ── Fitur 1: Batch Analysis ────────────────────────────────────────────
@@ -9662,10 +9901,34 @@ async function loadAllExamSessionsDetailed() {
             tbody.innerHTML = `<tr><td colspan="${COL}" style="padding:2rem;text-align:center;color:#6b7280;">
                 <i class="fas fa-inbox"></i> Belum ada percobaan ujian yang selesai.
             </td></tr>`;
+            const pagEl = document.getElementById('allExamSessionsPagination');
+            if (pagEl) pagEl.innerHTML = '';
             return;
         }
 
-        tbody.innerHTML = sessions.map((s, idx) => {
+        window.allExamSessionsData = sessions;
+        paginationState.allExamSessions.page = 1;
+        renderAllExamSessionsPage();
+
+    } catch (error) {
+        console.error('[loadAllExamSessionsDetailed] Error:', error);
+        tbody.innerHTML = `<tr><td colspan="${COL}" style="padding:2rem;text-align:center;color:#ef4444;">
+            <i class="fas fa-exclamation-triangle"></i> Gagal memuat data: ${error.message}
+        </td></tr>`;
+    }
+}
+
+// Render satu halaman "Daftar Seluruh Percobaan Ujian" (dipanggil ulang saat ganti halaman/ukuran halaman)
+function renderAllExamSessionsPage() {
+    const tbody = document.getElementById('allExamSessionsTableBody');
+    if (!tbody) return;
+
+    const COL = 9;
+    const sessions = window.allExamSessionsData || [];
+    const { pageItems, totalItems, currentPage, pageSize } = paginateArray(sessions, 'allExamSessions');
+    const rowOffset = (currentPage - 1) * pageSize;
+
+    tbody.innerHTML = pageItems.map((s, idx) => {
             const bg = idx % 2 === 0 ? '#ffffff' : '#f0f9ff';
 
             // Format tanggal
@@ -9726,7 +9989,7 @@ async function loadAllExamSessionsDetailed() {
                    </span>`;
 
             return `<tr style="background:${bg};border-bottom:1px solid #e5e7eb;">
-                <td style="padding:10px 14px;color:#6b7280;font-size:0.8rem;">${idx + 1}</td>
+                <td style="padding:10px 14px;color:#6b7280;font-size:0.8rem;">${rowOffset + idx + 1}</td>
                 <td style="padding:10px 14px;font-weight:600;color:#1f2937;white-space:nowrap;">${s.namaSiswa}</td>
                 <td style="padding:10px 14px;color:#6b7280;white-space:nowrap;">${s.kelas}</td>
                 <td style="padding:10px 14px;">
@@ -9746,12 +10009,7 @@ async function loadAllExamSessionsDetailed() {
             </tr>`;
         }).join('');
 
-    } catch (error) {
-        console.error('[loadAllExamSessionsDetailed] Error:', error);
-        tbody.innerHTML = `<tr><td colspan="${COL}" style="padding:2rem;text-align:center;color:#ef4444;">
-            <i class="fas fa-exclamation-triangle"></i> Gagal memuat data: ${error.message}
-        </td></tr>`;
-    }
+    renderPaginationControls('allExamSessionsPagination', 'allExamSessions', totalItems, renderAllExamSessionsPage);
 }
 
 // ── Event listeners AI Management ─────────────────────────────────────

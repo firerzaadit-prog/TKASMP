@@ -3996,3 +3996,105 @@ body::before {
     color: #dc2626;
     font-size: 0.82rem;
 }
+/* ============================================================
+   PAGINATION COMPONENT (generic, reused across all list/table tabs)
+   ============================================================ */
+.pagination-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.9rem 1.25rem;
+    margin-top: 0.75rem;
+    background: var(--admin-bg-tertiary);
+    border: 1px solid var(--admin-border-light);
+    border-radius: var(--admin-radius-md);
+}
+
+.pagination-info {
+    font-size: 0.82rem;
+    color: var(--admin-text-secondary);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.pagination-size-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    color: var(--admin-text-secondary);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.pagination-size-select {
+    padding: 0.35rem 0.6rem;
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius-sm);
+    background: var(--admin-bg-secondary);
+    color: var(--admin-text-primary);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.pagination-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.pagination-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+    padding: 0 0.5rem;
+    border: 1px solid var(--admin-border);
+    background: var(--admin-bg-secondary);
+    color: var(--admin-text-primary);
+    border-radius: var(--admin-radius-sm);
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.2s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+    background: var(--admin-primary);
+    border-color: var(--admin-primary);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.pagination-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.pagination-page-indicator {
+    font-size: 0.82rem;
+    color: var(--admin-text-primary);
+    font-weight: 600;
+    padding: 0 0.4rem;
+    white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+    .pagination-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .pagination-controls {
+        justify-content: space-between;
+    }
+}
