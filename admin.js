@@ -4531,12 +4531,12 @@ async function loadStudentExamTable() {
 
         if (error) {
             console.error('Error loading exam sessions:', error);
-            tableBody.innerHTML = `<tr><td colspan="7" style="padding: 2rem; text-align: center; color: #ef4444;">Error memuat data: ${error.message}</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="6" style="padding: 2rem; text-align: center; color: #ef4444;">Error memuat data: ${error.message}</td></tr>`;
             return;
         }
 
         if (!exams || exams.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="7" style="padding: 2rem; text-align: center; color: #6b7280;">Belum ada data ujian</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="6" style="padding: 2rem; text-align: center; color: #6b7280;">Belum ada data ujian</td></tr>`;
             return;
         }
 
@@ -4567,10 +4567,28 @@ async function loadStudentExamTable() {
         // Store data for filtering
         window.studentExamData = combinedData;
 
+        // Update stats cards (Total Siswa, Ujian Selesai, Rata-rata Skor, Rata-rata Akurasi)
+        const totalStudentsEl = document.getElementById('totalStudentsCount');
+        const completedExamsEl = document.getElementById('completedExamsCount');
+        const avgScoreEl = document.getElementById('avgScoreCount');
+        const avgAccuracyEl = document.getElementById('avgAccuracyCount');
+        if (totalStudentsEl || completedExamsEl || avgScoreEl || avgAccuracyEl) {
+            const completedSessions = combinedData.filter(s => s.status === 'completed');
+            const totalStudents = new Set(combinedData.map(s => s.user_id).filter(Boolean)).size;
+            const avgScore = completedSessions.length > 0
+                ? Math.round(completedSessions.reduce((sum, s) => sum + (s.total_score || 0), 0) / completedSessions.length)
+                : 0;
+
+            if (totalStudentsEl) totalStudentsEl.textContent = totalStudents;
+            if (completedExamsEl) completedExamsEl.textContent = completedSessions.length;
+            if (avgScoreEl) avgScoreEl.textContent = avgScore;
+            if (avgAccuracyEl) avgAccuracyEl.textContent = '-';
+        }
+
         renderStudentExamRows(combinedData);
     } catch (error) {
         console.error('Error in loadStudentExamTable:', error);
-        tableBody.innerHTML = `<tr><td colspan="7" style="padding: 2rem; text-align: center; color: #ef4444;">Error: ${error.message}</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="6" style="padding: 2rem; text-align: center; color: #ef4444;">Error: ${error.message}</td></tr>`;
     }
 }
 
