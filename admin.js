@@ -13,15 +13,15 @@ import {
 // Live Monitor (sesi aktif + feed jawaban), AI Management.
 // ============================================================
 const paginationState = {
-    questions:        { page: 1, pageSize: 20 },
-    users:            { page: 1, pageSize: 20 },
-    studentExam:      { page: 1, pageSize: 20 },
-    fullSummary:      { page: 1, pageSize: 20 },
-    allExamSessions:  { page: 1, pageSize: 20 },
-    activities:       { page: 1, pageSize: 20 },
-    activeSessions:   { page: 1, pageSize: 20 },
-    liveAnswerFeed:   { page: 1, pageSize: 20 },
-    aiSessions:       { page: 1, pageSize: 20 }
+    questions:        { page: 1, pageSize: 10 },
+    users:            { page: 1, pageSize: 10 },
+    studentExam:      { page: 1, pageSize: 10 },
+    fullSummary:      { page: 1, pageSize: 10 },
+    allExamSessions:  { page: 1, pageSize: 10 },
+    activities:       { page: 1, pageSize: 10 },
+    activeSessions:   { page: 1, pageSize: 10 },
+    liveAnswerFeed:   { page: 1, pageSize: 10 },
+    aiSessions:       { page: 1, pageSize: 10 }
 };
 
 const PAGINATION_SIZE_OPTIONS = [10, 20, 50, 100];
@@ -91,7 +91,7 @@ function renderPaginationControls(containerId, key, totalItems, renderCallback) 
     const sizeSelect = container.querySelector('.pagination-size-select');
     if (sizeSelect) {
         sizeSelect.addEventListener('change', (e) => {
-            paginationState[key].pageSize = parseInt(e.target.value, 10) || 20;
+            paginationState[key].pageSize = parseInt(e.target.value, 10) || 10;
             paginationState[key].page = 1;
             renderCallback();
         });
