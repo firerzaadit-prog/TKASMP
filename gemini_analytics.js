@@ -390,8 +390,12 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
                 const cleanJson = textResult.replace(/```json/g, '').replace(/```/g, '').trim();
                 const parsedResult = JSON.parse(cleanJson);
 
-                if (!Array.isArray(parsedResult)) {
-                    console.warn('[AI Batch] Format tidak sesuai (bukan array topik):', parsedResult);
+                // Array kosong TIDAK dianggap valid — ini indikasi Gemini gagal
+                // generate (mis. kena limit token) tapi lolos sebagai JSON valid.
+                // Perlakukan sebagai error supaya masuk retry loop di bawah,
+                // bukan tersimpan diam-diam sebagai analisis kosong.
+                if (!Array.isArray(parsedResult) || parsedResult.length === 0) {
+                    throw new Error(`Hasil analisis kosong atau bukan array topik (dapat: ${JSON.stringify(parsedResult).slice(0, 200)})`);
                 }
 
                 console.log('[AI Batch] Analysis complete:', parsedResult);

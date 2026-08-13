@@ -201,22 +201,15 @@ ATURAN KRITIS UNTUK "kekurangan" dan "rekomendasi" pada setiap topik:
             generationConfig: {
               temperature: 0.2,
               responseMimeType: "application/json",
-              // Skema tambahan (opsional) supaya Gemini "dipaksa" mengikuti
-              // struktur array-per-topik di level API, bukan cuma via instruksi teks.
-              // Hapus blok ini kalau ternyata bikin error di model/API version kalian.
-              responseSchema: {
-                type: "ARRAY",
-                items: {
-                  type: "OBJECT",
-                  properties: {
-                    topik: { type: "STRING" },
-                    kelebihan: { type: "STRING" },
-                    kekurangan: { type: "STRING" },
-                    rekomendasi: { type: "STRING" }
-                  },
-                  required: ["topik", "kelebihan", "kekurangan", "rekomendasi"]
-                }
-              }
+              // maxOutputTokens dinaikkan karena prompt batch (30 soal + detail
+              // proses berpikir per soal) menghasilkan output yang cukup panjang;
+              // kalau kena limit, Gemini berhenti di tengah JSON dan hasilnya rusak/kosong.
+              maxOutputTokens: 8192
+              // NOTE: responseSchema sengaja DIHAPUS. Skema itu bisa membuat Gemini
+              // gagal generate (constrained decoding lebih berat) sehingga candidates
+              // kosong — dan sebelumnya itu diam-diam jatuh ke fallback '[]' di bawah,
+              // tersimpan sebagai "sukses" padahal analisisnya kosong. Instruksi format
+              // di dalam promptText saja sudah cukup untuk memaksa struktur JSON-nya.
             }
           })
         }
@@ -231,9 +224,25 @@ ATURAN KRITIS UNTUK "kekurangan" dan "rekomendasi" pada setiap topik:
         );
       }
 
-      const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+      // Cek finishReason — kalau bukan "STOP", generation-nya terganggu
+      // (kena limit token, safety filter, dll) dan output TIDAK BOLEH
+      // dianggap valid walau technically candidates ada.
+      const candidate = geminiData.candidates?.[0];
+      const finishReason = candidate?.finishReason;
+      const rawText = candidate?.content?.parts?.[0]?.text;
+
+      if (!rawText || (finishReason && finishReason !== 'STOP')) {
+        console.error('[gemini-chat] Generation bermasalah:', { finishReason, hasText: !!rawText });
+        return new Response(
+          JSON.stringify({
+            error: `Gemini gagal menghasilkan analisis lengkap (finishReason: ${finishReason || 'tidak ada teks'}). Coba lagi atau kurangi jumlah soal per batch.`
+          }),
+          { status: 502, headers: corsHeaders }
+        );
+      }
+
       return new Response(
-        JSON.stringify({ choices: [{ message: { content: text } }] }),
+        JSON.stringify({ choices: [{ message: { content: rawText } }] }),
         { headers: corsHeaders }
       );
     }
