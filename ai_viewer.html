@@ -252,6 +252,73 @@
         .cell-wrong { color: #dc2626; }
         .cell-total { color: #4f46e5; font-weight: 700; }
 
+        /* ===== TOPIC ACCORDION (analisis per topik materi) ===== */
+        .topic-accordion-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            margin-bottom: 24px;
+            border-top: 4px solid #667eea;
+        }
+        .topic-accordion-card > h3 {
+            color: #4e73df;
+            font-size: 1.05rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .topic-accordion-list { display: flex; flex-direction: column; gap: 12px; }
+        .topic-accordion-item {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #fafbff;
+        }
+        .topic-accordion-item[open] { border-color: #c7d2fe; }
+        .topic-accordion-summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-weight: 600;
+            color: #374151;
+            background: #fff;
+            user-select: none;
+        }
+        .topic-accordion-summary::-webkit-details-marker { display: none; }
+        .topic-accordion-title { display: flex; align-items: center; gap: 10px; }
+        .topic-accordion-title i { color: #667eea; }
+        .topic-accordion-caret { color: #9ca3af; transition: transform 0.25s ease; }
+        .topic-accordion-item[open] .topic-accordion-caret { transform: rotate(180deg); }
+        .topic-accordion-body {
+            padding: 4px 18px 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .topic-block {
+            border-radius: 10px;
+            padding: 12px 14px;
+            font-size: 0.88rem;
+            line-height: 1.6;
+        }
+        .topic-block h5 {
+            font-size: 0.82rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .topic-block p { color: #374151; }
+        .topic-strength { background: #ecfdf5; }
+        .topic-strength h5 { color: #059669; }
+        .topic-weakness { background: #fef2f2; }
+        .topic-weakness h5 { color: #dc2626; }
+        .topic-recommendation { background: #eff6ff; }
+        .topic-recommendation h5 { color: #2563eb; }
+
         /* Empty state */
         .empty-state {
             text-align: center; padding: 48px 24px;

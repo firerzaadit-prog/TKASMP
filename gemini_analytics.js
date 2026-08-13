@@ -390,6 +390,10 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
                 const cleanJson = textResult.replace(/```json/g, '').replace(/```/g, '').trim();
                 const parsedResult = JSON.parse(cleanJson);
 
+                if (!Array.isArray(parsedResult)) {
+                    console.warn('[AI Batch] Format tidak sesuai (bukan array topik):', parsedResult);
+                }
+
                 console.log('[AI Batch] Analysis complete:', parsedResult);
                 return parsedResult;
 
@@ -414,13 +418,27 @@ Output HANYA JSON valid tanpa markdown, tanpa teks lain:
                 return;
             }
 
+            // Format baru: array per-topik [{topik, kelebihan, kekurangan, rekomendasi}]
+            // Validasi & bersihkan tiap item supaya data yang tersimpan di DB tetap rapi
+            // walau AI sesekali mengirim field yang hilang/kosong.
+            const rawTopics = Array.isArray(batchResult) ? batchResult : [];
+            const topics = rawTopics
+                .filter(t => t && typeof t === 'object' && t.topik)
+                .map(t => ({
+                    topik: String(t.topik || '').trim(),
+                    kelebihan: String(t.kelebihan || '').trim(),
+                    kekurangan: String(t.kekurangan || '').trim(),
+                    rekomendasi: String(t.rekomendasi || '').trim()
+                }));
+
+            if (topics.length === 0) {
+                console.warn('[AI Batch] storeBatchResult: hasil AI tidak berbentuk array topik yang valid', batchResult);
+            }
+
             const dataToStore = {
                 answer_id: sessionId,
                 analysis_data: {
-                    summary: batchResult.summary || '',
-                    strengths: Array.isArray(batchResult.strengths) ? batchResult.strengths : [],
-                    weaknesses: Array.isArray(batchResult.weaknesses) ? batchResult.weaknesses : [],
-                    learningSuggestions: Array.isArray(batchResult.learningSuggestions) ? batchResult.learningSuggestions : [],
+                    topics,
                     is_batch: true,
                     analyzed_at: new Date().toISOString()
                 },

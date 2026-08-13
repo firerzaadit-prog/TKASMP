@@ -158,6 +158,11 @@ function renderGlobalAiAnalysis(data, analyticsData, babMap) {
           })
         : null;
 
+    // Format baru: array topik. Format lama (summary/strengths/weaknesses/
+    // learningSuggestions) tetap didukung sebagai fallback untuk data yang
+    // sudah kadung tersimpan sebelum perubahan struktur ini.
+    const hasTopics = Array.isArray(data.topics) && data.topics.length > 0;
+
     container.innerHTML = `
         <!-- Info waktu analisis -->
         ${analyzedAt ? `
@@ -165,16 +170,93 @@ function renderGlobalAiAnalysis(data, analyticsData, babMap) {
             <span style="font-size:0.78rem;color:#9ca3af;"><i class="fas fa-clock"></i> Dianalisis: ${analyzedAt}</span>
         </div>` : ''}
 
-        <!-- Ringkasan -->
+        ${hasTopics ? renderTopicAccordion(data.topics) : renderLegacyAnalysis(data)}
+
+        <!-- Peta Kompetensi -->
+        ${renderPetaKompetensi(babMap)}
+
+        <!-- Matriks Kognitif -->
+        ${matrixHtml}
+    `;
+
+    container.style.display = 'block';
+    setStatus('Analisis selesai', 'done');
+}
+
+// ────────────────────────────────────────────────
+// Escape teks dari AI sebelum disuntik ke innerHTML
+// ────────────────────────────────────────────────
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+// ────────────────────────────────────────────────
+// Render analisis per topik sebagai accordion
+// (format baru: [{topik, kelebihan, kekurangan, rekomendasi}])
+// ────────────────────────────────────────────────
+function renderTopicAccordion(topics) {
+    const items = topics.map((t, idx) => {
+        const topikName = escapeHtml(t.topik || `Topik ${idx + 1}`);
+        const kelebihan = t.kelebihan && String(t.kelebihan).trim() !== ''
+            ? escapeHtml(t.kelebihan)
+            : 'Belum ada catatan kelebihan khusus pada topik ini.';
+        const kekurangan = t.kekurangan && String(t.kekurangan).trim() !== ''
+            ? escapeHtml(t.kekurangan)
+            : 'Tidak ada kekurangan berarti pada topik ini — pertahankan!';
+        const rekomendasi = t.rekomendasi && String(t.rekomendasi).trim() !== ''
+            ? escapeHtml(t.rekomendasi)
+            : 'Belum ada rekomendasi khusus untuk topik ini.';
+
+        return `
+        <details class="topic-accordion-item" ${idx === 0 ? 'open' : ''}>
+            <summary class="topic-accordion-summary">
+                <span class="topic-accordion-title"><i class="fas fa-book"></i> ${topikName}</span>
+                <i class="fas fa-chevron-down topic-accordion-caret"></i>
+            </summary>
+            <div class="topic-accordion-body">
+                <div class="topic-block topic-strength">
+                    <h5><i class="fas fa-check-circle"></i> Kelebihan</h5>
+                    <p>${kelebihan}</p>
+                </div>
+                <div class="topic-block topic-weakness">
+                    <h5><i class="fas fa-exclamation-circle"></i> Kekurangan</h5>
+                    <p>${kekurangan}</p>
+                </div>
+                <div class="topic-block topic-recommendation">
+                    <h5><i class="fas fa-lightbulb"></i> Rekomendasi</h5>
+                    <p>${rekomendasi}</p>
+                </div>
+            </div>
+        </details>`;
+    }).join('');
+
+    return `
+    <div class="topic-accordion-card">
+        <h3><i class="fas fa-layer-group"></i> Analisis Per Topik Materi</h3>
+        <div class="topic-accordion-list">
+            ${items}
+        </div>
+    </div>`;
+}
+
+// ────────────────────────────────────────────────
+// Fallback: render format lama (summary/strengths/
+// weaknesses/learningSuggestions) untuk data historis
+// yang tersimpan sebelum perubahan ke format per-topik.
+// ────────────────────────────────────────────────
+function renderLegacyAnalysis(data) {
+    return `
         <div class="ai-summary-card">
             <h3><i class="fas fa-info-circle"></i> Ringkasan Evaluasi</h3>
             <p>${data.summary || 'Tidak ada ringkasan tersedia.'}</p>
         </div>
 
-        <!-- Peta Kompetensi -->
-        ${renderPetaKompetensi(babMap)}
-
-        <!-- Kekuatan & Kelemahan -->
         <div class="ai-details-grid">
             <div class="detail-card strengths">
                 <h4><i class="fas fa-check-circle"></i> Kekuatan</h4>
@@ -194,10 +276,6 @@ function renderGlobalAiAnalysis(data, analyticsData, babMap) {
             </div>
         </div>
 
-        <!-- Matriks Kognitif -->
-        ${matrixHtml}
-
-        <!-- Saran Pembelajaran -->
         <div class="ai-suggestion-card">
             <h4><i class="fas fa-lightbulb"></i> Saran Pembelajaran Personal</h4>
             ${(data.learningSuggestions || []).length > 0
@@ -208,11 +286,7 @@ function renderGlobalAiAnalysis(data, analyticsData, babMap) {
                     </div>`).join('')
                 : '<div class="suggestion-item"><i class="fas fa-info-circle"></i><span style="color:#9ca3af;">Saran belum tersedia.</span></div>'
             }
-        </div>
-    `;
-
-    container.style.display = 'block';
-    setStatus('Analisis selesai', 'done');
+        </div>`;
 }
 
 // ────────────────────────────────────────────────
@@ -381,7 +455,30 @@ async function loadAIAnalysisFromDB(sessionId) {
             return;
         }
 
-        const analysisData = analysisRecord.analysis_data;
+        let analysisData = analysisRecord.analysis_data;
+
+        // ── Parsing JSON yang kokoh ──────────────────────────────
+        // Supabase (kolom jsonb) biasanya sudah mengembalikan object,
+        // tapi kita tetap berjaga-jaga: kalau analysis_data ternyata
+        // masih berupa STRING (mis. tersimpan mentah dari respons AI,
+        // atau Gemini menyelipkan ```json), bersihkan dulu lalu parse.
+        if (typeof analysisData === 'string') {
+            try {
+                const cleanedJson = analysisData
+                    .replace(/```json/gi, '')
+                    .replace(/```/g, '')
+                    .trim();
+                analysisData = JSON.parse(cleanedJson);
+            } catch (parseErr) {
+                console.error('[AI Viewer] Gagal parsing JSON analysis_data:', parseErr, analysisData);
+                showError(
+                    'Format Data Tidak Valid',
+                    'Data analisis AI tersimpan dalam format yang tidak dapat dibaca. Silakan minta admin memproses ulang analisis untuk sesi ini.'
+                );
+                return;
+            }
+        }
+
         console.log('[AI Viewer] Data analisis ditemukan:', analysisData);
 
         setLoadingDetail('Mengambil data peta kompetensi…');

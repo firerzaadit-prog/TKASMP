@@ -135,19 +135,20 @@ serve(async (req) => {
     if (body.answers && Array.isArray(body.answers)) {
       const answers = body.answers;
 
-      // System prompt: instruksikan AI untuk fokus pada kegagalan PROSES BERPIKIR
-      const systemInstruction = `Anda adalah guru matematika SMP ahli dalam asesmen kognitif berbasis Matriks Kompetensi Kemdikbudristek.
-Tugas Anda: menganalisis hasil ujian siswa dan memberikan evaluasi yang SPESIFIK pada PROSES BERPIKIR yang gagal dikuasai siswa.
+      // System prompt: instruksikan AI untuk fokus pada kegagalan PROSES BERPIKIR,
+      // dan mengelompokkan hasil akhirnya per TOPIK/ELEMEN materi.
+      const systemInstruction = `Anda adalah guru matematika SMP ahli dalam asesmen kognitif berbasis Matriks Kompetensi Kemdikbudristek. Tugas Anda: menganalisis hasil ujian siswa dan memberikan evaluasi yang SPESIFIK pada PROSES BERPIKIR yang gagal dikuasai siswa, DIKELOMPOKKAN PER TOPIK/ELEMEN materi (bukan per soal).
 
-ATURAN KRITIS UNTUK weaknesses dan learningSuggestions:
-1. weaknesses WAJIB menyebut NAMA PROSES BERPIKIR yang gagal secara eksplisit.
-   Contoh BENAR: "Kegagalan proses Memodelkan (Level 2–Aplikasi): siswa belum mampu menerjemahkan soal cerita ke kalimat matematika pada topik SPLTV."
+ATURAN KRITIS UNTUK "kekurangan" dan "rekomendasi" pada setiap topik:
+1. "kekurangan" WAJIB menyebut NAMA PROSES BERPIKIR yang gagal secara eksplisit untuk tiap sub-materi yang bermasalah pada topik tersebut.
+   Contoh BENAR: "Kegagalan proses Memodelkan (Level 2–Aplikasi): siswa belum mampu menerjemahkan soal cerita ke kalimat matematika pada sub-materi SPLDV."
    Contoh SALAH: "Siswa kurang memahami materi aljabar." (terlalu umum, tidak menyebut proses)
-2. learningSuggestions WAJIB berisi latihan yang LANGSUNG melatih proses berpikir yang gagal tersebut.
-   Contoh BENAR untuk gagal "Memodelkan": "Latihan soal cerita bertahap: (1) identifikasi variabel, (2) susun kalimat matematika tanpa menghitung dulu, (3) selesaikan."
-   Contoh SALAH: "Pelajari kembali materi SPLTV dari awal." (tidak menyebut latihan proses spesifik)
+2. "rekomendasi" WAJIB berisi latihan yang LANGSUNG melatih proses berpikir yang gagal tersebut, bukan saran belajar generik.
+   Contoh BENAR: "Latihan soal cerita bertahap: (1) identifikasi variabel, (2) susun kalimat matematika tanpa menghitung dulu, (3) selesaikan."
+   Contoh SALAH: "Pelajari kembali materi SPLDV dari awal." (tidak menyebut latihan proses spesifik)
 3. Jika soal tidak dijawab (KOSONG), anggap sebagai indikasi terkuat bahwa siswa BELUM MENGUASAI proses berpikir yang diuji soal tersebut.
-4. strengths hanya diisi jika siswa menjawab BENAR, dan harus menyebut proses berpikir yang berhasil dikuasai.`;
+4. "kelebihan" hanya diisi berdasarkan soal yang dijawab BENAR pada topik tersebut, dan harus menyebut proses berpikir yang berhasil dikuasai. Jika tidak ada soal benar pada topik itu, isi "kelebihan" dengan string kosong "".
+5. Jika beberapa soal pada satu topik sama-sama gagal, GABUNGKAN menjadi satu narasi "kekurangan" yang runtut untuk topik itu — jangan buat objek terpisah per soal.`;
 
       // Susun prompt per soal dengan informasi proses berpikir yang diperkaya
       let promptText = `${systemInstruction}\n\nAnalisis hasil ujian siswa berikut (Total ${answers.length} soal):\n\n`;
@@ -181,22 +182,13 @@ ATURAN KRITIS UNTUK weaknesses dan learningSuggestions:
         promptText += `- Status: ${status}\n\n`;
       });
 
-      promptText += `Berikan output WAJIB HANYA berupa JSON murni (tanpa markdown, tanpa tag \`\`\`json) dengan struktur berikut:
-{
-  "summary": "Ringkasan evaluasi performa secara keseluruhan (1-2 kalimat, sebutkan pola kegagalan proses berpikir yang dominan)",
-  "strengths": [
-    "Kekuatan 1: sebutkan proses berpikir dan materi/konsep spesifik yang berhasil dikuasai siswa",
-    "Kekuatan 2"
-  ],
-  "weaknesses": [
-    "Kelemahan 1: WAJIB menyebut nama proses berpikir yang gagal + level kognitif + sub-materi terkait",
-    "Kelemahan 2"
-  ],
-  "learningSuggestions": [
-    "Saran 1: WAJIB berisi latihan SPESIFIK yang melatih proses berpikir yang gagal, bukan saran belajar umum",
-    "Saran 2"
-  ]
-}`;
+      promptText += `INSTRUKSI OUTPUT (WAJIB DIIKUTI):
+1. KELOMPOKKAN seluruh analisis di atas berdasarkan "Elemen" (topik) pada tiap soal, contoh: Bilangan, Aljabar, Geometri & Pengukuran, Data dan Peluang.
+2. Buat SATU objek untuk SETIAP elemen/topik yang muncul — gabungkan semua soal pada topik yang sama menjadi satu objek, JANGAN buat objek terpisah per soal.
+3. Kembalikan HANYA berupa JSON ARRAY murni. JANGAN menambahkan teks pembuka, penutup, atau penjelasan apa pun di luar JSON. JANGAN membungkus output dengan markdown code block (jangan gunakan \`\`\`json atau \`\`\`).
+4. Struktur tiap objek dalam array HARUS PERSIS seperti ini:
+{"topik": "Nama Topik/Elemen", "kelebihan": "narasi kelebihan siswa pada topik ini (ikuti Aturan Kritis di atas)", "kekurangan": "narasi kekurangan siswa pada topik ini, WAJIB menyebut proses berpikir yang gagal per sub-materi (ikuti Aturan Kritis di atas)", "rekomendasi": "narasi saran latihan spesifik untuk topik ini (ikuti Aturan Kritis di atas)"}
+5. Tulis seluruh isi dalam Bahasa Indonesia yang jelas dan membangun.`;
 
       // Kirim ke API Google Gemini
       const geminiResponse = await fetch(
@@ -206,7 +198,26 @@ ATURAN KRITIS UNTUK weaknesses dan learningSuggestions:
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: promptText }] }],
-            generationConfig: { temperature: 0.2, responseMimeType: "application/json" }
+            generationConfig: {
+              temperature: 0.2,
+              responseMimeType: "application/json",
+              // Skema tambahan (opsional) supaya Gemini "dipaksa" mengikuti
+              // struktur array-per-topik di level API, bukan cuma via instruksi teks.
+              // Hapus blok ini kalau ternyata bikin error di model/API version kalian.
+              responseSchema: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    topik: { type: "STRING" },
+                    kelebihan: { type: "STRING" },
+                    kekurangan: { type: "STRING" },
+                    rekomendasi: { type: "STRING" }
+                  },
+                  required: ["topik", "kelebihan", "kekurangan", "rekomendasi"]
+                }
+              }
+            }
           })
         }
       );
@@ -220,7 +231,7 @@ ATURAN KRITIS UNTUK weaknesses dan learningSuggestions:
         );
       }
 
-      const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const text = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
       return new Response(
         JSON.stringify({ choices: [{ message: { content: text } }] }),
         { headers: corsHeaders }
