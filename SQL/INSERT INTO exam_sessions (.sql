@@ -1,0 +1,36 @@
+INSERT INTO exam_sessions (
+    id,
+    user_id,
+    question_set_id,
+    started_at,
+    completed_at,
+    total_time_seconds,
+    total_score,
+    passing_score,
+    is_passed,
+    status,
+    created_at,
+    updated_at,
+    paket_soal,
+    question_type_variant,
+    is_paused,
+    pause_started_at
+  )
+VALUES (
+    'id:uuid',
+    'user_id:uuid',
+    'question_set_id:uuid',
+    'started_at:timestamp with time zone',
+    'completed_at:timestamp with time zone',
+    total_time_seconds:integer,
+    total_score:integer,
+    passing_score:integer,
+    is_passed:boolean,
+    'status:character varying',
+    'created_at:timestamp with time zone',
+    'updated_at:timestamp with time zone',
+    'paket_soal:character varying',
+    'question_type_variant:character varying',
+    is_paused:boolean,
+    'pause_started_at:timestamp with time zone'
+  );
