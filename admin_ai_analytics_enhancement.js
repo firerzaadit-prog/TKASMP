@@ -6,6 +6,15 @@ import { supabase } from './clientSupabase.js';
 
 let activeRadarChart = null;
 
+// Escape teks dari AI sebelum disuntik ke innerHTML
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 // ----------------------------------------------------------------------------
 // 1. DATA FETCHING (LOGIKA V3 STABIL - JANGAN DIUBAH)
 // ----------------------------------------------------------------------------
@@ -26,8 +35,37 @@ async function getStudentAIAnalysis(userId) {
 
         const studentData = analyticsData[0];
         
-        // Deteksi kolom AI
+        // Deteksi kolom AI (fallback lama, dipakai kalau belum ada analisis per-topik)
         const aiText = studentData.ai_summary || studentData.analysis_result || studentData.notes || null;
+
+        // ── Ambil analisis AI per-topik dari sesi ujian terakhir ──────────
+        // Data hasil Gemini yang sebenarnya ada di tabel gemini_analyses,
+        // dikaitkan lewat exam_sessions.id (bukan lewat student_analytics).
+        let topics = [];
+        try {
+            const { data: sessions } = await supabase
+                .from('exam_sessions')
+                .select('id')
+                .eq('user_id', userId)
+                .eq('status', 'completed')
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            const latestSessionId = sessions && sessions[0]?.id;
+            if (latestSessionId) {
+                const { data: geminiRecord } = await supabase
+                    .from('gemini_analyses')
+                    .select('analysis_data')
+                    .eq('answer_id', latestSessionId)
+                    .maybeSingle();
+
+                if (Array.isArray(geminiRecord?.analysis_data?.topics)) {
+                    topics = geminiRecord.analysis_data.topics.filter(t => t && t.topik);
+                }
+            }
+        } catch (topicErr) {
+            console.warn('Gagal mengambil analisis per-topik:', topicErr);
+        }
 
         return {
             user: {
@@ -42,6 +80,7 @@ async function getStudentAIAnalysis(userId) {
                 exams: studentData.total_exams || 0
             },
             ai_analysis: aiText,
+            topics: topics,
             skill_map: studentData.skill_map || {}
         };
     } catch (error) {
@@ -87,6 +126,38 @@ function parseAIAnalysis(text) {
     if (!result.summary) result.summary = text;
     
     return result;
+}
+
+// ----------------------------------------------------------------------------
+// 2b. RENDER ANALISIS PER TOPIK
+// Format baru: topics = [{topik, kelebihan, kekurangan, rekomendasi}, ...]
+// ----------------------------------------------------------------------------
+function renderTopicsHtml(topics) {
+    return topics.map((t, idx) => {
+        const topikName   = escapeHtml(t.topik || `Topik ${idx + 1}`);
+        const kelebihan   = escapeHtml((t.kelebihan && String(t.kelebihan).trim()) || 'Belum ada catatan kelebihan khusus pada topik ini.');
+        const kekurangan  = escapeHtml((t.kekurangan && String(t.kekurangan).trim()) || 'Tidak ada kekurangan berarti pada topik ini — pertahankan!');
+        const rekomendasi = escapeHtml((t.rekomendasi && String(t.rekomendasi).trim()) || 'Belum ada rekomendasi khusus untuk topik ini.');
+
+        return `
+            <div class="insight-card">
+                <div class="insight-header"><i class="fas fa-book"></i> ${idx + 1}. ${topikName}</div>
+                <div class="insight-body">
+                    <div style="margin-bottom:8px;padding:10px 12px;background:#ecfdf5;border-radius:8px;">
+                        <strong style="color:#059669;font-size:0.8rem;">💪 Kelebihan:</strong>
+                        <div style="color:#374151;font-size:0.85rem;margin-top:3px;line-height:1.5;">${kelebihan}</div>
+                    </div>
+                    <div style="margin-bottom:8px;padding:10px 12px;background:#fef2f2;border-radius:8px;">
+                        <strong style="color:#ef4444;font-size:0.8rem;">⚠️ Kekurangan:</strong>
+                        <div style="color:#374151;font-size:0.85rem;margin-top:3px;line-height:1.5;">${kekurangan}</div>
+                    </div>
+                    <div style="padding:10px 12px;background:#eff6ff;border-radius:8px;">
+                        <strong style="color:#3b82f6;font-size:0.8rem;">📚 Rekomendasi:</strong>
+                        <div style="color:#374151;font-size:0.85rem;margin-top:3px;line-height:1.5;">${rekomendasi}</div>
+                    </div>
+                </div>
+            </div>`;
+    }).join('');
 }
 
 // ----------------------------------------------------------------------------
@@ -161,6 +232,7 @@ async function showStudentDetail(userId) {
     try {
         const data = await getStudentAIAnalysis(userId);
         const ai = parseAIAnalysis(data.ai_analysis);
+        const hasTopics = Array.isArray(data.topics) && data.topics.length > 0;
         const canvasId = `chart_${Date.now()}`;
 
         // RENDER HTML DASHBOARD
@@ -210,7 +282,14 @@ async function showStudentDetail(userId) {
                     </div>
 
                     <div class="insights-content">
-                        
+
+                        ${hasTopics ? `
+                        <div class="insight-card card-summary">
+                            <div class="insight-header"><i class="fas fa-robot"></i> Analisis Cerdas per Topik</div>
+                            <div class="insight-body">Analisis dikelompokkan berdasarkan ${data.topics.length} topik materi yang diujikan.</div>
+                        </div>
+                        ${renderTopicsHtml(data.topics)}
+                        ` : `
                         <div class="insight-card card-summary">
                             <div class="insight-header"><i class="fas fa-robot"></i> Analisis Cerdas</div>
                             <div class="insight-body">${ai.summary}</div>
@@ -247,6 +326,7 @@ async function showStudentDetail(userId) {
                                 </ul>
                             </div>
                         </div>` : ''}
+                        `}
 
                     </div>
                 </div>
@@ -257,9 +337,18 @@ async function showStudentDetail(userId) {
         setTimeout(() => renderChart(canvasId, data.skill_map), 100);
 
     } catch (err) {
-        // ... (Error handling sama seperti sebelumnya)
-        console.error(err); // Pastikan log error
-        modal.innerHTML = `...`; // (Isi error html sama seperti sebelumnya)
+        console.error(err);
+        modal.innerHTML = `
+            <div class="dashboard-container" style="align-items:center; justify-content:center; height:300px;">
+                <div style="text-align:center">
+                    <i class="fas fa-exclamation-triangle" style="font-size:2.5rem; color:#ef4444; margin-bottom:16px;"></i>
+                    <h3 style="color:#374151; margin-bottom:8px;">Gagal Memuat Analisis</h3>
+                    <p style="color:#9ca3af; font-size:0.9rem; margin-bottom:20px;">${escapeHtml(err.message || 'Terjadi kesalahan yang tidak diketahui.')}</p>
+                    <button class="btn-close" onclick="document.getElementById('aiAnalyticsModal').style.display='none'">
+                        <i class="fas fa-times"></i> Tutup
+                    </button>
+                </div>
+            </div>`;
     }
 }
 

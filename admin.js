@@ -5297,30 +5297,66 @@ async function showStudentDetail(userId, sessionId = null) {
         // Ringkasan AI
         let aiSummary = '<p style="color:#6b7280;">Belum ada analisis AI untuk siswa ini.</p>';
         if (aiAnalyses.length > 0) {
-            const strengths   = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.strengths || []))];
-            const weaknesses  = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.weaknesses || []))];
-            const suggestions = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.learningSuggestions || []))];
+            const escapeAiText = (str) => String(str ?? '')
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-            aiSummary = `
-                <div style="margin-bottom:1rem;">
-                    <strong style="color:#10b981;">💪 Kelebihan:</strong>
-                    <ul style="margin:0.5rem 0 0 1rem;color:#374151;">
-                        ${strengths.length > 0 ? strengths.map(s => `<li>${s}</li>`).join('') : '<li>Data belum tersedia</li>'}
-                    </ul>
-                </div>
-                <div style="margin-bottom:1rem;">
-                    <strong style="color:#ef4444;">⚠️ Area Perbaikan:</strong>
-                    <ul style="margin:0.5rem 0 0 1rem;color:#374151;">
-                        ${weaknesses.length > 0 ? weaknesses.map(w => `<li>${w}</li>`).join('') : '<li>Data belum tersedia</li>'}
-                    </ul>
-                </div>
-                <div>
-                    <strong style="color:#3b82f6;">📚 Rekomendasi Belajar:</strong>
-                    <ul style="margin:0.5rem 0 0 1rem;color:#374151;">
-                        ${suggestions.length > 0 ? suggestions.map(s => `<li>${s}</li>`).join('') : '<li>Data belum tersedia</li>'}
-                    </ul>
-                </div>
-            `;
+            // Format baru: tiap record gemini_analyses menyimpan
+            // analysis_data.topics = [{topik, kelebihan, kekurangan, rekomendasi}, ...]
+            const allTopics = aiAnalyses.flatMap(a => Array.isArray(a.analysis_data?.topics) ? a.analysis_data.topics : []);
+
+            if (allTopics.length > 0) {
+                aiSummary = allTopics.map((t, idx) => {
+                    const topikName   = escapeAiText(t.topik || `Topik ${idx + 1}`);
+                    const kelebihan   = escapeAiText((t.kelebihan && String(t.kelebihan).trim()) || 'Belum ada catatan kelebihan khusus pada topik ini.');
+                    const kekurangan  = escapeAiText((t.kekurangan && String(t.kekurangan).trim()) || 'Tidak ada kekurangan berarti pada topik ini — pertahankan!');
+                    const rekomendasi = escapeAiText((t.rekomendasi && String(t.rekomendasi).trim()) || 'Belum ada rekomendasi khusus untuk topik ini.');
+
+                    return `
+                        <div style="border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;margin-bottom:12px;background:#fafbff;">
+                            <div style="font-weight:700;color:#374151;margin-bottom:10px;font-size:0.92rem;">
+                                ${idx + 1}. ${topikName}
+                            </div>
+                            <div style="margin-bottom:8px;padding:10px 12px;background:#ecfdf5;border-radius:8px;">
+                                <strong style="color:#059669;font-size:0.8rem;">💪 Kelebihan:</strong>
+                                <div style="color:#374151;font-size:0.82rem;margin-top:3px;line-height:1.5;">${kelebihan}</div>
+                            </div>
+                            <div style="margin-bottom:8px;padding:10px 12px;background:#fef2f2;border-radius:8px;">
+                                <strong style="color:#ef4444;font-size:0.8rem;">⚠️ Kekurangan:</strong>
+                                <div style="color:#374151;font-size:0.82rem;margin-top:3px;line-height:1.5;">${kekurangan}</div>
+                            </div>
+                            <div style="padding:10px 12px;background:#eff6ff;border-radius:8px;">
+                                <strong style="color:#3b82f6;font-size:0.8rem;">📚 Rekomendasi:</strong>
+                                <div style="color:#374151;font-size:0.82rem;margin-top:3px;line-height:1.5;">${rekomendasi}</div>
+                            </div>
+                        </div>`;
+                }).join('');
+            } else {
+                // Fallback: format lama (flat/gabungan) untuk data historis sebelum perubahan ke per-topik
+                const strengths   = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.strengths || []))];
+                const weaknesses  = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.weaknesses || []))];
+                const suggestions = [...new Set(aiAnalyses.flatMap(a => a.analysis_data?.learningSuggestions || []))];
+
+                aiSummary = `
+                    <div style="margin-bottom:1rem;">
+                        <strong style="color:#10b981;">💪 Kelebihan:</strong>
+                        <ul style="margin:0.5rem 0 0 1rem;color:#374151;">
+                            ${strengths.length > 0 ? strengths.map(s => `<li>${s}</li>`).join('') : '<li>Data belum tersedia</li>'}
+                        </ul>
+                    </div>
+                    <div style="margin-bottom:1rem;">
+                        <strong style="color:#ef4444;">⚠️ Area Perbaikan:</strong>
+                        <ul style="margin:0.5rem 0 0 1rem;color:#374151;">
+                            ${weaknesses.length > 0 ? weaknesses.map(w => `<li>${w}</li>`).join('') : '<li>Data belum tersedia</li>'}
+                        </ul>
+                    </div>
+                    <div>
+                        <strong style="color:#3b82f6;">📚 Rekomendasi Belajar:</strong>
+                        <ul style="margin:0.5rem 0 0 1rem;color:#374151;">
+                            ${suggestions.length > 0 ? suggestions.map(s => `<li>${s}</li>`).join('') : '<li>Data belum tersedia</li>'}
+                        </ul>
+                    </div>
+                `;
+            }
         }
 
         const uniqueId = 'radar_' + userId.replace(/-/g, '').slice(0, 10);
@@ -5632,6 +5668,23 @@ async function buildStudentExportData(userId) {
 
             if (batchRecord?.analysis_data?.is_batch) {
                 const bd = batchRecord.analysis_data;
+
+                // Format baru: analysis_data.topics = [{topik, kelebihan, kekurangan, rekomendasi}, ...]
+                const topics = Array.isArray(bd.topics) ? bd.topics.filter(t => t && t.topik) : [];
+                if (topics.length > 0) {
+                    const kekuatanLines    = topics.filter(t => t.kelebihan && String(t.kelebihan).trim()).map(t => `${t.topik}: ${String(t.kelebihan).trim()}`);
+                    const kelemahanLines   = topics.filter(t => t.kekurangan && String(t.kekurangan).trim()).map(t => `${t.topik}: ${String(t.kekurangan).trim()}`);
+                    const rekomendasiLines = topics.filter(t => t.rekomendasi && String(t.rekomendasi).trim()).map(t => `${t.topik}: ${String(t.rekomendasi).trim()}`);
+
+                    return {
+                        ringkasan: `Dianalisis per topik: ${topics.map(t => t.topik).join(', ')}`,
+                        kekuatan: kekuatanLines.length > 0 ? '• ' + kekuatanLines.join('\n• ') : '-',
+                        kelemahan: kelemahanLines.length > 0 ? '• ' + kelemahanLines.join('\n• ') : '-',
+                        rekomendasi: rekomendasiLines.length > 0 ? '• ' + rekomendasiLines.join('\n• ') : '-'
+                    };
+                }
+
+                // Fallback: format batch lama (strengths/weaknesses/learningSuggestions flat)
                 const strengths = (bd.strengths || []).filter(s => s && s.length > 3);
                 const weaknesses = (bd.weaknesses || []).filter(w => w && w.length > 3);
                 const suggestions = (bd.learningSuggestions || []).filter(s => s && s.length > 3);
@@ -9779,7 +9832,7 @@ async function aiRunAnalysisForSession(sessionId) {
 
     const maxRetries = 3;
     let attempt = 0;
-    let analysisResult = null;
+    let topics = null;
 
     while (attempt < maxRetries) {
         try {
@@ -9807,7 +9860,32 @@ async function aiRunAnalysisForSession(sessionId) {
             if (!textResult) throw new Error('Format balasan server tidak sesuai');
 
             const cleanJson = textResult.replace(/```json/g, '').replace(/```/g, '').trim();
-            analysisResult = JSON.parse(cleanJson);
+            const parsedResult = JSON.parse(cleanJson);
+
+            // PENTING: Edge Function (gemini-chat/index.ts) mengembalikan JSON ARRAY
+            // per-topik: [{topik, kelebihan, kekurangan, rekomendasi}, ...] — BUKAN
+            // object {summary, strengths, weaknesses, learningSuggestions}. Array
+            // kosong / bukan array = indikasi Gemini gagal generate (mis. kena limit
+            // token) tapi tetap lolos sebagai JSON valid. Perlakukan sebagai error
+            // supaya masuk retry loop, bukan tersimpan diam-diam sebagai kosong.
+            if (!Array.isArray(parsedResult) || parsedResult.length === 0) {
+                throw new Error(`Hasil analisis kosong atau bukan array topik (dapat: ${JSON.stringify(parsedResult).slice(0, 200)})`);
+            }
+
+            const cleanedTopics = parsedResult
+                .filter(t => t && typeof t === 'object' && t.topik)
+                .map(t => ({
+                    topik: String(t.topik || '').trim(),
+                    kelebihan: String(t.kelebihan || '').trim(),
+                    kekurangan: String(t.kekurangan || '').trim(),
+                    rekomendasi: String(t.rekomendasi || '').trim()
+                }));
+
+            if (cleanedTopics.length === 0) {
+                throw new Error('Hasil AI tidak berbentuk array topik yang valid');
+            }
+
+            topics = cleanedTopics;
             break;
 
         } catch (err) {
@@ -9819,16 +9897,13 @@ async function aiRunAnalysisForSession(sessionId) {
         }
     }
 
-    if (!analysisResult) throw new Error('AI tidak menghasilkan respons');
+    if (!topics) throw new Error('AI tidak menghasilkan respons yang valid');
 
-    // 5. Simpan ke tabel gemini_analyses
+    // 5. Simpan ke tabel gemini_analyses — format per-topik (selaras dengan gemini_analytics.js)
     const dataToStore = {
         answer_id: sessionId,
         analysis_data: {
-            summary: analysisResult.summary || '',
-            strengths: Array.isArray(analysisResult.strengths) ? analysisResult.strengths : [],
-            weaknesses: Array.isArray(analysisResult.weaknesses) ? analysisResult.weaknesses : [],
-            learningSuggestions: Array.isArray(analysisResult.learningSuggestions) ? analysisResult.learningSuggestions : [],
+            topics,
             is_batch: true,
             analyzed_at: new Date().toISOString()
         },
