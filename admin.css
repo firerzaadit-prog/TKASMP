@@ -4098,3 +4098,233 @@ body::before {
         justify-content: space-between;
     }
 }
+/* ============================================================
+   Fitur Latihan Soal Bertingkat — Panel "Kelola Level Soal"
+   (Fase 2, turunan Brief_Fitur_Latihan_Bertingkat_TKASMP.md Bagian 8)
+   ============================================================ */
+
+.material-levels-modal-content {
+    max-width: 1100px;
+    width: 95%;
+}
+
+.material-levels-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+}
+
+@media (max-width: 900px) {
+    .material-levels-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.level-card {
+    background: var(--admin-bg-tertiary, #f9fafb);
+    border: 1px solid var(--admin-border, #e5e7eb);
+    border-radius: var(--admin-radius-lg, 12px);
+    padding: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.level-card-loading {
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+    min-height: 120px;
+}
+
+.level-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.level-card-header h4 {
+    margin: 0;
+    font-size: 1.05rem;
+    color: var(--admin-text-primary, #111827);
+}
+
+.level-card-counter {
+    display: inline-block;
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    width: fit-content;
+}
+
+.level-counter-complete {
+    background: #dcfce7;
+    color: #16a34a;
+}
+
+.level-counter-incomplete {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.level-card-field label {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--admin-text-secondary, #6b7280);
+    margin-bottom: 0.25rem;
+}
+
+.level-card-field input[type="number"] {
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--admin-border, #e5e7eb);
+    border-radius: var(--admin-radius-sm, 6px);
+    font-size: 0.9rem;
+}
+
+.level-card-questions {
+    max-height: 220px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    border-top: 1px dashed var(--admin-border, #e5e7eb);
+    border-bottom: 1px dashed var(--admin-border, #e5e7eb);
+    padding: 0.5rem 0;
+}
+
+.level-empty-hint {
+    font-size: 0.82rem;
+    color: #9ca3af;
+    margin: 0;
+    text-align: center;
+    padding: 1rem 0;
+}
+
+.level-question-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    padding: 0.3rem 0.4rem;
+    border-radius: var(--admin-radius-sm, 6px);
+    background: #fff;
+}
+
+.level-question-order {
+    font-weight: 700;
+    color: var(--admin-primary, #2563eb);
+    min-width: 1.2rem;
+}
+
+.level-question-text {
+    flex: 1;
+    color: var(--admin-text-primary, #111827);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.level-question-controls {
+    display: flex;
+    gap: 0.15rem;
+    flex-shrink: 0;
+}
+
+.icon-btn {
+    border: none;
+    background: transparent;
+    color: var(--admin-text-secondary, #6b7280);
+    cursor: pointer;
+    padding: 0.25rem 0.4rem;
+    border-radius: var(--admin-radius-sm, 6px);
+    font-size: 0.75rem;
+}
+
+.icon-btn:hover:not(:disabled) {
+    background: var(--admin-bg-secondary, #f3f4f6);
+    color: var(--admin-primary, #2563eb);
+}
+
+.icon-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.icon-btn-danger:hover:not(:disabled) {
+    color: #dc2626 !important;
+}
+
+.level-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.level-activate-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    color: var(--admin-text-primary, #111827);
+    cursor: pointer;
+    margin-top: 0.25rem;
+}
+
+.level-activate-toggle input[type="checkbox"]:disabled {
+    cursor: not-allowed;
+}
+
+/* Modal "Tambah dari Bank Soal" */
+.bank-filter-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+@media (max-width: 640px) {
+    .bank-filter-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+.bank-filter-row input,
+.bank-filter-row select {
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--admin-border, #e5e7eb);
+    border-radius: var(--admin-radius-sm, 6px);
+    font-size: 0.85rem;
+}
+
+.bank-results-container {
+    max-height: 420px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.bank-result-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--admin-border, #e5e7eb);
+    border-radius: var(--admin-radius-sm, 6px);
+    background: #fff;
+}
+
+.bank-result-text {
+    font-size: 0.85rem;
+    color: var(--admin-text-primary, #111827);
+    flex: 1;
+}
+
+.bank-result-meta {
+    font-size: 0.72rem;
+    color: var(--admin-text-secondary, #6b7280);
+    margin-top: 0.2rem;
+}

@@ -2170,8 +2170,24 @@ const baseFormData = {
             currentEditingQuestionId || result.data?.[0]?.id
         );
 
+        // HOOK: Fitur Latihan Bertingkat - simpan flag SEBELUM hideQuestionForm()
+        // me-reset currentEditingQuestionId ke null.
+        const wasNewQuestionForLevelHook = !currentEditingQuestionId;
+        const newQuestionIdForLevelHook = result.data?.[0]?.id;
+
         hideQuestionForm();
         await loadQuestions();
+
+        // Kalau soal ini dibuat dari panel "Kelola Level Soal"
+        // (lihat admin_material_levels.js), otomatis attach soal baru
+        // tsb ke level yang sedang diedit.
+        if (wasNewQuestionForLevelHook && window.pendingLevelAttachId && newQuestionIdForLevelHook) {
+            const levelIdToAttach = window.pendingLevelAttachId;
+            window.pendingLevelAttachId = null;
+            if (typeof window.attachQuestionToLevel === 'function') {
+                await window.attachQuestionToLevel(levelIdToAttach, newQuestionIdForLevelHook);
+            }
+        }
 
     } catch (error) {
         console.error('Error in saveQuestion:', error);
@@ -3768,6 +3784,9 @@ async function loadMaterials() {
                 <td>
                     <button class="logout-btn" onclick="editMaterial('${material.id}')" style="margin-right: 0.5rem;">
                         <i class="fas fa-edit"></i> Edit
+                    </button>
+                    <button class="logout-btn" onclick="openMaterialLevelsPanel('${material.id}')" style="background: #7c3aed; margin-right: 0.5rem;">
+                        <i class="fas fa-layer-group"></i> Kelola Level Soal
                     </button>
                     <button class="logout-btn" onclick="deleteMaterial('${material.id}')" style="background: #dc2626;">
                         <i class="fas fa-trash"></i> Hapus
@@ -10168,4 +10187,4 @@ window.startBatchAnalysis    = startBatchAnalysis;
 window.aiGenerateSingle      = aiGenerateSingle;
 window.aiRegenerateSingle    = aiRegenerateSingle;
 window.aiFilterSessionsTable = aiFilterSessionsTable;
-window.loadAllExamSessionsDetailed = loadAllExamSessionsDetailed;
+window.loadAllExamSessionsDetailed = loadAllExamSessionsDetailed;   
