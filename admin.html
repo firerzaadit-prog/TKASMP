@@ -1371,6 +1371,11 @@
                             </button>
                         </div>
                     </div>
+                    <div style="margin-bottom:1rem;">
+                        <input type="text" id="fullSummarySearchName" placeholder="Cari nama siswa..."
+                               oninput="filterFullSummaryTable()"
+                               style="padding:0.5rem 1rem;border:1px solid #e5e7eb;border-radius:8px;min-width:260px;font-size:0.85rem;">
+                    </div>
                     <div style="overflow-x:auto;border-radius:12px;border:1px solid #e5e7eb;">
                         <table style="width:100%;border-collapse:collapse;font-size:0.82rem;">
                             <thead>
@@ -1428,6 +1433,11 @@
                     <p style="color:#6b7280;font-size:0.82rem;margin:0 0 1rem 0;">
                         Setiap baris = satu percobaan ujian. Siswa yang ujian 2× akan muncul 2 baris.
                     </p>
+                    <div style="margin-bottom:1rem;">
+                        <input type="text" id="allExamSessionsSearchName" placeholder="Cari nama siswa..."
+                               oninput="filterAllExamSessionsTable()"
+                               style="padding:0.5rem 1rem;border:1px solid #e5e7eb;border-radius:8px;min-width:260px;font-size:0.85rem;">
+                    </div>
                     <div style="overflow-x:auto;border-radius:12px;border:1px solid #e5e7eb;">
                         <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
                             <thead>

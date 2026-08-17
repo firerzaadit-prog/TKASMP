@@ -7626,8 +7626,20 @@ function renderFullSummaryPage() {
     if (!tbody) return;
 
     const COL = 14;
-    const allRows = window.allFullSummaryRows || [];
+    const searchName = (document.getElementById('fullSummarySearchName')?.value || '').toLowerCase().trim();
+    const sourceRows = window.allFullSummaryRows || [];
+    const allRows = searchName
+        ? sourceRows.filter(({ row }) => String(row?.[0] || '').toLowerCase().includes(searchName))
+        : sourceRows;
     const { pageItems, totalItems } = paginateArray(allRows, 'fullSummary');
+
+    if (searchName && totalItems === 0) {
+        tbody.innerHTML = `<tr><td colspan="${COL}" style="padding:2rem;text-align:center;color:#6b7280;">
+            <i class="fas fa-search"></i> Tidak ada siswa dengan nama "${searchName}".
+        </td></tr>`;
+        renderPaginationControls('fullSummaryPagination', 'fullSummary', 0, renderFullSummaryPage);
+        return;
+    }
 
     // Helper: potong teks panjang dengan tooltip
     const trim = (text, max = 60) => {
@@ -7723,6 +7735,13 @@ function renderFullSummaryPage() {
 
     renderPaginationControls('fullSummaryPagination', 'fullSummary', totalItems, renderFullSummaryPage);
 }
+
+// Dipanggil saat admin mengetik di kotak "Cari nama siswa..." pada tabel Data Lengkap Hasil Ujian
+function filterFullSummaryTable() {
+    paginationState.fullSummary.page = 1;
+    renderFullSummaryPage();
+}
+window.filterFullSummaryTable = filterFullSummaryTable;
 
 // ============================================================
 // FUNGSI: Lihat Jawaban Siswa per Sesi Ujian
@@ -10017,7 +10036,20 @@ function renderAllExamSessionsPage() {
     if (!tbody) return;
 
     const COL = 9;
-    const sessions = window.allExamSessionsData || [];
+    const searchName = (document.getElementById('allExamSessionsSearchName')?.value || '').toLowerCase().trim();
+    const sourceSessions = window.allExamSessionsData || [];
+    const sessions = searchName
+        ? sourceSessions.filter(s => String(s?.namaSiswa || '').toLowerCase().includes(searchName))
+        : sourceSessions;
+
+    if (searchName && sessions.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${COL}" style="padding:2rem;text-align:center;color:#6b7280;">
+            <i class="fas fa-search"></i> Tidak ada siswa dengan nama "${searchName}".
+        </td></tr>`;
+        renderPaginationControls('allExamSessionsPagination', 'allExamSessions', 0, renderAllExamSessionsPage);
+        return;
+    }
+
     const { pageItems, totalItems, currentPage, pageSize } = paginateArray(sessions, 'allExamSessions');
     const rowOffset = (currentPage - 1) * pageSize;
 
@@ -10104,6 +10136,13 @@ function renderAllExamSessionsPage() {
 
     renderPaginationControls('allExamSessionsPagination', 'allExamSessions', totalItems, renderAllExamSessionsPage);
 }
+
+// Dipanggil saat admin mengetik di kotak "Cari nama siswa..." pada tabel Daftar Seluruh Percobaan Ujian
+function filterAllExamSessionsTable() {
+    paginationState.allExamSessions.page = 1;
+    renderAllExamSessionsPage();
+}
+window.filterAllExamSessionsTable = filterAllExamSessionsTable;
 
 // ── Event listeners AI Management ─────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
