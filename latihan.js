@@ -27,7 +27,10 @@ let activeCounts = {};   // activeCounts[chapter][stage] = jumlah soal aktif
 let activeChapter = null;
 let activeStage = null;
 let attemptQuestions = [];   // 10 soal yang sedang dikerjakan
-let attemptAnswers = {};     // { [question_id]: 'A'|'B'|'C'|'D' }
+let attemptAnswers = {};     // { [question_id]: answer }
+// PG answer: 'A'|'B'|'C'|'D'
+// MCMA answer: 'A,C,D' (comma-separated)
+// Kategori answer: {0: true, 1: false, ...} (object)
 let attemptStartedAt = null;
 let lastResult = null;       // hasil percobaan terakhir, untuk render viewResult
 
@@ -270,7 +273,7 @@ async function beginStageAttempt() {
     try {
         const { data, error } = await supabase
             .from('practice_questions')
-            .select('id, question_text, option_a, option_b, option_c, option_d, correct_answer, explanation, image_url')
+            .select('id, question_text, question_type, option_a, option_b, option_c, option_d, correct_answer, correct_answers, category_options, category_mapping, explanation, image_url')
             .eq('chapter', activeChapter)
             .eq('stage', activeStage)
             .eq('is_active', true);
@@ -300,7 +303,7 @@ async function beginStageAttempt() {
 window.beginStageAttempt = beginStageAttempt;
 
 // ------------------------------------------------------------
-// QUIZ
+// QUIZ - render questions based on type
 // ------------------------------------------------------------
 function renderQuiz() {
     document.getElementById('quizTitle').textContent = `${activeChapter} — Tahap ${activeStage}`;
@@ -313,20 +316,22 @@ function renderQuiz() {
         card.className = 'quiz-question-card';
         card.id = `qcard-${q.id}`;
 
-        const options = [['A', q.option_a], ['B', q.option_b], ['C', q.option_c], ['D', q.option_d]];
+        const questionType = q.question_type || 'PG';
+
+        let optionsHtml = '';
+        if (questionType === 'PGK MCMA') {
+            optionsHtml = renderMCMAQuizOptions(q, idx);
+        } else if (questionType === 'PGK Kategori') {
+            optionsHtml = renderKategoriQuizOptions(q, idx);
+        } else {
+            optionsHtml = renderPGQuizOptions(q, idx);
+        }
 
         card.innerHTML = `
-            <span class="quiz-question-number">Soal ${idx + 1} / ${QUESTIONS_PER_STAGE}</span>
+            <span class="quiz-question-number">Soal ${idx + 1} / ${QUESTIONS_PER_STAGE}${questionType !== 'PG' ? ` <span class="quiz-type-tag quiz-type-tag-${questionType === 'PGK MCMA' ? 'mcma' : 'kategori'}">${questionType === 'PGK MCMA' ? 'Jawaban Ganda' : 'Benar/Salah'}</span>` : ''}</span>
             <div class="quiz-question-text">${formatRichText(q.question_text)}</div>
             ${q.image_url ? `<img src="${q.image_url}" class="quiz-question-image" alt="Gambar soal">` : ''}
-            <div class="quiz-options">
-                ${options.map(([letter, text]) => `
-                    <label class="quiz-option" data-question="${q.id}" data-letter="${letter}">
-                        <input type="radio" name="q-${q.id}" value="${letter}" onchange="window.selectAnswer('${q.id}', '${letter}')">
-                        <span><span class="quiz-option-letter">${letter}.</span> ${formatRichText(text)}</span>
-                    </label>
-                `).join('')}
-            </div>
+            ${optionsHtml}
         `;
         list.appendChild(card);
     });
@@ -334,6 +339,115 @@ function renderQuiz() {
     updateQuizProgress();
 }
 
+// --- PG (Pilihan Ganda biasa) ---
+function renderPGQuizOptions(q, idx) {
+    const options = [['A', q.option_a], ['B', q.option_b], ['C', q.option_c], ['D', q.option_d]];
+    return `<div class="quiz-options">
+        ${options.map(([letter, text]) => `
+            <label class="quiz-option" data-question="${q.id}" data-letter="${letter}">
+                <input type="radio" name="q-${q.id}" value="${letter}" onchange="window.selectAnswer('${q.id}', '${letter}')">
+                <span><span class="quiz-option-letter">${letter}.</span> ${formatRichText(text)}</span>
+            </label>
+        `).join('')}
+    </div>`;
+}
+
+// --- PGK MCMA ---
+function renderMCMAQuizOptions(q, idx) {
+    const options = [['A', q.option_a], ['B', q.option_b], ['C', q.option_c], ['D', q.option_d]].filter(([_, t]) => t);
+    const currentAnswer = attemptAnswers[q.id];
+    const selectedArr = currentAnswer ? currentAnswer.split(',') : [];
+
+    return `
+        <div class="quiz-mcma-instruction"><i class="fas fa-info-circle"></i> Pilih satu atau lebih jawaban yang benar</div>
+        <div class="quiz-options quiz-options-mcma">
+            ${options.map(([letter, text]) => {
+                const isSelected = selectedArr.includes(letter);
+                return `
+                <label class="quiz-option quiz-option-mcma ${isSelected ? 'selected' : ''}" data-question="${q.id}" data-letter="${letter}">
+                    <input type="checkbox" name="qm-${q.id}" value="${letter}" ${isSelected ? 'checked' : ''}
+                           onchange="window.toggleMCMAAnswer('${q.id}', '${letter}')">
+                    <span>
+                        <span class="quiz-mcma-check ${isSelected ? 'checked' : ''}"><i class="fas fa-check"></i></span>
+                        <span class="quiz-option-letter">${letter}.</span> ${formatRichText(text)}
+                    </span>
+                </label>`;
+            }).join('')}
+        </div>`;
+}
+
+// --- PGK Kategori ---
+function renderKategoriQuizOptions(q, idx) {
+    let statements = [];
+    try {
+        statements = q.category_options || [];
+        if (typeof statements === 'string') statements = JSON.parse(statements);
+    } catch { statements = []; }
+
+    if (!statements || statements.length === 0) {
+        return '<div style="color:#ef4444; padding:1rem;">Data pernyataan tidak tersedia.</div>';
+    }
+
+    const currentAnswer = attemptAnswers[q.id];
+    let selectedAnswers = {};
+    try {
+        selectedAnswers = currentAnswer ? (typeof currentAnswer === 'string' ? JSON.parse(currentAnswer) : currentAnswer) : {};
+    } catch { selectedAnswers = {}; }
+
+    const answeredCount = Object.keys(selectedAnswers).length;
+
+    return `
+        <div class="quiz-kategori-wrapper">
+            <div class="quiz-kategori-header">
+                <div><i class="fas fa-table"></i> <strong>Benar/Salah</strong></div>
+                <div class="quiz-kategori-progress">${answeredCount}/${statements.length} dijawab</div>
+            </div>
+            <p class="quiz-kategori-instruction">
+                <i class="fas fa-info-circle"></i>
+                Tentukan nilai kebenaran setiap pernyataan berikut.
+            </p>
+            <table class="quiz-kategori-table">
+                <thead>
+                    <tr>
+                        <th style="width:42px;">No</th>
+                        <th>Pernyataan</th>
+                        <th style="width:80px; text-align:center;">Benar</th>
+                        <th style="width:80px; text-align:center;">Salah</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${statements.map((stmt, sIdx) => {
+                        const isTrue = selectedAnswers[sIdx] === true;
+                        const isFalse = selectedAnswers[sIdx] === false;
+                        const rowClass = isTrue ? 'quiz-kat-row-benar' : (isFalse ? 'quiz-kat-row-salah' : '');
+                        return `
+                        <tr class="quiz-kat-row ${rowClass}" id="qkat-${q.id}-${sIdx}">
+                            <td style="text-align:center;"><span class="quiz-kat-no">${sIdx + 1}</span></td>
+                            <td class="quiz-kat-stmt">${formatRichText(typeof stmt === 'string' ? stmt : String(stmt || ''))}</td>
+                            <td style="text-align:center;">
+                                <button type="button" class="quiz-kat-btn quiz-kat-btn-benar ${isTrue ? 'active' : ''}"
+                                        onclick="window.selectKategoriAnswer('${q.id}', ${sIdx}, true)">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                            </td>
+                            <td style="text-align:center;">
+                                <button type="button" class="quiz-kat-btn quiz-kat-btn-salah ${isFalse ? 'active' : ''}"
+                                        onclick="window.selectKategoriAnswer('${q.id}', ${sIdx}, false)">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </td>
+                        </tr>`;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>`;
+}
+
+// ------------------------------------------------------------
+// ANSWER HANDLERS
+// ------------------------------------------------------------
+
+// PG answer
 function selectAnswer(questionId, letter) {
     attemptAnswers[questionId] = letter;
     const card = document.getElementById(`qcard-${questionId}`);
@@ -347,8 +461,106 @@ function selectAnswer(questionId, letter) {
 }
 window.selectAnswer = selectAnswer;
 
+// MCMA answer toggle
+function toggleMCMAAnswer(questionId, letter) {
+    const currentAnswer = attemptAnswers[questionId];
+    let selected = currentAnswer ? currentAnswer.split(',') : [];
+
+    if (selected.includes(letter)) {
+        selected = selected.filter(l => l !== letter);
+    } else {
+        selected.push(letter);
+    }
+
+    attemptAnswers[questionId] = selected.length > 0 ? selected.sort().join(',') : undefined;
+
+    // Update UI
+    const card = document.getElementById(`qcard-${questionId}`);
+    if (card) {
+        if (selected.length > 0) card.classList.add('answered');
+        else card.classList.remove('answered');
+
+        card.querySelectorAll('.quiz-option-mcma').forEach(opt => {
+            const isSelected = selected.includes(opt.dataset.letter);
+            opt.classList.toggle('selected', isSelected);
+            const check = opt.querySelector('.quiz-mcma-check');
+            if (check) check.classList.toggle('checked', isSelected);
+            const cb = opt.querySelector('input[type="checkbox"]');
+            if (cb) cb.checked = isSelected;
+        });
+    }
+    updateQuizProgress();
+}
+window.toggleMCMAAnswer = toggleMCMAAnswer;
+
+// Kategori answer
+function selectKategoriAnswer(questionId, statementIdx, value) {
+    let currentAnswer = attemptAnswers[questionId];
+    let answers = {};
+    try {
+        answers = currentAnswer ? (typeof currentAnswer === 'string' ? JSON.parse(currentAnswer) : { ...currentAnswer }) : {};
+    } catch { answers = {}; }
+
+    answers[statementIdx] = value;
+    attemptAnswers[questionId] = answers;
+
+    // Update row UI
+    const row = document.getElementById(`qkat-${questionId}-${statementIdx}`);
+    if (row) {
+        row.className = `quiz-kat-row ${value === true ? 'quiz-kat-row-benar' : 'quiz-kat-row-salah'}`;
+        const btnBenar = row.querySelector('.quiz-kat-btn-benar');
+        const btnSalah = row.querySelector('.quiz-kat-btn-salah');
+        if (btnBenar) btnBenar.classList.toggle('active', value === true);
+        if (btnSalah) btnSalah.classList.toggle('active', value === false);
+    }
+
+    // Update progress counter in the kategori header
+    const card = document.getElementById(`qcard-${questionId}`);
+    if (card) {
+        const progressEl = card.querySelector('.quiz-kategori-progress');
+        if (progressEl) {
+            progressEl.textContent = `${Object.keys(answers).length}/${card.querySelectorAll('.quiz-kat-row').length} dijawab`;
+        }
+
+        // Mark card as answered if all statements answered
+        const q = attemptQuestions.find(q => q.id === questionId);
+        if (q) {
+            let stmts = q.category_options || [];
+            if (typeof stmts === 'string') try { stmts = JSON.parse(stmts); } catch { stmts = []; }
+            if (Object.keys(answers).length >= stmts.length) {
+                card.classList.add('answered');
+            }
+        }
+    }
+
+    updateQuizProgress();
+}
+window.selectKategoriAnswer = selectKategoriAnswer;
+
+// ------------------------------------------------------------
+// PROGRESS
+// ------------------------------------------------------------
+function isQuestionAnswered(q) {
+    const answer = attemptAnswers[q.id];
+    if (answer == null || answer === undefined) return false;
+
+    const questionType = q.question_type || 'PG';
+    if (questionType === 'PGK Kategori') {
+        // All statements must be answered
+        let stmts = q.category_options || [];
+        if (typeof stmts === 'string') try { stmts = JSON.parse(stmts); } catch { stmts = []; }
+        const ansObj = typeof answer === 'string' ? JSON.parse(answer) : answer;
+        return Object.keys(ansObj).length >= stmts.length;
+    }
+    if (questionType === 'PGK MCMA') {
+        return typeof answer === 'string' && answer.length > 0;
+    }
+    // PG
+    return !!answer;
+}
+
 function updateQuizProgress() {
-    const answeredCount = Object.keys(attemptAnswers).length;
+    const answeredCount = attemptQuestions.filter(q => isQuestionAnswered(q)).length;
     document.getElementById('quizProgressLabel').textContent = `${answeredCount} / ${QUESTIONS_PER_STAGE} terjawab`;
     document.getElementById('quizProgressFill').style.width = `${(answeredCount / QUESTIONS_PER_STAGE) * 100}%`;
 
@@ -361,25 +573,80 @@ function updateQuizProgress() {
         : `Jawab semua soal untuk mengumpulkan (${QUESTIONS_PER_STAGE - answeredCount} tersisa).`;
 }
 
+// ------------------------------------------------------------
+// GRADING
+// ------------------------------------------------------------
+function gradeQuestion(q) {
+    const answer = attemptAnswers[q.id];
+    const questionType = q.question_type || 'PG';
+
+    if (questionType === 'PGK MCMA') {
+        // Compare sorted arrays
+        const selected = answer ? answer.split(',').sort() : [];
+        const correct = (q.correct_answers || []).slice().sort();
+        return selected.length === correct.length && selected.every((v, i) => v === correct[i]);
+    }
+
+    if (questionType === 'PGK Kategori') {
+        try {
+            const selectedAnswers = typeof answer === 'string' ? JSON.parse(answer) : (answer || {});
+            let mapping = q.category_mapping || {};
+            if (typeof mapping === 'string') mapping = JSON.parse(mapping);
+
+            for (const [idxStr, correctVal] of Object.entries(mapping)) {
+                if (selectedAnswers[parseInt(idxStr)] !== correctVal) return false;
+            }
+            return true;
+        } catch { return false; }
+    }
+
+    // PG
+    return answer === q.correct_answer;
+}
+
+// ------------------------------------------------------------
+// SUBMIT
+// ------------------------------------------------------------
 async function submitStageAttempt() {
-    if (Object.keys(attemptAnswers).length < QUESTIONS_PER_STAGE) return;
+    const answeredCount = attemptQuestions.filter(q => isQuestionAnswered(q)).length;
+    if (answeredCount < QUESTIONS_PER_STAGE) return;
 
     const btn = document.getElementById('submitQuizBtn');
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
 
     const detailedAnswers = attemptQuestions.map(q => {
-        const selected = attemptAnswers[q.id];
-        const isCorrect = selected === q.correct_answer;
-        return {
+        const questionType = q.question_type || 'PG';
+        const answer = attemptAnswers[q.id];
+        const isCorrect = gradeQuestion(q);
+
+        const detail = {
             question_id: q.id,
+            question_type: questionType,
             question_text: q.question_text,
-            option_a: q.option_a, option_b: q.option_b, option_c: q.option_c, option_d: q.option_d,
-            selected_answer: selected,
-            correct_answer: q.correct_answer,
+            selected_answer: answer,
             is_correct: isCorrect,
             explanation: q.explanation || null
         };
+
+        if (questionType === 'PG') {
+            detail.option_a = q.option_a;
+            detail.option_b = q.option_b;
+            detail.option_c = q.option_c;
+            detail.option_d = q.option_d;
+            detail.correct_answer = q.correct_answer;
+        } else if (questionType === 'PGK MCMA') {
+            detail.option_a = q.option_a;
+            detail.option_b = q.option_b;
+            detail.option_c = q.option_c;
+            detail.option_d = q.option_d;
+            detail.correct_answers = q.correct_answers;
+        } else if (questionType === 'PGK Kategori') {
+            detail.category_options = q.category_options;
+            detail.category_mapping = q.category_mapping;
+        }
+
+        return detail;
     });
 
     const scoreCorrect = detailedAnswers.filter(a => a.is_correct).length;
@@ -475,19 +742,104 @@ function renderResult() {
     document.getElementById('resultNextBtn').style.display = (isPassed && stage < 3) ? 'inline-flex' : 'none';
 
     const reviewList = document.getElementById('reviewList');
-    reviewList.innerHTML = detailedAnswers.map((a, idx) => `
+    reviewList.innerHTML = detailedAnswers.map((a, idx) => {
+        const questionType = a.question_type || 'PG';
+
+        if (questionType === 'PGK MCMA') {
+            return renderMCMAReview(a, idx);
+        } else if (questionType === 'PGK Kategori') {
+            return renderKategoriReview(a, idx);
+        } else {
+            return renderPGReview(a, idx);
+        }
+    }).join('');
+}
+
+// PG Review
+function renderPGReview(a, idx) {
+    const selectedText = a[optionKey(a.selected_answer)] || '';
+    const correctText = a[optionKey(a.correct_answer)] || '';
+
+    return `
         <div class="review-item ${a.is_correct ? 'correct' : 'incorrect'}">
             <div class="review-item-head">
                 <div class="review-item-question">Soal ${idx + 1}. ${formatRichText(a.question_text)}</div>
                 <span class="review-badge">${a.is_correct ? 'Benar' : 'Salah'}</span>
             </div>
             <div class="review-item-answers">
-                Jawabanmu: <strong>${a.selected_answer}. ${formatRichText(a[optionKey(a.selected_answer)] || '')}</strong>
-                ${!a.is_correct ? ` &middot; Jawaban benar: <strong>${a.correct_answer}. ${formatRichText(a[optionKey(a.correct_answer)] || '')}</strong>` : ''}
+                Jawabanmu: <strong>${a.selected_answer}. ${formatRichText(selectedText)}</strong>
+                ${!a.is_correct ? ` &middot; Jawaban benar: <strong>${a.correct_answer}. ${formatRichText(correctText)}</strong>` : ''}
             </div>
             ${a.explanation ? `<div class="review-item-explanation"><i class="fas fa-lightbulb"></i> ${formatRichText(a.explanation)}</div>` : ''}
         </div>
-    `).join('');
+    `;
+}
+
+// MCMA Review
+function renderMCMAReview(a, idx) {
+    const selectedArr = a.selected_answer ? (typeof a.selected_answer === 'string' ? a.selected_answer.split(',') : a.selected_answer) : [];
+    const correctArr = a.correct_answers || [];
+
+    const selectedLabels = selectedArr.map(l => `${l}. ${formatRichText(a[optionKey(l)] || '')}`).join(', ');
+    const correctLabels = correctArr.map(l => `${l}. ${formatRichText(a[optionKey(l)] || '')}`).join(', ');
+
+    return `
+        <div class="review-item ${a.is_correct ? 'correct' : 'incorrect'}">
+            <div class="review-item-head">
+                <div class="review-item-question">Soal ${idx + 1}. <span class="review-type-tag">MCMA</span> ${formatRichText(a.question_text)}</div>
+                <span class="review-badge">${a.is_correct ? 'Benar' : 'Salah'}</span>
+            </div>
+            <div class="review-item-answers">
+                Jawabanmu: <strong>${selectedLabels || '-'}</strong>
+                ${!a.is_correct ? ` &middot; Jawaban benar: <strong>${correctLabels}</strong>` : ''}
+            </div>
+            ${a.explanation ? `<div class="review-item-explanation"><i class="fas fa-lightbulb"></i> ${formatRichText(a.explanation)}</div>` : ''}
+        </div>
+    `;
+}
+
+// Kategori Review
+function renderKategoriReview(a, idx) {
+    let statements = [];
+    try {
+        statements = a.category_options || [];
+        if (typeof statements === 'string') statements = JSON.parse(statements);
+    } catch { statements = []; }
+
+    let correctMapping = {};
+    try {
+        correctMapping = a.category_mapping || {};
+        if (typeof correctMapping === 'string') correctMapping = JSON.parse(correctMapping);
+    } catch { correctMapping = {}; }
+
+    let selectedAnswers = {};
+    try {
+        selectedAnswers = a.selected_answer || {};
+        if (typeof selectedAnswers === 'string') selectedAnswers = JSON.parse(selectedAnswers);
+    } catch { selectedAnswers = {}; }
+
+    const statementsHtml = statements.map((stmt, sIdx) => {
+        const userVal = selectedAnswers[sIdx];
+        const correctVal = correctMapping[String(sIdx)];
+        const isRight = userVal === correctVal;
+        return `<div class="review-kat-item ${isRight ? 'correct' : 'incorrect'}">
+            <span class="review-kat-no">${sIdx + 1}.</span>
+            <span class="review-kat-text">${formatRichText(typeof stmt === 'string' ? stmt : String(stmt || ''))}</span>
+            <span class="review-kat-answer">Kamu: <strong>${userVal === true ? 'Benar' : (userVal === false ? 'Salah' : '-')}</strong></span>
+            ${!isRight ? `<span class="review-kat-correct">Jawaban: <strong>${correctVal === true ? 'Benar' : 'Salah'}</strong></span>` : ''}
+        </div>`;
+    }).join('');
+
+    return `
+        <div class="review-item ${a.is_correct ? 'correct' : 'incorrect'}">
+            <div class="review-item-head">
+                <div class="review-item-question">Soal ${idx + 1}. <span class="review-type-tag">Kategori</span> ${formatRichText(a.question_text)}</div>
+                <span class="review-badge">${a.is_correct ? 'Benar' : 'Salah'}</span>
+            </div>
+            <div class="review-kat-details">${statementsHtml}</div>
+            ${a.explanation ? `<div class="review-item-explanation"><i class="fas fa-lightbulb"></i> ${formatRichText(a.explanation)}</div>` : ''}
+        </div>
+    `;
 }
 
 function optionKey(letter) {
@@ -593,11 +945,11 @@ function formatRichText(raw) {
     if (!window.katex) return escaped;
 
     let result = escaped;
-    result = result.replace(/\\\(([^]*?)\\\)/g, (match, latex) => {
+    result = result.replace(/\\\\\(([^]*?)\\\\\)/g, (match, latex) => {
         try { return window.katex.renderToString(latex, { displayMode: false, throwOnError: false }); }
         catch (e) { return match; }
     });
-    result = result.replace(/\\\[([^]*?)\\\]/g, (match, latex) => {
+    result = result.replace(/\\\\\[([^]*?)\\\\\]/g, (match, latex) => {
         try { return window.katex.renderToString(latex, { displayMode: true, throwOnError: false }); }
         catch (e) { return match; }
     });

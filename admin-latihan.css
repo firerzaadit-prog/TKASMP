@@ -152,6 +152,181 @@
     max-width: 420px;
 }
 
+/* ============================================================
+   QUESTION TYPE BADGES (in table)
+   ============================================================ */
+.pl-type-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.pl-type-pg {
+    background: rgba(67, 97, 238, 0.1);
+    color: #4361ee;
+}
+
+.pl-type-mcma {
+    background: rgba(245, 158, 11, 0.12);
+    color: #d97706;
+}
+
+.pl-type-kategori {
+    background: rgba(16, 185, 129, 0.12);
+    color: #059669;
+}
+
+/* ============================================================
+   PGK MCMA FORM (Admin)
+   ============================================================ */
+.pl-mcma-info {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.88rem;
+    color: #92400e;
+}
+
+.pl-mcma-info i {
+    color: #d97706;
+    margin-right: 0.3rem;
+}
+
+.pl-mcma-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+}
+
+.pl-mcma-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #d97706;
+    cursor: pointer;
+}
+
+/* ============================================================
+   PGK KATEGORI FORM (Admin)
+   ============================================================ */
+.pl-kategori-info {
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.88rem;
+    color: #065f46;
+}
+
+.pl-kategori-info i {
+    color: #059669;
+    margin-right: 0.3rem;
+}
+
+.pl-kategori-table-wrap {
+    background: white;
+    border: 1px solid var(--admin-border, #e2e8f0);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.pl-kategori-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.pl-kategori-table thead {
+    background: #f8fafc;
+}
+
+.pl-kategori-table th {
+    padding: 0.6rem 0.8rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.pl-kategori-table td {
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid #f1f5f9;
+    vertical-align: middle;
+}
+
+.pl-kategori-table tr:last-child td {
+    border-bottom: none;
+}
+
+.pl-kategori-input {
+    width: 100%;
+    padding: 0.5rem 0.7rem;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    transition: border-color 0.2s;
+}
+
+.pl-kategori-input:focus {
+    outline: none;
+    border-color: #059669;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.pl-kategori-table input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #059669;
+    cursor: pointer;
+}
+
+.pl-kategori-remove-btn {
+    background: none;
+    border: none;
+    color: #ef4444;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0.3rem;
+    border-radius: 4px;
+    transition: background 0.15s;
+}
+
+.pl-kategori-remove-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.pl-kategori-add-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    justify-content: center;
+    padding: 0.7rem;
+    border: none;
+    background: #f0fdf4;
+    color: #059669;
+    font-weight: 600;
+    font-size: 0.88rem;
+    cursor: pointer;
+    transition: background 0.2s;
+    border-top: 1px solid #e2e8f0;
+}
+
+.pl-kategori-add-btn:hover {
+    background: #dcfce7;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
 @media (max-width: 900px) {
     .pl-filter-bar { flex-direction: column; align-items: flex-start; }
     .pl-ready-badge { margin-left: 0; }

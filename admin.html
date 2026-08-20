@@ -1333,36 +1333,110 @@
                                     <option value="3">Tahap 3</option>
                                 </select>
                             </div>
+                            <div class="form-group">
+                                <label for="pqQuestionType">Tipe Soal: <span style="color:#ef4444;">*</span></label>
+                                <select id="pqQuestionType" onchange="onPracticeQuestionTypeChange()">
+                                    <option value="PG">Pilihan Ganda (PG)</option>
+                                    <option value="PGK MCMA">PGK MCMA (Jawaban Ganda)</option>
+                                    <option value="PGK Kategori">PGK Kategori (Benar/Salah)</option>
+                                </select>
+                            </div>
                             <div class="form-group full-width">
                                 <label for="pqQuestionText">Teks Soal: <span style="color:#ef4444;">*</span></label>
                                 <textarea id="pqQuestionText" rows="3" required placeholder="Tulis soal di sini. Rumus matematika bisa memakai LaTeX, contoh: \( x^2 + 1 \)"></textarea>
                             </div>
-                            <div class="form-group">
-                                <label for="pqOptionA">Opsi A: <span style="color:#ef4444;">*</span></label>
-                                <input type="text" id="pqOptionA" required>
+
+                            <!-- ===== AREA OPSI PG (Pilihan Ganda biasa) ===== -->
+                            <div id="pqAreaPG">
+                                <div class="form-grid">
+                                    <div class="form-group">
+                                        <label for="pqOptionA">Opsi A: <span style="color:#ef4444;">*</span></label>
+                                        <input type="text" id="pqOptionA">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="pqOptionB">Opsi B: <span style="color:#ef4444;">*</span></label>
+                                        <input type="text" id="pqOptionB">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="pqOptionC">Opsi C: <span style="color:#ef4444;">*</span></label>
+                                        <input type="text" id="pqOptionC">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="pqOptionD">Opsi D: <span style="color:#ef4444;">*</span></label>
+                                        <input type="text" id="pqOptionD">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="pqCorrectAnswer">Jawaban Benar: <span style="color:#ef4444;">*</span></label>
+                                        <select id="pqCorrectAnswer">
+                                            <option value="">Pilih jawaban benar</option>
+                                            <option value="A">A</option>
+                                            <option value="B">B</option>
+                                            <option value="C">C</option>
+                                            <option value="D">D</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label for="pqOptionB">Opsi B: <span style="color:#ef4444;">*</span></label>
-                                <input type="text" id="pqOptionB" required>
+
+                            <!-- ===== AREA OPSI PGK MCMA (Jawaban Ganda) ===== -->
+                            <div id="pqAreaMCMA" style="display:none;" class="full-width">
+                                <div class="pl-mcma-info">
+                                    <i class="fas fa-info-circle"></i> Centang kotak di samping setiap opsi yang merupakan jawaban benar.
+                                </div>
+                                <div class="form-grid">
+                                    <div class="form-group">
+                                        <label class="pl-mcma-label">
+                                            <input type="checkbox" id="pqMcmaA" value="A"> Opsi A: <span style="color:#ef4444;">*</span>
+                                        </label>
+                                        <input type="text" id="pqMcmaOptA" placeholder="Teks opsi A">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="pl-mcma-label">
+                                            <input type="checkbox" id="pqMcmaB" value="B"> Opsi B: <span style="color:#ef4444;">*</span>
+                                        </label>
+                                        <input type="text" id="pqMcmaOptB" placeholder="Teks opsi B">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="pl-mcma-label">
+                                            <input type="checkbox" id="pqMcmaC" value="C"> Opsi C: <span style="color:#ef4444;">*</span>
+                                        </label>
+                                        <input type="text" id="pqMcmaOptC" placeholder="Teks opsi C">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="pl-mcma-label">
+                                            <input type="checkbox" id="pqMcmaD" value="D"> Opsi D: <span style="color:#ef4444;">*</span>
+                                        </label>
+                                        <input type="text" id="pqMcmaOptD" placeholder="Teks opsi D">
+                                    </div>
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label for="pqOptionC">Opsi C: <span style="color:#ef4444;">*</span></label>
-                                <input type="text" id="pqOptionC" required>
+
+                            <!-- ===== AREA OPSI PGK KATEGORI (Benar/Salah) ===== -->
+                            <div id="pqAreaKategori" style="display:none;" class="full-width">
+                                <div class="pl-kategori-info">
+                                    <i class="fas fa-info-circle"></i> Tambahkan pernyataan dan tentukan nilai kebenaran (Benar/Salah) untuk setiap pernyataan.
+                                </div>
+                                <div class="pl-kategori-table-wrap">
+                                    <table class="pl-kategori-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:40px;">No</th>
+                                                <th>Pernyataan</th>
+                                                <th style="width:70px; text-align:center;">Benar</th>
+                                                <th style="width:70px; text-align:center;">Salah</th>
+                                                <th style="width:50px;"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="pqKategoriTableBody">
+                                            <!-- Rows added dynamically by JS -->
+                                        </tbody>
+                                    </table>
+                                    <button type="button" class="pl-kategori-add-btn" onclick="addPracticeKategoriRow()">
+                                        <i class="fas fa-plus"></i> Tambah Pernyataan
+                                    </button>
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label for="pqOptionD">Opsi D: <span style="color:#ef4444;">*</span></label>
-                                <input type="text" id="pqOptionD" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="pqCorrectAnswer">Jawaban Benar: <span style="color:#ef4444;">*</span></label>
-                                <select id="pqCorrectAnswer" required>
-                                    <option value="">Pilih jawaban benar</option>
-                                    <option value="A">A</option>
-                                    <option value="B">B</option>
-                                    <option value="C">C</option>
-                                    <option value="D">D</option>
-                                </select>
-                            </div>
+
                             <div class="form-group">
                                 <label for="pqIsActive">Status:</label>
                                 <select id="pqIsActive">
@@ -1394,13 +1468,14 @@
                     <thead>
                         <tr>
                             <th>Soal</th>
+                            <th>Tipe</th>
                             <th>Jawaban Benar</th>
                             <th>Status</th>
                             <th>Aksi</th>
                         </tr>
                     </thead>
                     <tbody id="practiceQuestionsTableBody">
-                        <tr><td colspan="4" style="text-align:center; color:#9ca3af; padding:2rem;">Memuat...</td></tr>
+                        <tr><td colspan="5" style="text-align:center; color:#9ca3af; padding:2rem;">Memuat...</td></tr>
                     </tbody>
                 </table>
             </div>

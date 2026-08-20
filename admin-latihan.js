@@ -21,6 +21,9 @@ let currentFilterStage = 1;
 let currentEditingId = null;
 let uploadedImageUrl = null; // hasil upload gambar untuk soal yang sedang diedit/ditambah
 
+// Data PGK Kategori saat admin sedang mengedit form
+let practiceKategoriRows = []; // [{statement:'', isTrue: null}, ...]
+
 // ------------------------------------------------------------
 // INIT - dipanggil dari onclick tombol tab "Latihan Bertingkat"
 // di admin.html (window.loadPracticeLevelsTab), BUKAN dari
@@ -86,12 +89,94 @@ function switchPracticeStage(stage) {
 window.switchPracticeStage = switchPracticeStage;
 
 // ------------------------------------------------------------
+// QUESTION TYPE FORM SWITCHING
+// ------------------------------------------------------------
+function onPracticeQuestionTypeChange() {
+    const questionType = document.getElementById('pqQuestionType').value;
+    const areaPG = document.getElementById('pqAreaPG');
+    const areaMCMA = document.getElementById('pqAreaMCMA');
+    const areaKategori = document.getElementById('pqAreaKategori');
+
+    areaPG.style.display = questionType === 'PG' ? 'block' : 'none';
+    areaMCMA.style.display = questionType === 'PGK MCMA' ? 'block' : 'none';
+    areaKategori.style.display = questionType === 'PGK Kategori' ? 'block' : 'none';
+
+    // Init kategori rows if switching to Kategori for the first time
+    if (questionType === 'PGK Kategori' && practiceKategoriRows.length === 0) {
+        practiceKategoriRows = [{ statement: '', isTrue: null }];
+        renderKategoriTable();
+    }
+}
+window.onPracticeQuestionTypeChange = onPracticeQuestionTypeChange;
+
+// ------------------------------------------------------------
+// PGK KATEGORI - dynamic table management
+// ------------------------------------------------------------
+function addPracticeKategoriRow() {
+    practiceKategoriRows.push({ statement: '', isTrue: null });
+    renderKategoriTable();
+}
+window.addPracticeKategoriRow = addPracticeKategoriRow;
+
+function removePracticeKategoriRow(index) {
+    if (practiceKategoriRows.length <= 1) {
+        alert('Minimal harus ada 1 pernyataan.');
+        return;
+    }
+    practiceKategoriRows.splice(index, 1);
+    renderKategoriTable();
+}
+window.removePracticeKategoriRow = removePracticeKategoriRow;
+
+function updatePracticeKategoriStatement(index, value) {
+    practiceKategoriRows[index].statement = value;
+}
+window.updatePracticeKategoriStatement = updatePracticeKategoriStatement;
+
+function updatePracticeKategoriTruth(index, isTrue) {
+    practiceKategoriRows[index].isTrue = isTrue;
+}
+window.updatePracticeKategoriTruth = updatePracticeKategoriTruth;
+
+function renderKategoriTable() {
+    const tbody = document.getElementById('pqKategoriTableBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = practiceKategoriRows.map((row, idx) => `
+        <tr>
+            <td style="text-align:center; font-weight:600; color:#6b7280;">${idx + 1}</td>
+            <td>
+                <input type="text"
+                       class="pl-kategori-input"
+                       value="${escapeHtml(row.statement).replace(/"/g, '&quot;')}"
+                       placeholder="Tulis pernyataan... (LaTeX: \\( rumus \\))"
+                       oninput="updatePracticeKategoriStatement(${idx}, this.value)">
+            </td>
+            <td style="text-align:center;">
+                <input type="radio" name="pqKat${idx}" value="true"
+                       ${row.isTrue === true ? 'checked' : ''}
+                       onchange="updatePracticeKategoriTruth(${idx}, true)">
+            </td>
+            <td style="text-align:center;">
+                <input type="radio" name="pqKat${idx}" value="false"
+                       ${row.isTrue === false ? 'checked' : ''}
+                       onchange="updatePracticeKategoriTruth(${idx}, false)">
+            </td>
+            <td style="text-align:center;">
+                ${idx > 0 ? `<button type="button" class="pl-kategori-remove-btn"
+                    onclick="removePracticeKategoriRow(${idx})" title="Hapus"><i class="fas fa-trash"></i></button>` : ''}
+            </td>
+        </tr>
+    `).join('');
+}
+
+// ------------------------------------------------------------
 // LIST
 // ------------------------------------------------------------
 async function refreshPracticeQuestionsList() {
     const tbody = document.getElementById('practiceQuestionsTableBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#9ca3af; padding:2rem;">Memuat...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#9ca3af; padding:2rem;">Memuat...</td></tr>';
 
     try {
         const { data, error } = await supabase
@@ -107,7 +192,7 @@ async function refreshPracticeQuestionsList() {
         updateReadyBadge(data || []);
     } catch (error) {
         console.error('Gagal memuat soal latihan:', error);
-        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#e84393; padding:2rem;">Gagal memuat data: ${escapeHtml(error.message)}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#e84393; padding:2rem;">Gagal memuat data: ${escapeHtml(error.message)}</td></tr>`;
     }
 }
 
@@ -119,12 +204,42 @@ function updateReadyBadge(questions) {
     badge.classList.toggle('pl-ready-ok', activeCount >= QUESTIONS_PER_STAGE);
 }
 
+function getQuestionTypeBadge(questionType) {
+    switch (questionType) {
+        case 'PGK MCMA':
+            return '<span class="pl-type-badge pl-type-mcma">MCMA</span>';
+        case 'PGK Kategori':
+            return '<span class="pl-type-badge pl-type-kategori">Kategori</span>';
+        case 'PG':
+        default:
+            return '<span class="pl-type-badge pl-type-pg">PG</span>';
+    }
+}
+
+function getCorrectAnswerDisplay(q) {
+    const questionType = q.question_type || 'PG';
+    switch (questionType) {
+        case 'PGK MCMA':
+            return q.correct_answers ? q.correct_answers.join(', ') : '-';
+        case 'PGK Kategori': {
+            if (!q.category_mapping) return '-';
+            try {
+                const mapping = typeof q.category_mapping === 'string' ? JSON.parse(q.category_mapping) : q.category_mapping;
+                const entries = Object.entries(mapping);
+                return entries.map(([idx, val]) => `${parseInt(idx)+1}:${val ? 'B' : 'S'}`).join(', ');
+            } catch { return '-'; }
+        }
+        default:
+            return q.correct_answer || '-';
+    }
+}
+
 function renderPracticeQuestionsTable(questions) {
     const tbody = document.getElementById('practiceQuestionsTableBody');
     tbody.innerHTML = '';
 
     if (questions.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#9ca3af; padding:2rem;">Belum ada soal untuk Bab & Tahap ini.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#9ca3af; padding:2rem;">Belum ada soal untuk Bab & Tahap ini.</td></tr>';
         return;
     }
 
@@ -137,7 +252,8 @@ function renderPracticeQuestionsTable(questions) {
 
         row.innerHTML = `
             <td class="pl-question-cell" title="${escapeHtml(q.question_text)}">${escapeHtml(shortQuestion)}</td>
-            <td>${escapeHtml(q.correct_answer)}</td>
+            <td>${getQuestionTypeBadge(q.question_type)}</td>
+            <td>${escapeHtml(getCorrectAnswerDisplay(q))}</td>
             <td>${statusBadge}</td>
             <td>
                 <button class="pl-edit-btn" onclick="editPracticeQuestion('${q.id}')"><i class="fas fa-edit"></i> Edit</button>
@@ -157,13 +273,16 @@ function renderPracticeQuestionsTable(questions) {
 function showPracticeQuestionForm() {
     currentEditingId = null;
     uploadedImageUrl = null;
+    practiceKategoriRows = [];
     document.getElementById('practiceQuestionFormData').reset();
     document.getElementById('practiceFormTitle').textContent = 'Tambah Soal Latihan';
     document.getElementById('pqChapter').value = currentFilterChapter;
     updatePracticeSubChapterOptions(currentFilterChapter);
     document.getElementById('pqStage').value = String(currentFilterStage);
+    document.getElementById('pqQuestionType').value = 'PG';
     document.getElementById('pqIsActive').value = 'true';
     hideImagePreview();
+    onPracticeQuestionTypeChange(); // show/hide correct form area
     document.getElementById('practiceQuestionForm').style.display = 'block';
     document.getElementById('addPracticeQuestionBtn').style.display = 'none';
     document.getElementById('practiceQuestionForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -175,6 +294,7 @@ function hidePracticeQuestionForm() {
     document.getElementById('addPracticeQuestionBtn').style.display = 'inline-flex';
     currentEditingId = null;
     uploadedImageUrl = null;
+    practiceKategoriRows = [];
 }
 window.hidePracticeQuestionForm = hidePracticeQuestionForm;
 
@@ -189,19 +309,63 @@ async function editPracticeQuestion(id) {
         currentEditingId = id;
         uploadedImageUrl = data.image_url || null;
 
+        const questionType = data.question_type || 'PG';
+
         document.getElementById('practiceFormTitle').textContent = 'Edit Soal Latihan';
         document.getElementById('pqChapter').value = data.chapter;
         updatePracticeSubChapterOptions(data.chapter);
         document.getElementById('pqSubChapter').value = data.sub_chapter || '';
         document.getElementById('pqStage').value = String(data.stage);
+        document.getElementById('pqQuestionType').value = questionType;
         document.getElementById('pqQuestionText').value = data.question_text;
-        document.getElementById('pqOptionA').value = data.option_a;
-        document.getElementById('pqOptionB').value = data.option_b;
-        document.getElementById('pqOptionC').value = data.option_c;
-        document.getElementById('pqOptionD').value = data.option_d;
-        document.getElementById('pqCorrectAnswer').value = data.correct_answer;
         document.getElementById('pqExplanation').value = data.explanation || '';
         document.getElementById('pqIsActive').value = data.is_active ? 'true' : 'false';
+
+        // Show correct form area
+        onPracticeQuestionTypeChange();
+
+        // Populate type-specific fields
+        if (questionType === 'PG') {
+            document.getElementById('pqOptionA').value = data.option_a || '';
+            document.getElementById('pqOptionB').value = data.option_b || '';
+            document.getElementById('pqOptionC').value = data.option_c || '';
+            document.getElementById('pqOptionD').value = data.option_d || '';
+            document.getElementById('pqCorrectAnswer').value = data.correct_answer || '';
+        } else if (questionType === 'PGK MCMA') {
+            document.getElementById('pqMcmaOptA').value = data.option_a || '';
+            document.getElementById('pqMcmaOptB').value = data.option_b || '';
+            document.getElementById('pqMcmaOptC').value = data.option_c || '';
+            document.getElementById('pqMcmaOptD').value = data.option_d || '';
+            // Check correct answers
+            const correctArr = data.correct_answers || [];
+            document.getElementById('pqMcmaA').checked = correctArr.includes('A');
+            document.getElementById('pqMcmaB').checked = correctArr.includes('B');
+            document.getElementById('pqMcmaC').checked = correctArr.includes('C');
+            document.getElementById('pqMcmaD').checked = correctArr.includes('D');
+        } else if (questionType === 'PGK Kategori') {
+            // Populate kategori rows from saved data
+            let statements = [];
+            try {
+                statements = data.category_options || [];
+                if (typeof statements === 'string') statements = JSON.parse(statements);
+            } catch { statements = []; }
+
+            let mapping = {};
+            try {
+                mapping = data.category_mapping || {};
+                if (typeof mapping === 'string') mapping = JSON.parse(mapping);
+            } catch { mapping = {}; }
+
+            practiceKategoriRows = statements.map((stmt, idx) => ({
+                statement: stmt,
+                isTrue: mapping.hasOwnProperty(String(idx)) ? mapping[String(idx)] : null
+            }));
+
+            if (practiceKategoriRows.length === 0) {
+                practiceKategoriRows = [{ statement: '', isTrue: null }];
+            }
+            renderKategoriTable();
+        }
 
         if (data.image_url) {
             showImagePreview(data.image_url);
@@ -228,34 +392,99 @@ async function savePracticeQuestion(event) {
     const chapter = document.getElementById('pqChapter').value;
     const subChapter = document.getElementById('pqSubChapter').value || null;
     const stage = parseInt(document.getElementById('pqStage').value, 10);
+    const questionType = document.getElementById('pqQuestionType').value;
     const questionText = document.getElementById('pqQuestionText').value.trim();
-    const optionA = document.getElementById('pqOptionA').value.trim();
-    const optionB = document.getElementById('pqOptionB').value.trim();
-    const optionC = document.getElementById('pqOptionC').value.trim();
-    const optionD = document.getElementById('pqOptionD').value.trim();
-    const correctAnswer = document.getElementById('pqCorrectAnswer').value;
     const explanation = document.getElementById('pqExplanation').value.trim() || null;
     const isActive = document.getElementById('pqIsActive').value === 'true';
 
-    if (!chapter || !stage || !questionText || !optionA || !optionB || !optionC || !optionD || !correctAnswer) {
-        alert('Mohon lengkapi semua field yang wajib diisi (tanda *).');
+    if (!chapter || !stage || !questionText) {
+        alert('Mohon lengkapi Bab, Tahap, dan Teks Soal.');
         return;
     }
 
+    // Build payload based on question type
     const payload = {
         chapter,
         sub_chapter: subChapter,
         stage,
+        question_type: questionType,
         question_text: questionText,
-        option_a: optionA,
-        option_b: optionB,
-        option_c: optionC,
-        option_d: optionD,
-        correct_answer: correctAnswer,
         explanation,
         image_url: uploadedImageUrl,
-        is_active: isActive
+        is_active: isActive,
+        // Reset fields that may not apply
+        option_a: null, option_b: null, option_c: null, option_d: null,
+        correct_answer: null, correct_answers: null,
+        category_options: null, category_mapping: null
     };
+
+    if (questionType === 'PG') {
+        const optA = document.getElementById('pqOptionA').value.trim();
+        const optB = document.getElementById('pqOptionB').value.trim();
+        const optC = document.getElementById('pqOptionC').value.trim();
+        const optD = document.getElementById('pqOptionD').value.trim();
+        const correctAnswer = document.getElementById('pqCorrectAnswer').value;
+
+        if (!optA || !optB || !optC || !optD || !correctAnswer) {
+            alert('Untuk Pilihan Ganda, semua opsi A–D dan jawaban benar wajib diisi.');
+            return;
+        }
+        payload.option_a = optA;
+        payload.option_b = optB;
+        payload.option_c = optC;
+        payload.option_d = optD;
+        payload.correct_answer = correctAnswer;
+
+    } else if (questionType === 'PGK MCMA') {
+        const optA = document.getElementById('pqMcmaOptA').value.trim();
+        const optB = document.getElementById('pqMcmaOptB').value.trim();
+        const optC = document.getElementById('pqMcmaOptC').value.trim();
+        const optD = document.getElementById('pqMcmaOptD').value.trim();
+
+        if (!optA || !optB || !optC || !optD) {
+            alert('Untuk PGK MCMA, semua opsi A–D wajib diisi.');
+            return;
+        }
+
+        const correctAnswers = [];
+        if (document.getElementById('pqMcmaA').checked) correctAnswers.push('A');
+        if (document.getElementById('pqMcmaB').checked) correctAnswers.push('B');
+        if (document.getElementById('pqMcmaC').checked) correctAnswers.push('C');
+        if (document.getElementById('pqMcmaD').checked) correctAnswers.push('D');
+
+        if (correctAnswers.length === 0) {
+            alert('Untuk PGK MCMA, centang minimal 1 jawaban benar.');
+            return;
+        }
+
+        payload.option_a = optA;
+        payload.option_b = optB;
+        payload.option_c = optC;
+        payload.option_d = optD;
+        payload.correct_answers = correctAnswers;
+
+    } else if (questionType === 'PGK Kategori') {
+        // Validate statements
+        const validRows = practiceKategoriRows.filter(r => r.statement.trim() !== '');
+        if (validRows.length === 0) {
+            alert('Untuk PGK Kategori, minimal 1 pernyataan harus diisi.');
+            return;
+        }
+        const allTruthSet = validRows.every(r => r.isTrue === true || r.isTrue === false);
+        if (!allTruthSet) {
+            alert('Setiap pernyataan harus ditentukan Benar atau Salah.');
+            return;
+        }
+
+        const categoryOptions = validRows.map(r => r.statement.trim());
+        const categoryMapping = {};
+        validRows.forEach((r, idx) => {
+            categoryMapping[String(idx)] = r.isTrue;
+        });
+
+        payload.category_options = categoryOptions;
+        payload.category_mapping = categoryMapping;
+    }
 
     const submitBtn = event.target.querySelector('button[type="submit"]');
     const originalBtnHtml = submitBtn.innerHTML;
@@ -292,6 +521,9 @@ async function savePracticeQuestion(event) {
         let msg = 'Gagal menyimpan soal: ' + error.message;
         if (error.message && error.message.includes('practice_questions') && error.message.includes('does not exist')) {
             msg += '\n\nTabel practice_questions belum dibuat. Jalankan SQL/practice_bertingkat_setup.sql di Supabase SQL Editor terlebih dahulu.';
+        }
+        if (error.message && (error.message.includes('question_type') || error.message.includes('correct_answers') || error.message.includes('category_options'))) {
+            msg += '\n\nKolom baru belum ada. Jalankan SQL/practice_add_question_types.sql di Supabase SQL Editor.';
         }
         alert(msg);
     } finally {
