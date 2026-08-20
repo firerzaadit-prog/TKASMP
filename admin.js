@@ -4023,6 +4023,49 @@ function insertCenter() {
     updateQuestionPreview();
 }
 
+// Track last focused input for global insert functions
+let lastFocusedInput = null;
+document.addEventListener('focusin', function(e) {
+    if (e.target.tagName === 'TEXTAREA' || (e.target.tagName === 'INPUT' && (e.target.type === 'text' || e.target.type === ''))) {
+        lastFocusedInput = e.target;
+    }
+});
+
+function insertInlineMathGlobal() {
+    if (!lastFocusedInput) {
+        alert("Silakan klik/fokus pada kotak isian soal atau jawaban terlebih dahulu.");
+        return;
+    }
+    
+    const input = lastFocusedInput;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const text = input.value || '';
+    const before = text.substring(0, start);
+    const after = text.substring(end, text.length);
+    const selected = text.substring(start, end);
+
+    let inserted = `\\( ${selected} \\)`;
+    input.value = before + inserted + after;
+    
+    // Position cursor inside if nothing was selected
+    if (selected === "") {
+        input.selectionStart = input.selectionEnd = start + 3; // After `\( `
+    } else {
+        input.selectionStart = input.selectionEnd = start + inserted.length;
+    }
+    
+    input.focus();
+    
+    // Trigger input event to update previews if any
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    if (typeof updateQuestionPreview === 'function' && input.id === 'questionText') {
+        updateQuestionPreview();
+    }
+}
+window.insertInlineMathGlobal = insertInlineMathGlobal;
+
+
 function updateLatexPreview() {
     const latexInput = document.getElementById('latexContent').value;
     const preview = document.getElementById('latexPreview');
