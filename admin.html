@@ -16,6 +16,8 @@
     <link rel="stylesheet" href="admin.css">
     <!-- TAMBAHAN BARU: AI Analytics Styles -->
     <link rel="stylesheet" href="admin_ai_analytics_styles.css">
+    <!-- TAMBAHAN BARU: Latihan Bertingkat (Tahap 1-2-3) - terpisah dari Materi & Soal -->
+    <link rel="stylesheet" href="admin-latihan.css">
     <!-- Chart.js for analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- KaTeX for LaTeX rendering -->
@@ -399,6 +401,8 @@
 </head>
   <!-- TAMBAHAN BARU: AI Analytics Enhancement -->
     <script type="module" src="admin_ai_analytics_enhancement.js"></script>
+  <!-- TAMBAHAN BARU: Latihan Bertingkat (Tahap 1-2-3) - terpisah dari Materi & Soal -->
+    <script type="module" src="admin-latihan.js"></script>
 <body>
     <!-- Header -->
     <section class="admin-hero">
@@ -454,6 +458,11 @@
                 <button class="nav-tab" onclick="showTab('questions')">
                     <i class="fas fa-brain"></i>
                     <span>Soal</span>
+                </button>
+                <!-- TAB BARU: Latihan Bertingkat (Tahap 1-2-3) - terpisah dari Materi & Soal -->
+                <button class="nav-tab" onclick="showTab('practiceLevels'); loadPracticeLevelsTab();" id="practiceLevelsTabBtn">
+                    <i class="fas fa-layer-group"></i>
+                    <span>Latihan Bertingkat</span>
                 </button>
                 <button class="nav-tab" onclick="showTab('users')">
                     <i class="fas fa-users"></i>
@@ -1263,6 +1272,137 @@
                     </tbody>
                 </table>
                 <div id="questionsPagination" class="pagination-bar"></div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- TAB BARU: Latihan Bertingkat (Tahap 1-2-3)                    -->
+        <!-- Terpisah total dari tab Materi & tab Soal. Memakai tabel      -->
+        <!-- practice_questions (lihat SQL/practice_bertingkat_setup.sql) -->
+        <!-- ============================================================ -->
+        <div id="practiceLevels" class="tab-content">
+            <div class="content-section">
+                <div class="section-header">
+                    <h2 class="section-title"><i class="fas fa-layer-group"></i> Latihan Bertingkat - Bank Soal</h2>
+                    <div class="section-actions">
+                        <button class="add-btn" id="addPracticeQuestionBtn" onclick="showPracticeQuestionForm()">
+                            <i class="fas fa-plus"></i> Tambah Soal
+                        </button>
+                    </div>
+                </div>
+
+                <div class="pl-filter-bar">
+                    <div class="pl-filter-group">
+                        <label for="practiceFilterChapter">Bab/Topik:</label>
+                        <select id="practiceFilterChapter" onchange="onPracticeFilterChange()"></select>
+                    </div>
+                    <div class="pl-filter-group">
+                        <label>Tahap:</label>
+                        <div class="pl-stage-tabs">
+                            <button type="button" class="pl-stage-tab active" data-stage="1" onclick="switchPracticeStage(1)">Tahap 1</button>
+                            <button type="button" class="pl-stage-tab" data-stage="2" onclick="switchPracticeStage(2)">Tahap 2</button>
+                            <button type="button" class="pl-stage-tab" data-stage="3" onclick="switchPracticeStage(3)">Tahap 3</button>
+                        </div>
+                    </div>
+                    <div id="practiceReadyBadge" class="pl-ready-badge">0/10 soal aktif</div>
+                </div>
+
+                <!-- Form Tambah/Edit Soal Latihan -->
+                <div id="practiceQuestionForm" class="form-container" style="display:none;">
+                    <div class="form-header">
+                        <h3 class="form-title" id="practiceFormTitle">Tambah Soal Latihan</h3>
+                        <button class="cancel-btn" onclick="hidePracticeQuestionForm()"><i class="fas fa-times"></i> Batal</button>
+                    </div>
+                    <form id="practiceQuestionFormData" onsubmit="savePracticeQuestion(event)" style="padding: 0 2rem 2rem;">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="pqChapter">Bab/Topik: <span style="color:#ef4444;">*</span></label>
+                                <select id="pqChapter" required></select>
+                            </div>
+                            <div class="form-group">
+                                <label for="pqSubChapter">Sub Bab (opsional, tag saja):</label>
+                                <select id="pqSubChapter">
+                                    <option value="">- Tidak ada -</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="pqStage">Tahap: <span style="color:#ef4444;">*</span></label>
+                                <select id="pqStage" required>
+                                    <option value="1">Tahap 1</option>
+                                    <option value="2">Tahap 2</option>
+                                    <option value="3">Tahap 3</option>
+                                </select>
+                            </div>
+                            <div class="form-group full-width">
+                                <label for="pqQuestionText">Teks Soal: <span style="color:#ef4444;">*</span></label>
+                                <textarea id="pqQuestionText" rows="3" required placeholder="Tulis soal di sini. Rumus matematika bisa memakai LaTeX, contoh: \( x^2 + 1 \)"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="pqOptionA">Opsi A: <span style="color:#ef4444;">*</span></label>
+                                <input type="text" id="pqOptionA" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="pqOptionB">Opsi B: <span style="color:#ef4444;">*</span></label>
+                                <input type="text" id="pqOptionB" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="pqOptionC">Opsi C: <span style="color:#ef4444;">*</span></label>
+                                <input type="text" id="pqOptionC" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="pqOptionD">Opsi D: <span style="color:#ef4444;">*</span></label>
+                                <input type="text" id="pqOptionD" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="pqCorrectAnswer">Jawaban Benar: <span style="color:#ef4444;">*</span></label>
+                                <select id="pqCorrectAnswer" required>
+                                    <option value="">Pilih jawaban benar</option>
+                                    <option value="A">A</option>
+                                    <option value="B">B</option>
+                                    <option value="C">C</option>
+                                    <option value="D">D</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="pqIsActive">Status:</label>
+                                <select id="pqIsActive">
+                                    <option value="true">Aktif</option>
+                                    <option value="false">Nonaktif</option>
+                                </select>
+                            </div>
+                            <div class="form-group full-width">
+                                <label for="pqExplanation">Pembahasan (opsional):</label>
+                                <textarea id="pqExplanation" rows="2" placeholder="Ditampilkan ke siswa setelah submit tahap ini, terutama untuk soal yang dijawab salah"></textarea>
+                            </div>
+                            <div class="form-group full-width">
+                                <label for="pqImage">Gambar Soal (opsional):</label>
+                                <input type="file" id="pqImage" accept="image/*" onchange="handlePracticeImageUpload(event)">
+                                <small class="help-text">Format: JPG, PNG, GIF. Maksimal 5MB</small>
+                                <div id="pqImagePreview" class="pl-image-preview" style="display:none;">
+                                    <img id="pqImagePreviewImg" src="" alt="Preview">
+                                    <button type="button" onclick="removePracticeImage()"><i class="fas fa-times"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="submit-btn"><i class="fas fa-save"></i> Simpan Soal</button>
+                        </div>
+                    </form>
+                </div>
+
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Soal</th>
+                            <th>Jawaban Benar</th>
+                            <th>Status</th>
+                            <th>Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="practiceQuestionsTableBody">
+                        <tr><td colspan="4" style="text-align:center; color:#9ca3af; padding:2rem;">Memuat...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 

@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Latihan Bertingkat - Math EduLearn TKA</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="halamanpertama.css">
+    <link rel="stylesheet" href="latihan.css">
+    <!-- KaTeX untuk render rumus matematika pada soal/pembahasan -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script type="importmap">
+    {
+      "imports": {
+        "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+      }
+    }
+    </script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="dashboard-header">
+        <div class="header-left">
+            <div class="logo">
+                <i class="fas fa-graduation-cap"></i>
+                <span>Math EduLearn</span>
+            </div>
+            <nav class="main-nav">
+                <a href="halamanpertama.html" class="nav-link">Dashboard</a>
+                <a href="materi.html" class="nav-link">Materi</a>
+                <a href="#" class="nav-link active">Latihan</a>
+                <a href="#" onclick="startExam(); return false;" class="nav-link">Simulasi</a>
+            </nav>
+        </div>
+        <div class="header-right">
+            <div class="user-profile">
+                <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBmaWxsPSIjNEY0NkU1Ii8+PHRleHQgeD0iMjAiIHk9IjI1IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTYiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5VPC90ZXh0Pjwvc3ZnPg==" alt="Profile" class="profile-avatar">
+                <span class="profile-name">Nama Siswa</span>
+                <i class="fas fa-chevron-down profile-dropdown-icon"></i>
+                <div class="profile-dropdown">
+                    <a href="halamanpertama.html" class="dropdown-item">
+                        <i class="fas fa-user-cog dropdown-icon"></i>
+                        Atur profil
+                    </a>
+                    <a href="#" class="dropdown-item logout" onclick="logout()">
+                        <i class="fas fa-sign-out-alt dropdown-icon"></i>
+                        logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="latihan-container">
+
+        <!-- ============================================================ -->
+        <!-- VIEW 1: LANDING - daftar Bab/Topik + status 3 Tahap          -->
+        <!-- ============================================================ -->
+        <div id="viewLanding" class="latihan-view">
+            <div class="latihan-header">
+                <h1><i class="fas fa-layer-group"></i> Latihan Bertingkat</h1>
+                <p>Kerjakan soal secara bertahap. Jawab benar minimal 7 dari 10 soal (&ge;70%) untuk membuka tahap berikutnya.</p>
+            </div>
+
+            <div id="chaptersGrid" class="chapters-grid">
+                <!-- Chapter cards dirender oleh latihan.js -->
+                <div class="latihan-loading"><i class="fas fa-spinner fa-spin"></i> Memuat topik latihan...</div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- VIEW 2: PRE-STAGE - konfirmasi mulai tahap                    -->
+        <!-- ============================================================ -->
+        <div id="viewPreStage" class="latihan-view" style="display:none;">
+            <button class="back-btn" onclick="backToLanding()"><i class="fas fa-arrow-left"></i> Kembali</button>
+            <div class="prestage-card">
+                <div class="prestage-icon"><i class="fas fa-flag-checkered"></i></div>
+                <h2 id="prestageTitle">Bab - Tahap</h2>
+                <p id="prestageDesc">10 soal pilihan ganda. Jawab benar minimal 7 untuk lulus tahap ini.</p>
+                <div id="prestageBestScore" class="prestage-best-score"></div>
+                <div id="prestageHistoryBox" class="prestage-history-box"></div>
+                <button id="startStageBtn" class="start-stage-btn" onclick="beginStageAttempt()">
+                    <i class="fas fa-play"></i> Mulai Mengerjakan
+                </button>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- VIEW 3: QUIZ - 10 soal pilihan ganda                          -->
+        <!-- ============================================================ -->
+        <div id="viewQuiz" class="latihan-view" style="display:none;">
+            <div class="quiz-header">
+                <div class="quiz-header-title">
+                    <h2 id="quizTitle">Bab - Tahap</h2>
+                    <span id="quizProgressLabel">0 / 10 terjawab</span>
+                </div>
+                <div class="quiz-progress-bar"><div id="quizProgressFill" class="quiz-progress-fill"></div></div>
+            </div>
+
+            <div id="quizQuestionsList" class="quiz-questions-list">
+                <!-- Soal dirender oleh latihan.js -->
+            </div>
+
+            <div class="quiz-footer">
+                <button id="submitQuizBtn" class="submit-quiz-btn" onclick="submitStageAttempt()" disabled>
+                    <i class="fas fa-check-circle"></i> Kumpulkan Jawaban
+                </button>
+                <p id="quizFooterHint" class="quiz-footer-hint">Jawab semua soal untuk mengumpulkan.</p>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- VIEW 4: RESULT - skor + pembahasan                            -->
+        <!-- ============================================================ -->
+        <div id="viewResult" class="latihan-view" style="display:none;">
+            <div id="resultBanner" class="result-banner">
+                <div class="result-icon"><i id="resultIcon" class="fas fa-trophy"></i></div>
+                <h2 id="resultTitle">Selamat!</h2>
+                <p id="resultScoreText">Skor kamu: 8/10</p>
+            </div>
+
+            <div class="result-actions">
+                <button id="resultRetryBtn" class="retry-btn" onclick="retryStage()">
+                    <i class="fas fa-redo"></i> Coba Lagi
+                </button>
+                <button id="resultNextBtn" class="next-stage-btn" onclick="goToNextStage()" style="display:none;">
+                    <i class="fas fa-arrow-right"></i> Lanjut ke Tahap Berikutnya
+                </button>
+                <button class="back-btn-outline" onclick="backToLanding()">
+                    <i class="fas fa-th-large"></i> Kembali ke Daftar Topik
+                </button>
+            </div>
+
+            <h3 class="review-heading"><i class="fas fa-book-open"></i> Pembahasan</h3>
+            <div id="reviewList" class="review-list">
+                <!-- Review soal dirender oleh latihan.js -->
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- VIEW 5: RIWAYAT - histori percobaan per topik+tahap           -->
+        <!-- ============================================================ -->
+        <div id="viewHistory" class="latihan-view" style="display:none;">
+            <button class="back-btn" onclick="backToLanding()"><i class="fas fa-arrow-left"></i> Kembali</button>
+            <h2 id="historyTitle"><i class="fas fa-history"></i> Riwayat Percobaan</h2>
+            <div id="historyList" class="history-list"></div>
+        </div>
+
+    </div>
+
+    <script type="module" src="latihan.js"></script>
+</body>
+</html>

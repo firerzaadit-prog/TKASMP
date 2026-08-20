@@ -1,0 +1,158 @@
+/* ============================================================
+   ADMIN - LATIHAN BERTINGKAT (Tahap 1-2-3) - tab styles
+   Sengaja file terpisah dari admin.css supaya tidak bercampur
+   dengan styling tab Materi maupun tab Soal.
+   ============================================================ */
+
+.pl-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 1.25rem 2rem;
+    border-bottom: 1px solid var(--admin-border-light);
+    background: var(--admin-bg-tertiary);
+}
+
+.pl-filter-group {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.pl-filter-group label {
+    font-weight: 600;
+    color: var(--admin-text-secondary);
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
+.pl-filter-group select {
+    padding: 0.5rem 0.9rem;
+    border: 2px solid var(--admin-border);
+    border-radius: var(--admin-radius-md);
+    font-size: 0.9rem;
+    min-width: 220px;
+}
+
+.pl-stage-tabs {
+    display: flex;
+    gap: 0.4rem;
+    background: white;
+    padding: 0.3rem;
+    border-radius: var(--admin-radius-md);
+    border: 1px solid var(--admin-border);
+}
+
+.pl-stage-tab {
+    border: none;
+    background: transparent;
+    padding: 0.5rem 1rem;
+    border-radius: var(--admin-radius-sm, 6px);
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--admin-text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.pl-stage-tab:hover {
+    color: var(--admin-primary);
+}
+
+.pl-stage-tab.active {
+    background: var(--admin-primary);
+    color: white;
+    box-shadow: var(--admin-shadow-sm);
+}
+
+.pl-ready-badge {
+    margin-left: auto;
+    font-size: 0.85rem;
+    font-weight: 700;
+    padding: 0.4rem 0.9rem;
+    border-radius: 20px;
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--admin-danger);
+}
+
+.pl-ready-badge.pl-ready-ok {
+    background: rgba(0, 184, 148, 0.12);
+    color: var(--admin-success);
+}
+
+.pl-image-preview {
+    margin-top: 0.75rem;
+    position: relative;
+    display: inline-block;
+}
+
+.pl-image-preview img {
+    max-width: 220px;
+    max-height: 160px;
+    border-radius: var(--admin-radius-md);
+    border: 1px solid var(--admin-border);
+    display: block;
+}
+
+.pl-image-preview button {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: none;
+    background: var(--admin-danger);
+    color: white;
+    cursor: pointer;
+    font-size: 0.75rem;
+    line-height: 1;
+}
+
+.pl-edit-btn, .pl-delete-btn, .pl-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: var(--admin-radius-md);
+    border: 1px solid transparent;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-right: 0.4rem;
+    transition: all 0.2s ease;
+}
+
+.pl-edit-btn {
+    background: var(--admin-primary-light);
+    color: var(--admin-primary);
+    border-color: rgba(67, 97, 238, 0.25);
+}
+
+.pl-edit-btn:hover { background: var(--admin-primary); color: white; }
+
+.pl-delete-btn {
+    background: rgba(232, 67, 147, 0.08);
+    color: var(--admin-danger);
+    border-color: rgba(232, 67, 147, 0.25);
+}
+
+.pl-delete-btn:hover { background: var(--admin-danger); color: white; }
+
+.pl-toggle-btn {
+    background: var(--admin-bg-tertiary);
+    color: var(--admin-text-secondary);
+    border-color: var(--admin-border);
+}
+
+.pl-toggle-btn:hover { border-color: var(--admin-text-secondary); }
+
+.pl-question-cell {
+    max-width: 420px;
+}
+
+@media (max-width: 900px) {
+    .pl-filter-bar { flex-direction: column; align-items: flex-start; }
+    .pl-ready-badge { margin-left: 0; }
+}
