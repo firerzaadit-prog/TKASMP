@@ -1,4 +1,4 @@
-# Setup Google OAuth untuk EduLearn
+# Setup Google OAuth untuk MATH TKA
 
 ## Error: redirect_uri_mismatch
 

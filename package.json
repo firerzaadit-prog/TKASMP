@@ -1,7 +1,7 @@
 {
   "name": "website-skripsi",
   "version": "1.0.0",
-  "description": "EduLearn TKA - Platform pembelajaran dengan AI Analytics dan integrasi Gemini AI untuk analisis jawaban siswa",
+  "description": "MATH TKA - Platform pembelajaran dengan AI Analytics dan integrasi Gemini AI untuk analisis jawaban siswa",
   "main": "apisgoogle.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

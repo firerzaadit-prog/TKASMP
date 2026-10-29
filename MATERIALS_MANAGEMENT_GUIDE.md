@@ -1,4 +1,4 @@
-# 📚 Panduan Lengkap Manajemen Materi EduLearn TKA
+# 📚 Panduan Lengkap Manajemen Materi MATH TKA
 
 ## 🎯 **Fitur Manajemen Materi Lengkap**
 
@@ -309,4 +309,4 @@ SELECT * FROM pg_policies WHERE tablename = 'objects';
 
 ---
 
-**Sistem manajemen materi EduLearn TKA sekarang lengkap dengan fitur CRUD, rich text editing, file upload, dan tracking progress siswa!** 📚✨
+**Sistem manajemen materi MATH TKA sekarang lengkap dengan fitur CRUD, rich text editing, file upload, dan tracking progress siswa!** 📚✨

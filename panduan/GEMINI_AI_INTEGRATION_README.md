@@ -1,6 +1,6 @@
 # Gemini AI Integration untuk Analisis Jawaban Siswa
 
-Panduan lengkap untuk mengintegrasikan Google Gemini AI dalam sistem EduLearn TKA untuk analisis mendalam jawaban siswa.
+Panduan lengkap untuk mengintegrasikan Google Gemini AI dalam sistem MATH TKA untuk analisis mendalam jawaban siswa.
 
 ## 🎯 **Fitur Utama**
 

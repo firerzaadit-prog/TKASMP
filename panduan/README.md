@@ -1,4 +1,4 @@
-# 🎓 EduLearn TKA - Student Portal
+# 🎓 MATH TKA - Student Portal
 
 Platform pembelajaran interaktif untuk siswa SMP dalam menghadapi Tes Kemampuan Akademik (TKA).
 
@@ -195,4 +195,4 @@ Platform ini dirancang untuk membantu siswa SMP:
 
 ---
 
-**EduLearn TKA - Belajar Pintar, Sukses di TKA!** 🚀📚
+**MATH TKA - Belajar Pintar, Sukses di TKA!** 🚀📚
